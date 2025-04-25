@@ -18,21 +18,20 @@ stateMachine LightSwitch {
         $description("Initial state, waiting for input.");
         Idle @0 {
             entry: log_idle_entry;
-        };
+        }
         $description("Processing input actively.");
         Running @1 {
             entry: start_processing;
             exit: stop_processing;
-        };
-        // Suspended @2; // Example without entry/exit - TEMPORARILY COMMENTED OUT DUE TO PARSE ERROR
+        }
         $description("Final state after completion or error.");
-        Done @3 {
+        Done @2 {
             entry: log_completion;
-        };
+        }
         $description("The light is off.");
-        Off @4;
+        Off @3;
         $description("The light is on.");
-        On @5;
+        On @4;
     }
 
     events {

@@ -35,8 +35,8 @@ state_machine_item = { annotation | state_enum | event_definitions | transitions
 // Allow optional whitespace *between* state variants
 state_enum = { "states" ~ "{" ~ optional_whitespace ~ (state_variant ~ optional_whitespace)* ~ optional_whitespace ~ "}" }
 
-// state_variant expects identifier @ ordinal, optional body, then MANDATORY semicolon
-state_variant = { optional_annotations ~ identifier ~ "@" ~ ordinal ~ state_body_content? ~ ";" ~ optional_whitespace }
+// state_variant expects identifier @ ordinal, optional body OR semicolon
+state_variant = { optional_annotations ~ identifier ~ "@" ~ ordinal ~ (state_body_content | ";") ~ optional_whitespace }
 
 // state_body_content captures the optional {...} block
 state_body_content = { "{" ~ optional_whitespace ~ state_body_item* ~ optional_whitespace ~ "}" }

@@ -2,6 +2,10 @@
 name = "fsm-dsl"
 version = "0.1.0"
 edition = "2021"
+description = "Parser and AST for the .ssot finite state machine DSL"
+license = "MIT" # Assuming MIT based on LISENCE file in root
+repository = "https://github.com/junkawasaki/ssot" # Assuming repo URL
+keywords = ["fsm", "state-machine", "dsl", "parser", "ast"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
