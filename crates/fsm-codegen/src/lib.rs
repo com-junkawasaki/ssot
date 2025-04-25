@@ -517,34 +517,41 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
     let event_param_sig = quote! { & #event_enum_name }; // Use reference to Event enum
 
     let guard_methods = guards.iter().map(|guard_name| {
-         quote! {
-              #[allow(unused_variables)]
-              /// Guard condition for transition: #guard_name
-              fn #guard_name(&self, current_state: &State, event: #event_param_sig) -> bool {
-                  eprintln!("[WARN] Guard '{}' not implemented, returning default false.", stringify!(#guard_name));
-                  false
-              }
+         let doc_str = format!("/// Guard condition for transition: {}", guard_name);
+         let doc_tokens = syn::parse_str::<TokenStream>(&doc_str).unwrap_or_else(|_| quote!{});
+          quote! {
+               #[allow(unused_variables)]
+               #doc_tokens
+               fn #guard_name(&self, current_state: &State, event: #event_param_sig) -> bool {
+                   eprintln!("[WARN] Guard '{}' not implemented, returning default false.", stringify!(#guard_name));
+                   false
+               }
          }
      });
 
     let action_methods = actions.iter().map(|action_name| {
-         quote! {
-              #[allow(unused_variables)]
-               /// Action executed during transition or on entry/exit: #action_name
-              fn #action_name(&mut self, current_state: &State, event: #event_param_sig, next_state: &State) {
-                  eprintln!("[WARN] Action '{}' not implemented.", stringify!(#action_name));
-                  // Default action is no-op
-              }
+         let doc_str = format!("/// Action executed during transition or on entry/exit: {}", action_name);
+         let doc_tokens = syn::parse_str::<TokenStream>(&doc_str).unwrap_or_else(|_| quote!{});
+          quote! {
+               #[allow(unused_variables)]
+               #doc_tokens
+               fn #action_name(&mut self, current_state: &State, event: #event_param_sig, next_state: &State) {
+                   eprintln!("[WARN] Action '{}' not implemented.", stringify!(#action_name));
+                   // Default action is no-op
+               }
          }
      });
 
     // Generate the Callbacks trait
-    let callbacks_trait = quote! {
+    let callbacks_trait_doc = quote! {
         /// Trait for implementing state machine actions and guards.
         ///
         /// User code should implement this trait to provide the actual logic
         /// for state transitions. Default implementations are provided that
         /// print warnings and return default values (false for guards, no-op for actions).
+    };
+    let callbacks_trait = quote! {
+        #callbacks_trait_doc
         pub trait #callbacks_trait_name {
             #(#guard_methods)*
             #(#action_methods)*
