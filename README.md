@@ -104,6 +104,12 @@ This project is organized as a Cargo workspace containing the following crates:
     *   Enhance validation rules within the parser (e.g., duplicate name/ordinal checks, transition validity).
     *   Support for more complex annotation values or specific annotations (e.g., `$deprecated`).
     *   Integrate routing definition capabilities (e.g., mapping states/events to routes or defining navigation flows).
+    *   **Expand SSOT Scope:** Explore defining related concerns within `.ssot`:
+        *   UI/UX Component Mapping (Linking states/events to UI elements/actions).
+        *   API Call / Event Integration (Defining external calls or internal events triggered by FSM).
+        *   Authorization / Permissions (Specifying required roles/permissions for transitions/events).
+        *   Test Scenario / BDD Definitions (Describing test cases or BDD features based on FSM paths).
+        *   Monitoring / Logging / Alerting Rules (Defining observability requirements per state/transition).
 *   **Error Handling:** Improve error messages and diagnostics from the parser and code generator.
 *   **Testing:** Enhance automated tests, particularly for `build.rs` logic (e.g., via integration tests) and edge cases in generation.
 *   **Procedural Macro:** Implement the `#[state_machine(...)]` procedural macro approach as an alternative integration method for Rust projects.
