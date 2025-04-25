@@ -425,23 +425,40 @@ fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
             Rule::ordinal => ordinal = Some(parse_ordinal(item_pair)?),
             // Handle the optional state_body_content
             Rule::state_body_content => {
-                // This rule only exists if the body {} is present
-                for body_item_pair in item_pair.into_inner() {
-                    match body_item_pair.as_rule() {
-                        Rule::entry_action => {
-                            let ident = parse_ident(body_item_pair.into_inner().next().unwrap())?;
-                            entry_actions.push(ident);
+                // item_pair is state_body_content ({ ... })
+                for body_item_rule in item_pair.into_inner() { // Renamed for clarity
+                    match body_item_rule.as_rule() {
+                        Rule::state_body_item => { // Expect state_body_item here
+                            // Now look inside state_body_item for entry_action or exit_action
+                            let inner_action_pair = body_item_rule.into_inner().next().ok_or_else(|| {
+                                ParseError::UnexpectedRule { rule: Rule::state_body_item, context: "empty state_body_item?".to_string() }
+                            })?;
+                            match inner_action_pair.as_rule() {
+                                Rule::entry_action => {
+                                    let action_ident_pair = inner_action_pair.into_inner().find(|p| p.as_rule() == Rule::identifier)
+                                        .ok_or_else(|| ParseError::MissingElement("entry action identifier".to_string()))?;
+                                    entry_actions.push(parse_ident(action_ident_pair)?);
+                                }
+                                Rule::exit_action => {
+                                    let action_ident_pair = inner_action_pair.into_inner().find(|p| p.as_rule() == Rule::identifier)
+                                        .ok_or_else(|| ParseError::MissingElement("exit action identifier".to_string()))?;
+                                    exit_actions.push(parse_ident(action_ident_pair)?);
+                                }
+                                _ => { // Unexpected rule inside state_body_item
+                                     return Err(ParseError::UnexpectedRule {
+                                        rule: inner_action_pair.as_rule(),
+                                        context: "inside state_body_item (expected entry_action or exit_action)".to_string(),
+                                    });
+                                }
+                            }
                         }
-                        Rule::exit_action => {
-                            let ident = parse_ident(body_item_pair.into_inner().next().unwrap())?;
-                            exit_actions.push(ident);
-                        }
-                        Rule::WHITESPACE | Rule::COMMENT | Rule::optional_whitespace => { /* Ignore */
-                        }
+                        // Ignore whitespace/comments between state_body_items
+                        Rule::WHITESPACE | Rule::COMMENT | Rule::optional_whitespace => { /* Ignore */ }
+                        // Any other rule directly inside state_body_content is unexpected
                         _ => {
                             return Err(ParseError::UnexpectedRule {
-                                rule: body_item_pair.as_rule(),
-                                context: "state_body_content definition".to_string(),
+                                rule: body_item_rule.as_rule(),
+                                context: "inside state_body_content block {} (expected state_body_item)".to_string(),
                             });
                         }
                     }

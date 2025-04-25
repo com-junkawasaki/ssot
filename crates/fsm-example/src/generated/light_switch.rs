@@ -1,5 +1,11 @@
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum State {
+    ///Initial state, waiting for input.
+    Idle,
+    ///Processing input actively.
+    Running,
+    ///Final state after completion or error.
+    Done,
     ///The light is off.
     Off,
     ///The light is on.
@@ -24,12 +30,16 @@ pub enum Event {
 pub struct LightSwitch {
     pub current_state: State,
 }
-/// Trait defining the required guard and action callbacks for the state machine.
+/// Trait defining the required guard, action, entry, and exit callbacks for the state machine.
 pub trait LightSwitchCallbacks {
     fn activate_light_specific(&mut self, event: &TurnOnEventPayload);
     fn deactivate_light(&mut self, event: &Event);
-    fn deactivate_light_specific(&mut self, event: &Event);
     fn activate_light(&mut self, event: &Event);
+    fn deactivate_light_specific(&mut self, event: &Event);
+    fn log_idle_entry(&mut self);
+    fn log_completion(&mut self);
+    fn start_processing(&mut self);
+    fn stop_processing(&mut self);
 }
 impl LightSwitch {
     /// Creates a new instance of the state machine in its initial state.
