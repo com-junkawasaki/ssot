@@ -15,10 +15,24 @@ stateMachine LightSwitch {
     # $description("A simple light switch FSM."); # (restore value)
 
     states {
+        $description("Initial state, waiting for input.");
+        Idle @0 {
+            entry: log_idle_entry;
+        };
+        $description("Processing input actively.");
+        Running @1 {
+            entry: start_processing;
+            exit: stop_processing;
+        };
+        Suspended @2; // Example without entry/exit
+        $description("Final state after completion or error.");
+        Done @3 {
+            entry: log_completion;
+        };
         $description("The light is off.");
-        Off @0;
+        Off @4;
         $description("The light is on.");
-        On @1;
+        On @5;
     }
 
     events {

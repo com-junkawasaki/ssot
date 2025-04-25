@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command; // To run rustfmt
 
-use fsm_codegen::{generate_rust_code, generate_capnp_schema, generate_typescript_types};
+use fsm_codegen::{generate_capnp_schema, generate_rust_code, generate_typescript_types};
 // Use the new parser function and AST types
 use fsm_dsl::ast::{Annotation, AnnotationValue, SsotFile};
 use fsm_dsl::parser::{parse_file, ParseError as DslParseError};
@@ -150,8 +150,9 @@ fn main() -> Result<(), BuildError> {
             }
 
             // --- Cap'n Proto Schema Generation (Optional) ---
-            let capnp_out_dir_str = find_annotation_str_value(&machine_ast.annotations, "capnp_out")
-                .or(top_level_capnp_out);
+            let capnp_out_dir_str =
+                find_annotation_str_value(&machine_ast.annotations, "capnp_out")
+                    .or(top_level_capnp_out);
 
             if let Some(capnp_out_dir_str) = capnp_out_dir_str {
                 let out_dir_path = crate_path.join(capnp_out_dir_str);
@@ -166,19 +167,22 @@ fn main() -> Result<(), BuildError> {
                 );
 
                 let generated_schema =
-                    generate_capnp_schema(&ssot_file_ast, machine_ast).map_err(|e| BuildError::Codegen {
-                        path: ssot_path.clone(),
-                        machine_name: machine_name_str.clone(),
-                        source: e,
+                    generate_capnp_schema(&ssot_file_ast, machine_ast).map_err(|e| {
+                        BuildError::Codegen {
+                            path: ssot_path.clone(),
+                            machine_name: machine_name_str.clone(),
+                            source: e,
+                        }
                     })?;
 
-                fs::write(&out_file_path, &generated_schema).map_err(|e| io_err(&out_file_path, e))?;
+                fs::write(&out_file_path, &generated_schema)
+                    .map_err(|e| io_err(&out_file_path, e))?;
                 // No formatting needed for .capnp usually
             }
 
             // --- TypeScript Type Generation (Optional) ---
-            let ts_out_dir_str = find_annotation_str_value(&machine_ast.annotations, "ts_out")
-                .or(top_level_ts_out);
+            let ts_out_dir_str =
+                find_annotation_str_value(&machine_ast.annotations, "ts_out").or(top_level_ts_out);
 
             if let Some(ts_out_dir_str) = ts_out_dir_str {
                 let out_dir_path = crate_path.join(ts_out_dir_str);
@@ -199,27 +203,32 @@ fn main() -> Result<(), BuildError> {
                         source: e,
                     })?;
 
-                fs::write(&out_file_path, &generated_types).map_err(|e| io_err(&out_file_path, e))?;
+                fs::write(&out_file_path, &generated_types)
+                    .map_err(|e| io_err(&out_file_path, e))?;
 
                 // Optional: Run Prettier or other TS formatter
-                 match Command::new("prettier").arg("--write").arg(&out_file_path).output() {
-                     Ok(output) => {
-                         if !output.status.success() {
-                             eprintln!(
-                                 "warning: Failed to format generated TypeScript {}: {}",
-                                 out_file_path.display(),
-                                 String::from_utf8_lossy(&output.stderr)
-                             );
-                         }
-                     }
-                     Err(e) => {
-                         eprintln!(
+                match Command::new("prettier")
+                    .arg("--write")
+                    .arg(&out_file_path)
+                    .output()
+                {
+                    Ok(output) => {
+                        if !output.status.success() {
+                            eprintln!(
+                                "warning: Failed to format generated TypeScript {}: {}",
+                                out_file_path.display(),
+                                String::from_utf8_lossy(&output.stderr)
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
                               "warning: Failed to run prettier for {}: {}. Ensure prettier is installed and in PATH.",
                               out_file_path.display(),
                               e
                           );
-                     }
-                 }
+                    }
+                }
             }
         }
     }

@@ -1,7 +1,7 @@
 //! SCXML document generation logic.
 
 use crate::{find_annotation_value, CodegenError};
-use fsm_dsl::ast::{AnnotationValue, FieldType, StateMachine, TransitionElement, FieldDef};
+use fsm_dsl::ast::{AnnotationValue, FieldDef, FieldType, StateMachine, TransitionElement};
 use std::fmt::Write;
 
 // Helper to map DSL FieldType to SCXML data type string (approximations)
@@ -19,8 +19,8 @@ fn map_field_type_to_scxml_type(field_type: &FieldType) -> &'static str {
         | FieldType::UInt64 => "integer", // SCXML has limited numeric types
         FieldType::Float32 | FieldType::Float64 => "float",
         FieldType::Text => "string",
-        FieldType::Data => "string", // Base64 encode? Or custom type?
-        FieldType::List(_) => "",     // SCXML datamodel is flat, maybe JSON string?
+        FieldType::Data => "string",    // Base64 encode? Or custom type?
+        FieldType::List(_) => "",       // SCXML datamodel is flat, maybe JSON string?
         FieldType::Identifier(_) => "", // Custom struct, maybe JSON string?
     }
 }
@@ -62,13 +62,18 @@ fn generate_xml_comment(annotations: &[fsm_dsl::ast::Annotation], indent: &str) 
                 .filter(|l| !l.is_empty())
                 .collect::<Vec<_>>()
                 .join(" ") // Join lines into a single comment line
-        ).unwrap(); // Use unwrap for simplicity in helper
+        )
+        .unwrap(); // Use unwrap for simplicity in helper
     }
     comment
 }
 
 // Helper function to generate executable content for an action
-fn generate_scxml_action_content(action_ident: &fsm_dsl::ast::Ident, context_fields: &[FieldDef], indent: &str) -> String {
+fn generate_scxml_action_content(
+    action_ident: &fsm_dsl::ast::Ident,
+    context_fields: &[FieldDef],
+    indent: &str,
+) -> String {
     let action_name = action_ident.to_string();
     let mut content = String::new();
 
@@ -82,48 +87,86 @@ fn generate_scxml_action_content(action_ident: &fsm_dsl::ast::Ident, context_fie
         let field_name = &action_name[assign_prefix.len()..];
         if context_fields.iter().any(|f| f.name == field_name) {
             // Assume assigning a default/null value for now, DSL needs more info for actual value
-            write!(content, "{indent}<assign location=\"{}\" expr=\"null\" />", field_name).unwrap();
+            write!(
+                content,
+                "{indent}<assign location=\"{}\" expr=\"null\" />",
+                field_name
+            )
+            .unwrap();
             assigned = true;
         }
     } else if action_name.starts_with(increment_prefix) {
         let field_name_maybe_camel = &action_name[increment_prefix.len()..];
         // Attempt to find matching field (case-insensitive?)
-        if let Some(field) = context_fields.iter().find(|f| f.name.to_string().eq_ignore_ascii_case(field_name_maybe_camel)) {
-             // Check if the type is likely numeric before generating increment
-             match field.field_type {
-                 FieldType::Int8 | FieldType::Int16 | FieldType::Int32 | FieldType::Int64 |
-                 FieldType::UInt8 | FieldType::UInt16 | FieldType::UInt32 | FieldType::UInt64 => {
-                    write!(content, "{indent}<assign location=\"{}\" expr=\"{}. + 1\" />", field.name, field.name).unwrap();
+        if let Some(field) = context_fields.iter().find(|f| {
+            f.name
+                .to_string()
+                .eq_ignore_ascii_case(field_name_maybe_camel)
+        }) {
+            // Check if the type is likely numeric before generating increment
+            match field.field_type {
+                FieldType::Int8
+                | FieldType::Int16
+                | FieldType::Int32
+                | FieldType::Int64
+                | FieldType::UInt8
+                | FieldType::UInt16
+                | FieldType::UInt32
+                | FieldType::UInt64 => {
+                    write!(
+                        content,
+                        "{indent}<assign location=\"{}\" expr=\"{}. + 1\" />",
+                        field.name, field.name
+                    )
+                    .unwrap();
                     assigned = true;
-                 },
-                 _ => { /* Type mismatch, fall back to log */ }
-             }
+                }
+                _ => { /* Type mismatch, fall back to log */ }
+            }
         }
     } else if action_name.starts_with(decrement_prefix) {
         let field_name_maybe_camel = &action_name[decrement_prefix.len()..];
-        if let Some(field) = context_fields.iter().find(|f| f.name.to_string().eq_ignore_ascii_case(field_name_maybe_camel)) {
-             match field.field_type {
-                 FieldType::Int8 | FieldType::Int16 | FieldType::Int32 | FieldType::Int64 |
-                 FieldType::UInt8 | FieldType::UInt16 | FieldType::UInt32 | FieldType::UInt64 => {
-                    write!(content, "{indent}<assign location=\"{}\" expr=\"{}. - 1\" />", field.name, field.name).unwrap();
+        if let Some(field) = context_fields.iter().find(|f| {
+            f.name
+                .to_string()
+                .eq_ignore_ascii_case(field_name_maybe_camel)
+        }) {
+            match field.field_type {
+                FieldType::Int8
+                | FieldType::Int16
+                | FieldType::Int32
+                | FieldType::Int64
+                | FieldType::UInt8
+                | FieldType::UInt16
+                | FieldType::UInt32
+                | FieldType::UInt64 => {
+                    write!(
+                        content,
+                        "{indent}<assign location=\"{}\" expr=\"{}. - 1\" />",
+                        field.name, field.name
+                    )
+                    .unwrap();
                     assigned = true;
-                 },
-                 _ => { /* Type mismatch, fall back to log */ }
-             }
+                }
+                _ => { /* Type mismatch, fall back to log */ }
+            }
         }
     }
 
     // Fallback or default action is logging
     if !assigned {
-        write!(content, "{indent}<log expr=\"'Action: {}()'\" />", action_name).unwrap();
+        write!(
+            content,
+            "{indent}<log expr=\"'Action: {}()'\" />",
+            action_name
+        )
+        .unwrap();
     }
 
     content
 }
 
-pub(crate) fn generate_scxml_internal(
-    ast: &StateMachine,
-) -> Result<String, CodegenError> {
+pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, CodegenError> {
     let mut output = String::new();
     let indent = "  ";
 
@@ -134,9 +177,11 @@ pub(crate) fn generate_scxml_internal(
             AnnotationValue::Identifier(ident) => Some(ident.to_string()),
             _ => None,
         })
-        .ok_or_else(|| CodegenError::AstValidationError(
-            "Missing or invalid '$initial(StateName)' annotation on stateMachine.".to_string()
-        ))?;
+        .ok_or_else(|| {
+            CodegenError::AstValidationError(
+                "Missing or invalid '$initial(StateName)' annotation on stateMachine.".to_string(),
+            )
+        })?;
     writeln!(output,
         "<scxml version=\"1.0\" xmlns=\"http://www.w3.org/2005/07/scxml\" initial=\"{}\" name=\"{}\" datamodel=\"ecmascript\">", // Added datamodel="ecmascript"
         initial_state_name,
@@ -148,16 +193,28 @@ pub(crate) fn generate_scxml_internal(
         writeln!(output, "{indent}<datamodel>")?;
         for field in &ast.context {
             let initial_expr = map_field_type_to_scxml_initial_expr(&field.field_type);
-            write!(output, "{}", generate_xml_comment(&field.annotations, indent.repeat(2).as_str()))?;
+            write!(
+                output,
+                "{}",
+                generate_xml_comment(&field.annotations, indent.repeat(2).as_str())
+            )?;
             // Add expr attribute for initial value
-            writeln!(output, "{indent}{indent}<data id=\"{}\" expr=\"{}\" />", field.name, initial_expr)?;
+            writeln!(
+                output,
+                "{indent}{indent}<data id=\"{}\" expr=\"{}\" />",
+                field.name, initial_expr
+            )?;
         }
         writeln!(output, "{indent}</datamodel>")?;
     }
 
     // --- States ---
     for state in &ast.states {
-        write!(output, "{}", generate_xml_comment(&state.annotations, indent.as_str()))?;
+        write!(
+            output,
+            "{}",
+            generate_xml_comment(&state.annotations, indent.as_str())
+        )?;
         writeln!(output, "{indent}<state id=\"{}\">", state.name)?;
 
         // Initial state within compound states (if applicable later)
@@ -166,7 +223,11 @@ pub(crate) fn generate_scxml_internal(
         if !state.entry_actions.is_empty() {
             writeln!(output, "{indent}{indent}<onentry>")?;
             for action_ident in &state.entry_actions {
-                let action_content = generate_scxml_action_content(action_ident, &ast.context, indent.repeat(3).as_str());
+                let action_content = generate_scxml_action_content(
+                    action_ident,
+                    &ast.context,
+                    indent.repeat(3).as_str(),
+                );
                 writeln!(output, "{}", action_content)?; // Write the generated <assign> or <log>
             }
             writeln!(output, "{indent}{indent}</onentry>")?;
@@ -176,7 +237,11 @@ pub(crate) fn generate_scxml_internal(
         if !state.exit_actions.is_empty() {
             writeln!(output, "{indent}{indent}<onexit>")?;
             for action_ident in &state.exit_actions {
-                let action_content = generate_scxml_action_content(action_ident, &ast.context, indent.repeat(3).as_str());
+                let action_content = generate_scxml_action_content(
+                    action_ident,
+                    &ast.context,
+                    indent.repeat(3).as_str(),
+                );
                 writeln!(output, "{}", action_content)?; // Write the generated <assign> or <log>
             }
             writeln!(output, "{indent}{indent}</onexit>")?;
@@ -198,13 +263,25 @@ pub(crate) fn generate_scxml_internal(
                 });
 
                 // Find Actions (executable content)
-                let actions: Vec<_> = transition.elements.iter().filter_map(|el| match el {
-                    TransitionElement::Action { function, .. } => Some(function.to_string()),
-                    _ => None,
-                }).collect();
+                let actions: Vec<_> = transition
+                    .elements
+                    .iter()
+                    .filter_map(|el| match el {
+                        TransitionElement::Action { function, .. } => Some(function.to_string()),
+                        _ => None,
+                    })
+                    .collect();
 
-                write!(output, "{}", generate_xml_comment(&transition.annotations, indent.repeat(2).as_str()))?;
-                write!(output, "{indent}{indent}<transition event=\"{}\" target=\"{}\"", event, transition.to)?;
+                write!(
+                    output,
+                    "{}",
+                    generate_xml_comment(&transition.annotations, indent.repeat(2).as_str())
+                )?;
+                write!(
+                    output,
+                    "{indent}{indent}<transition event=\"{}\" target=\"{}\"",
+                    event, transition.to
+                )?;
                 if let Some(cond) = guard_cond {
                     // Assume guard function name directly maps to a condition expression for now
                     write!(output, " cond=\"guard_{}()\"", cond)?; // Wrap in placeholder function call
@@ -213,7 +290,11 @@ pub(crate) fn generate_scxml_internal(
 
                 // Add actions as executable content within <script>
                 for action_name in actions {
-                    let action_content = generate_scxml_action_content(&action_name, &ast.context, indent.repeat(3).as_str());
+                    let action_content = generate_scxml_action_content(
+                        &action_name,
+                        &ast.context,
+                        indent.repeat(3).as_str(),
+                    );
                     writeln!(output, "{}", action_content)?; // Write the generated <assign> or <log>
                 }
 
@@ -235,4 +316,4 @@ impl From<std::fmt::Error> for CodegenError {
     fn from(err: std::fmt::Error) -> Self {
         CodegenError::GenerationError(format!("Failed to write to string: {}", err))
     }
-} 
+}

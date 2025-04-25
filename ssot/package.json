@@ -1,6 +1,6 @@
 {
   "name": "ssot",
-  "displayName": "SSOT Language Support",
+  "displayName": "SSOT (Single Source of Truth) Language Support",
   "description": "Provides language support for the .ssot Finite State Machine DSL.",
   "publisher": "gftd",
   "version": "0.0.1",

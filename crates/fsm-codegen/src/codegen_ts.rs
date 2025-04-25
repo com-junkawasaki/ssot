@@ -71,7 +71,11 @@ pub(crate) fn generate_typescript_types_internal(
             let payload_interface_name = format!("{}Payload", type_name);
 
             // JSDoc indent level 0
-            write!(event_payload_interfaces, "{}", generate_jsdoc(&event.annotations, 0))?;
+            write!(
+                event_payload_interfaces,
+                "{}",
+                generate_jsdoc(&event.annotations, 0)
+            )?;
             writeln!(
                 event_payload_interfaces,
                 "export interface {} {{",
@@ -79,10 +83,18 @@ pub(crate) fn generate_typescript_types_internal(
             )?;
             for field in &event.fields {
                 // JSDoc indent level 1
-                write!(event_payload_interfaces, "{}", generate_jsdoc(&field.annotations, 1))?;
+                write!(
+                    event_payload_interfaces,
+                    "{}",
+                    generate_jsdoc(&field.annotations, 1)
+                )?;
                 let field_name = &field.name;
                 let field_ts_type = map_field_type_to_ts_type(&field.field_type);
-                writeln!(event_payload_interfaces, "  {}: {};", field_name, field_ts_type)?;
+                writeln!(
+                    event_payload_interfaces,
+                    "  {}: {};",
+                    field_name, field_ts_type
+                )?;
             }
             writeln!(event_payload_interfaces, "}}\n")?;
         }
@@ -110,14 +122,15 @@ pub(crate) fn generate_typescript_types_internal(
             writeln!(
                 ts_code,
                 "{} {{ type: \"{}\", payload: {} }}",
-                prefix,
-                type_name,
-                payload_interface_name
+                prefix, type_name, payload_interface_name
             )?;
         }
     }
     if ast.events.is_empty() {
-        writeln!(ts_code, "    {{ type: \"__PlaceholderEvent__\" }}; // No events defined")?;
+        writeln!(
+            ts_code,
+            "    {{ type: \"__PlaceholderEvent__\" }}; // No events defined"
+        )?;
     } else {
         // Add semicolon only if there are events
         ts_code.pop(); // Remove last newline
@@ -162,4 +175,4 @@ impl From<std::fmt::Error> for CodegenError {
     fn from(err: std::fmt::Error) -> Self {
         CodegenError::GenerationError(format!("Failed to write to string: {}", err))
     }
-} 
+}

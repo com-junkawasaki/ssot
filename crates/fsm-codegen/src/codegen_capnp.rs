@@ -1,7 +1,7 @@
 //! Cap'n Proto schema generation logic.
 
 use crate::CodegenError;
-use fsm_dsl::ast::{AnnotationValue, FieldType, Ident, StateMachine, SsotFile};
+use fsm_dsl::ast::{AnnotationValue, FieldType, Ident, SsotFile, StateMachine};
 
 // Function to map DSL FieldType to Cap'n Proto type string
 fn map_field_type_to_capnp_type(field_type: &FieldType) -> String {
@@ -85,7 +85,10 @@ pub(crate) fn generate_capnp_schema_internal(
         if !event.fields.is_empty() {
             let struct_name = format!("{}Payload", event.name); // Use PascalCase? Cap'n Proto uses camelCase generally
             event_payload_structs.push_str(&generate_capnp_comment(&event.annotations, "")); // Add comment for struct
-            event_payload_structs.push_str(&format!("struct {} @{} {{\n", struct_name, struct_id_counter));
+            event_payload_structs.push_str(&format!(
+                "struct {} @{} {{\n",
+                struct_name, struct_id_counter
+            ));
             struct_id_counter += 1; // Increment for the next struct
             for field in &event.fields {
                 let field_capnp_type = map_field_type_to_capnp_type(&field.field_type);
@@ -93,9 +96,7 @@ pub(crate) fn generate_capnp_schema_internal(
                 event_payload_structs.push_str(&format!(
                     "  {} @{} :{};
 ",
-                    field.name,
-                    field.ordinal,
-                    field_capnp_type
+                    field.name, field.ordinal, field_capnp_type
                 ));
             }
             event_payload_structs.push_str("}\n\n");
@@ -111,14 +112,15 @@ pub(crate) fn generate_capnp_schema_internal(
         let event_name_capnp = &event.name; // Use original name or convert case?
         capnp_code.push_str(&generate_capnp_comment(&event.annotations, "  ")); // Use event annotations for union member
         if event.fields.is_empty() {
-            capnp_code.push_str(&format!("  {} @{} :Void;\n", event_name_capnp, event.ordinal));
+            capnp_code.push_str(&format!(
+                "  {} @{} :Void;\n",
+                event_name_capnp, event.ordinal
+            ));
         } else {
             let payload_struct_name = format!("{}Payload", event.name);
             capnp_code.push_str(&format!(
                 "  {} @{} :{};\n",
-                event_name_capnp,
-                event.ordinal,
-                payload_struct_name
+                event_name_capnp, event.ordinal, payload_struct_name
             ));
         }
     }
@@ -148,4 +150,4 @@ fn find_annotation_value<'a>(
         .iter()
         .find(|a| a.name == name)
         .and_then(|a| a.value.as_ref())
-} 
+}

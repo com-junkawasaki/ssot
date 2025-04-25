@@ -3,9 +3,9 @@ use fsm_dsl::ast::{
     Annotation,
     AnnotationValue,
     FieldType,
+    SsotFile, // Import SsotFile to access file_id
     StateMachine,
     TransitionElement,
-    SsotFile, // Import SsotFile to access file_id
 };
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -13,9 +13,9 @@ use std::collections::HashSet;
 // Needed for parsing generated code before formatting // For collecting unique guard/action names
 
 pub mod codegen_capnp; // Add new module
-pub mod codegen_ts;   // Add new module
-pub mod codegen_xstate; // Add new module for XState
-pub mod codegen_scxml;  // Add new module for SCXML
+pub mod codegen_scxml;
+pub mod codegen_ts; // Add new module
+pub mod codegen_xstate; // Add new module for XState // Add new module for SCXML
 
 // Helper to find annotation value by name
 fn find_annotation_value<'a>(
@@ -225,14 +225,52 @@ fn generate_impl_block(
                 None => quote! {},
             };
 
+            // Find the exit actions for the 'from' state
+            let exit_action_calls = ast
+                .states
+                .iter()
+                .find(|s| &s.name == from_state_ident)
+                .map_or(quote! {}, |state| {
+                    let calls: Vec<TokenStream> = state
+                        .exit_actions
+                        .iter()
+                        .map(|action_fn| {
+                            quote! { next_state_machine.#action_fn(); }
+                        })
+                        .collect();
+                    quote! { #(#calls)* }
+                });
+
+            // Find the entry actions for the 'to' state
+            let entry_action_calls = ast
+                .states
+                .iter()
+                .find(|s| &s.name == to_state_ident)
+                .map_or(quote! {}, |state| {
+                    let calls: Vec<TokenStream> = state
+                        .entry_actions
+                        .iter()
+                        .map(|action_fn| {
+                            quote! { next_state_machine.#action_fn(); }
+                        })
+                        .collect();
+                    quote! { #(#calls)* }
+                });
+
             // Return Ok containing the generated match arm code
             Ok(quote! {
                 (#state_enum_name::#from_state_ident, #event_pattern) => {
                      #guard_check
-                    // Clone self first as we might need it if guard fails or for actions
+                    // Clone self first
                     let mut next_state_machine = self.clone();
+                    // Call exit actions for the current state *before* changing state
+                    #exit_action_calls
+                    // Change state
                     next_state_machine.current_state = #state_enum_name::#to_state_ident;
-                     #action_call // Call action on the potentially modified next_state_machine
+                    // Call transition action
+                     #action_call
+                     // Call entry actions for the new state *after* changing state and calling transition action
+                     #entry_action_calls
                      Ok(next_state_machine)
                 }
             })
@@ -240,8 +278,15 @@ fn generate_impl_block(
         .collect::<Result<Vec<_>, _>>()?; // Collect Results, propagating CodegenError
 
     // Determine the trait bound for on_event
-    let on_event_trait_bound = if guards.is_empty() && actions.is_empty() {
-        quote! {} // No trait bound needed if no callbacks
+    // Update trait bound condition to include entry/exit actions if not already covered
+    let on_event_trait_bound = if guards.is_empty()
+        && actions.is_empty()
+        && ast
+            .states
+            .iter()
+            .all(|s| s.entry_actions.is_empty() && s.exit_actions.is_empty())
+    {
+        quote! {} // No trait bound needed if no callbacks at all
     } else {
         quote! { where Self: #callbacks_trait_name }
     };
@@ -404,9 +449,11 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
     };
 
     // --- Callback Trait Generation ---
-    // Collect unique guard and action function Idents from transitions
+    // Collect unique guard, action, entry, and exit function Idents
     let mut guards: HashSet<&proc_macro2::Ident> = HashSet::new();
     let mut actions: HashSet<&proc_macro2::Ident> = HashSet::new();
+    let mut entry_actions: HashSet<&proc_macro2::Ident> = HashSet::new();
+    let mut exit_actions: HashSet<&proc_macro2::Ident> = HashSet::new();
     let mut callback_signatures: Vec<TokenStream> = Vec::new();
 
     // Store mapping from function name to its associated event AST item for signature generation
@@ -453,6 +500,16 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
         }
     }
 
+    // Collect entry/exit actions from states
+    for state in &ast.states {
+        for entry_fn_ident in &state.entry_actions {
+            entry_actions.insert(entry_fn_ident);
+        }
+        for exit_fn_ident in &state.exit_actions {
+            exit_actions.insert(exit_fn_ident);
+        }
+    }
+
     // Generate guard signatures
     for guard_fn_ident in &guards {
         // Find the most specific event type if possible, otherwise use generic &Event
@@ -477,11 +534,33 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
         });
     }
 
+    // Generate entry action signatures
+    for entry_fn_ident in &entry_actions {
+        // Entry actions triggered after state change, takes mutable self
+        // TODO: Consider adding context/state reference if needed
+        callback_signatures.push(quote! {
+            fn #entry_fn_ident(&mut self);
+        });
+    }
+
+    // Generate exit action signatures
+    for exit_fn_ident in &exit_actions {
+        // Exit actions triggered before state change, takes mutable self
+        // TODO: Consider adding context/state reference if needed
+        callback_signatures.push(quote! {
+            fn #exit_fn_ident(&mut self);
+        });
+    }
+
     let callbacks_trait_doc_comment = generate_rust_doc_comment(&[]); // TODO: Use machine annotations?
-    let callbacks_trait = if !guards.is_empty() || !actions.is_empty() {
+    let callbacks_trait = if !guards.is_empty()
+        || !actions.is_empty()
+        || !entry_actions.is_empty()
+        || !exit_actions.is_empty()
+    {
         quote! {
             #callbacks_trait_doc_comment
-            /// Trait defining the required guard and action callbacks for the state machine.
+            /// Trait defining the required guard, action, entry, and exit callbacks for the state machine.
             pub trait #callbacks_trait_name {
                 #(#callback_signatures)*
             }
@@ -576,7 +655,7 @@ fn determine_callback_event_signature<'a>(
 /// A `Result` containing the Cap'n Proto schema string or a `CodegenError`.
 pub fn generate_capnp_schema(
     file_ast: &SsotFile, // Updated signature
-    machine_ast: &StateMachine
+    machine_ast: &StateMachine,
 ) -> Result<String, CodegenError> {
     // Use the internal function from the capnp module
     codegen_capnp::generate_capnp_schema_internal(file_ast, machine_ast)
@@ -623,8 +702,10 @@ pub fn generate_scxml(ast: &StateMachine) -> Result<String, CodegenError> {
 // Error type
 #[derive(Debug, thiserror::Error)]
 pub enum CodegenError {
-    #[error("Failed to parse generated code: {0}\n--- Generated Code ---
-{1}")]
+    #[error(
+        "Failed to parse generated code: {0}\n--- Generated Code ---
+{1}"
+    )]
     SynParseError(syn::Error, String),
     #[error("AST validation error: {0}")]
     AstValidationError(String),
@@ -1051,14 +1132,19 @@ mod tests {
     #[test]
     fn generates_placeholder_capnp() {
         let ast = create_test_ast(); // Reuse existing test AST setup
-        let file_ast = fsm_dsl::ast::SsotFile { // Create a dummy SsotFile for the test
-             file_id: 0x123456789ABCDEF0,
-             package_declaration: None,
-             top_level_annotations: vec![],
-             state_machines: vec![ast.clone()], // Assuming create_test_ast returns StateMachine
+        let file_ast = fsm_dsl::ast::SsotFile {
+            // Create a dummy SsotFile for the test
+            file_id: 0x123456789ABCDEF0,
+            package_declaration: None,
+            top_level_annotations: vec![],
+            state_machines: vec![ast.clone()], // Assuming create_test_ast returns StateMachine
         };
         let result = crate::generate_capnp_schema(&file_ast, &ast); // Pass both args
-        assert!(result.is_ok(), "Cap'n Proto generation failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Cap'n Proto generation failed: {:?}",
+            result.err()
+        );
         let schema = result.unwrap();
         // Basic check for placeholder content -> Updated checks
         assert!(schema.contains("@0x123456789abcdef0")); // Check for file ID format
@@ -1069,23 +1155,33 @@ mod tests {
         assert!(schema.contains("userId @0 :UInt64;")); // Field in payload
         assert!(schema.contains("union Event @1 {"));
         assert!(schema.contains("start @0 :StartPayload;")); // Event with payload
-        assert!(schema.contains("stop @1 :Void;"));       // Event without payload
-        println!("--- Generated Cap'n Proto Schema ---
-{}", schema); // For inspection
+        assert!(schema.contains("stop @1 :Void;")); // Event without payload
+        println!(
+            "--- Generated Cap'n Proto Schema ---
+{}",
+            schema
+        ); // For inspection
     }
 
     #[test]
     fn generates_placeholder_typescript() {
         let ast = create_test_ast(); // Reuse existing test AST setup
         let result = crate::generate_typescript_types(&ast);
-        assert!(result.is_ok(), "TypeScript generation failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "TypeScript generation failed: {:?}",
+            result.err()
+        );
         let types = result.unwrap();
         // Basic check for placeholder content
         assert!(types.contains("// Placeholder TypeScript types"));
         assert!(types.contains("export type State"));
         assert!(types.contains("export type Event"));
-        println!("--- Generated TypeScript Types (Placeholder) ---
-{}", types); // For inspection
+        println!(
+            "--- Generated TypeScript Types (Placeholder) ---
+{}",
+            types
+        ); // For inspection
     }
 
     // Helper to create Ident for tests
@@ -1097,23 +1193,33 @@ mod tests {
     fn create_annotated_test_ast() -> StateMachine {
         StateMachine {
             name: ident("AnnotatedMachine"),
-            annotations: vec![Annotation {
-                name: ident("description"),
-                value: Some(AnnotationValue::StringLiteral("This is the main machine.".to_string())),
-            }, Annotation { // Keep initial for functionality test
-                name: ident("initial"),
-                value: Some(AnnotationValue::Identifier(ident("Idle"))),
-            }],
+            annotations: vec![
+                Annotation {
+                    name: ident("description"),
+                    value: Some(AnnotationValue::StringLiteral(
+                        "This is the main machine.".to_string(),
+                    )),
+                },
+                Annotation {
+                    // Keep initial for functionality test
+                    name: ident("initial"),
+                    value: Some(AnnotationValue::Identifier(ident("Idle"))),
+                },
+            ],
             events: vec![
                 MessageItem {
-                    annotations: vec![Annotation { // Annotation on event
+                    annotations: vec![Annotation {
+                        // Annotation on event
                         name: ident("description"),
-                        value: Some(AnnotationValue::StringLiteral("Starts the machine.".to_string())),
+                        value: Some(AnnotationValue::StringLiteral(
+                            "Starts the machine.".to_string(),
+                        )),
                     }],
                     name: ident("Start"),
                     ordinal: 0,
                     fields: vec![FieldDef {
-                        annotations: vec![Annotation { // Annotation on field
+                        annotations: vec![Annotation {
+                            // Annotation on field
                             name: ident("description"),
                             value: Some(AnnotationValue::StringLiteral("The user ID.".to_string())),
                         }],
@@ -1123,9 +1229,12 @@ mod tests {
                     }],
                 },
                 MessageItem {
-                     annotations: vec![Annotation { // Annotation on event
+                    annotations: vec![Annotation {
+                        // Annotation on event
                         name: ident("description"),
-                        value: Some(AnnotationValue::StringLiteral("Stops the machine.".to_string())),
+                        value: Some(AnnotationValue::StringLiteral(
+                            "Stops the machine.".to_string(),
+                        )),
                     }],
                     name: ident("Stop"),
                     ordinal: 1,
@@ -1134,7 +1243,8 @@ mod tests {
             ],
             states: vec![
                 StateItem {
-                    annotations: vec![Annotation { // Annotation on state
+                    annotations: vec![Annotation {
+                        // Annotation on state
                         name: ident("description"),
                         value: Some(AnnotationValue::StringLiteral("Waiting state.".to_string())),
                     }],
@@ -1142,7 +1252,8 @@ mod tests {
                     ordinal: 0,
                 },
                 StateItem {
-                    annotations: vec![Annotation { // Annotation on state
+                    annotations: vec![Annotation {
+                        // Annotation on state
                         name: ident("description"),
                         value: Some(AnnotationValue::StringLiteral("Active state.".to_string())),
                     }],
@@ -1155,14 +1266,20 @@ mod tests {
                     name: None,
                     from: ident("Idle"),
                     to: ident("Running"),
-                    elements: vec![TransitionElement::On { ordinal: 0, event: ident("Start") }],
+                    elements: vec![TransitionElement::On {
+                        ordinal: 0,
+                        event: ident("Start"),
+                    }],
                     annotations: vec![],
                 },
                 TransitionItem {
                     name: None,
                     from: ident("Running"),
                     to: ident("Idle"),
-                    elements: vec![TransitionElement::On { ordinal: 1, event: ident("Stop") }],
+                    elements: vec![TransitionElement::On {
+                        ordinal: 1,
+                        event: ident("Stop"),
+                    }],
                     annotations: vec![],
                 },
             ],
@@ -1178,7 +1295,9 @@ mod tests {
         println!("--- Generated Rust Code with Docs ---\n{}", code); // For inspection
 
         // Check for struct/enum docs
-        assert!(code.contains("#[doc = \"This is the main machine.\"]\npub struct AnnotatedMachine"));
+        assert!(
+            code.contains("#[doc = \"This is the main machine.\"]\npub struct AnnotatedMachine")
+        );
         assert!(code.contains("#[doc = \"Waiting state.\"]\n    Idle,"));
         assert!(code.contains("#[doc = \"Active state.\"]\n    Running,"));
         assert!(code.contains("#[doc = \"Starts the machine.\"]\npub struct StartEventPayload"));
@@ -1193,31 +1312,39 @@ mod tests {
     fn generates_capnp_schema_with_comments() {
         let machine_ast = create_annotated_test_ast();
         let file_ast = fsm_dsl::ast::SsotFile {
-             file_id: 0xdeadbeefcafe0001,
-             package_declaration: None,
-             top_level_annotations: vec![],
-             state_machines: vec![machine_ast.clone()],
+            file_id: 0xdeadbeefcafe0001,
+            package_declaration: None,
+            top_level_annotations: vec![],
+            state_machines: vec![machine_ast.clone()],
         };
         let result = generate_capnp_schema(&file_ast, &machine_ast);
-        assert!(result.is_ok(), "Capnp generation failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Capnp generation failed: {:?}",
+            result.err()
+        );
         let schema = result.unwrap();
         println!("--- Generated Capnp Schema with Comments ---\n{}", schema); // For inspection
 
         // Check for comments
         assert!(schema.contains("# This is the main machine.\n# Cap'n Proto schema generated")); // Machine comment
-        assert!(schema.contains("# Waiting state.\n  Idle @0;"));        // State comment
-        assert!(schema.contains("# Active state.\n  Running @1;"));       // State comment
+        assert!(schema.contains("# Waiting state.\n  Idle @0;")); // State comment
+        assert!(schema.contains("# Active state.\n  Running @1;")); // State comment
         assert!(schema.contains("# Starts the machine.\nstruct StartPayload @2 {")); // Struct comment
         assert!(schema.contains("# The user ID.\n    userId @0 :UInt64;")); // Field comment
         assert!(schema.contains("# Starts the machine.\n  Start @0 :StartPayload;")); // Union member comment (from event)
-        assert!(schema.contains("# Stops the machine.\n  Stop @1 :Void;"));        // Union member comment (from event)
+        assert!(schema.contains("# Stops the machine.\n  Stop @1 :Void;")); // Union member comment (from event)
     }
 
     #[test]
     fn generates_typescript_types_with_jsdoc() {
         let ast = create_annotated_test_ast();
         let result = generate_typescript_types(&ast);
-        assert!(result.is_ok(), "TypeScript generation failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "TypeScript generation failed: {:?}",
+            result.err()
+        );
         let types = result.unwrap();
         println!("--- Generated TypeScript Types with JSDoc ---\n{}", types); // For inspection
 
@@ -1227,7 +1354,10 @@ mod tests {
         assert!(types.contains("/**\n * Active state.\n */\n  | \"Running\"")); // State comment
         assert!(types.contains("/**\n * Starts the machine.\n */\nexport interface StartPayload {")); // Payload interface comment
         assert!(types.contains("/**\n   * The user ID.\n   */\n  userId: bigint;")); // Field comment (check indentation)
-        assert!(types.contains("/**\n * Starts the machine.\n */\n  | { type: \"Start\", payload: StartPayload }")); // Event union comment
-        assert!(types.contains("/**\n * Stops the machine.\n */\n  | { type: \"Stop\" }")); // Event union comment
+        assert!(types.contains(
+            "/**\n * Starts the machine.\n */\n  | { type: \"Start\", payload: StartPayload }"
+        )); // Event union comment
+        assert!(types.contains("/**\n * Stops the machine.\n */\n  | { type: \"Stop\" }"));
+        // Event union comment
     }
 }

@@ -79,7 +79,7 @@ pub struct StateItem {
     pub ordinal: u64,
     pub entry_actions: Vec<Ident>, // Added: Actions to execute on entry
     pub exit_actions: Vec<Ident>,  // Added: Actions to execute on exit
-    // pub annotations: Vec<Annotation>, // Future: Annotations on states?
+                                   // pub annotations: Vec<Annotation>, // Future: Annotations on states?
 }
 
 // --- Events (Messages) ---

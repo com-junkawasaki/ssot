@@ -1,15 +1,17 @@
-use lsp_server::{Connection, ExtractError, Message, Notification, /* Request, RequestId, */ Response};
-use lsp_types::{
-    notification::{Notification as _, DidChangeTextDocument, DidOpenTextDocument},
-    /* request::Request as _, */
-    InitializeParams, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
-    Diagnostic, DiagnosticSeverity, Position, Range, Url, NumberOrString
+use lsp_server::{
+    Connection, ExtractError, Message, Notification, /* Request, RequestId, */ Response,
 };
+use lsp_types::{
+    notification::{DidChangeTextDocument, DidOpenTextDocument, Notification as _},
+    Diagnostic, DiagnosticSeverity, /* request::Request as _, */
+    InitializeParams, NumberOrString, Position, Range, ServerCapabilities,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Url,
+};
+use once_cell::sync::Lazy;
 use pest::Parser;
 use pest_derive::Parser;
 use serde_json::Value;
-use std::{error::Error, collections::HashMap, sync::Mutex};
-use once_cell::sync::Lazy; // For global document cache
+use std::{collections::HashMap, error::Error, sync::Mutex}; // For global document cache
 
 #[derive(Parser)]
 #[grammar = "ssot.pest"]
@@ -57,17 +59,16 @@ fn main_loop(
                 eprintln!("Received request: {:?}", req);
                 // Handle other requests later (e.g., completion, hover)
                 // For now, ignore unknown requests
-                 let resp = Response {
-                     id: req.id,
-                     result: None,
-                     error: Some(lsp_server::ResponseError {
-                         code: lsp_server::ErrorCode::MethodNotFound as i32,
-                         message: format!("Request method not supported: {}", req.method),
-                         data: None,
-                     }),
-                 };
-                 connection.sender.send(Message::Response(resp))?;
-
+                let resp = Response {
+                    id: req.id,
+                    result: None,
+                    error: Some(lsp_server::ResponseError {
+                        code: lsp_server::ErrorCode::MethodNotFound as i32,
+                        message: format!("Request method not supported: {}", req.method),
+                        data: None,
+                    }),
+                };
+                connection.sender.send(Message::Response(resp))?;
             }
             Message::Response(resp) => {
                 eprintln!("Received response: {:?}", resp);
@@ -80,27 +81,28 @@ fn main_loop(
                             cast_notification::<lsp_types::notification::DidOpenTextDocument>(not)?;
                         let uri = params.text_document.uri;
                         let content = params.text_document.text;
-                         eprintln!("Opened document: {}", uri);
+                        eprintln!("Opened document: {}", uri);
                         {
                             let mut cache = DOCUMENT_CACHE.lock().unwrap();
                             cache.insert(uri.clone(), content.clone());
                         }
-                         validate_document(&connection.sender, uri, &content)?;
-
+                        validate_document(&connection.sender, uri, &content)?;
                     }
                     DidChangeTextDocument::METHOD => {
                         let params: lsp_types::DidChangeTextDocumentParams =
-                            cast_notification::<lsp_types::notification::DidChangeTextDocument>(not)?;
+                            cast_notification::<lsp_types::notification::DidChangeTextDocument>(
+                                not,
+                            )?;
                         let uri = params.text_document.uri;
                         // Assuming TextDocumentSyncKind::FULL, the last content is the full new content
                         if let Some(change) = params.content_changes.last() {
-                             let content = change.text.clone();
+                            let content = change.text.clone();
                             eprintln!("Changed document: {}", uri);
-                             {
+                            {
                                 let mut cache = DOCUMENT_CACHE.lock().unwrap();
                                 cache.insert(uri.clone(), content.clone());
                             }
-                             validate_document(&connection.sender, uri, &content)?;
+                            validate_document(&connection.sender, uri, &content)?;
                         }
                     }
                     // Handle other notifications like DidSaveTextDocument, DidCloseTextDocument
@@ -128,25 +130,36 @@ fn validate_document(
     eprintln!("Validating document: {}", uri);
     let diagnostics = match SsotParser::parse(Rule::ssot_file, content) {
         Ok(_) => {
-             eprintln!("Validation OK for {}", uri);
-             vec![] // No errors
+            eprintln!("Validation OK for {}", uri);
+            vec![] // No errors
         }
         Err(e) => {
             eprintln!("Validation error for {}: {}", uri, e);
             // Convert Pest error to LSP Diagnostic
             let mut diagnostics = vec![];
             let (start_line, start_col, end_line, end_col) = match e.line_col {
-                 pest::error::LineColLocation::Pos((line, col)) => (line -1 , col -1, line -1, col), // Pest is 1-based, LSP is 0-based
-                 pest::error::LineColLocation::Span((start_line, start_col),(end_line, end_col)) => (start_line -1 , start_col -1 , end_line -1 , end_col -1),
+                pest::error::LineColLocation::Pos((line, col)) => {
+                    (line - 1, col - 1, line - 1, col)
+                } // Pest is 1-based, LSP is 0-based
+                pest::error::LineColLocation::Span(
+                    (start_line, start_col),
+                    (end_line, end_col),
+                ) => (start_line - 1, start_col - 1, end_line - 1, end_col - 1),
             };
 
             diagnostics.push(Diagnostic {
                 range: Range {
-                    start: Position { line: start_line as u32, character: start_col as u32 },
-                    end: Position { line: end_line as u32, character: end_col as u32 },
+                    start: Position {
+                        line: start_line as u32,
+                        character: start_col as u32,
+                    },
+                    end: Position {
+                        line: end_line as u32,
+                        character: end_col as u32,
+                    },
                 },
                 severity: Some(DiagnosticSeverity::ERROR),
-                 code: Some(NumberOrString::String("syntax-error".to_string())), // Example error code
+                code: Some(NumberOrString::String("syntax-error".to_string())), // Example error code
                 source: Some("ssot-linter".to_string()),
                 message: e.variant.message().to_string(), // Get the core error message
                 ..Default::default()

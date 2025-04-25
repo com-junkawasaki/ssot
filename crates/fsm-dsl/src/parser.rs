@@ -231,7 +231,7 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
     let mut states = Vec::new();
     let mut events = Vec::new();
     let mut transitions = Vec::new();
-    let mut context_fields = Vec::new();
+    let context_fields = Vec::new();
 
     // Iterate over items inside the stateMachine block {}
     for item_pair in inner {
@@ -281,7 +281,7 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
                 println!("    -> Matched Rule::transitions_block");
                 transitions = parse_transitions_block(actual_item_pair)?;
             }
-            Rule::context_block => context_fields = parse_context_block(actual_item_pair)?,
+            // Rule::context_block => context_fields = parse_context_block(actual_item_pair)?,
             Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
             // EOI might appear if the block is empty or at the end
             Rule::EOI => break,
@@ -324,7 +324,7 @@ fn parse_state_enum(pair: Pair<Rule>) -> Result<Vec<StateItem>, ParseError> {
 }
 
 fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
-    let mut inner = pair.into_inner();
+    let inner = pair.into_inner();
     let mut annotations = Vec::new();
     let mut name: Option<Ident> = None;
     let mut ordinal: Option<u64> = None;
@@ -336,9 +336,35 @@ fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
             Rule::annotation => annotations.push(parse_annotation(item_pair)?),
             Rule::ordinal => ordinal = Some(parse_ordinal(item_pair)?),
             Rule::identifier => name = Some(parse_ident(item_pair)?),
-            Rule::state_entry_actions => entry_actions = parse_entry_exit_actions(item_pair)?,
-            Rule::state_exit_actions => exit_actions = parse_entry_exit_actions(item_pair)?,
-            Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
+            // Handle the new state_body rule
+            Rule::state_body => {
+                for body_item_pair in item_pair.into_inner() {
+                    match body_item_pair.as_rule() {
+                        Rule::entry_action => {
+                            // Get the identifier inside entry_action
+                            let ident = parse_ident(body_item_pair.into_inner().next().unwrap())?;
+                            entry_actions.push(ident);
+                        }
+                        Rule::exit_action => {
+                            // Get the identifier inside exit_action
+                            let ident = parse_ident(body_item_pair.into_inner().next().unwrap())?;
+                            exit_actions.push(ident);
+                        }
+                        Rule::WHITESPACE | Rule::COMMENT | Rule::optional_whitespace => { /* Ignore */
+                        }
+                        _ => {
+                            return Err(ParseError::UnexpectedRule {
+                                rule: body_item_pair.as_rule(),
+                                context: "state_body definition".to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+            // Remove old rules if they existed
+            // Rule::state_entry_actions => entry_actions = parse_entry_exit_actions(item_pair)?,
+            // Rule::state_exit_actions => exit_actions = parse_entry_exit_actions(item_pair)?,
+            Rule::WHITESPACE | Rule::COMMENT | Rule::optional_whitespace => { /* ignore */ }
             _ => {
                 return Err(ParseError::UnexpectedRule {
                     rule: item_pair.as_rule(),
@@ -351,31 +377,11 @@ fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
     Ok(ast::StateItem {
         annotations,
         name: name.ok_or_else(|| ParseError::MissingElement("state name".to_string()))?,
-        ordinal: ordinal.ok_or_else(|| ParseError::MissingElement("state ordinal (@N)".to_string()))?,
+        ordinal: ordinal
+            .ok_or_else(|| ParseError::MissingElement("state ordinal (@N)".to_string()))?,
         entry_actions,
         exit_actions,
     })
-}
-
-fn parse_entry_exit_actions(pair: Pair<Rule>) -> Result<Vec<Ident>, ParseError> {
-    // pair matches state_entry_actions or state_exit_actions
-    // Inner rule should be ident_list
-    if let Some(ident_list_pair) = pair.into_inner().next() {
-        if ident_list_pair.as_rule() == Rule::ident_list {
-            ident_list_pair
-                .into_inner()
-                .map(|ident_pair| parse_ident(ident_pair))
-                .collect()
-        } else {
-            Err(ParseError::UnexpectedRule {
-                rule: ident_list_pair.as_rule(),
-                context: "inside entry/exit actions (expected ident_list)".to_string(),
-            })
-        }
-    } else {
-        // This case should not happen if grammar requires `/` and ident_list, but handle defensively
-        Ok(Vec::new()) // Return empty vec if no ident_list found
-    }
 }
 
 fn parse_event_definitions(pair: Pair<Rule>) -> Result<Vec<MessageItem>, ParseError> {
@@ -392,14 +398,25 @@ fn parse_event_struct(pair: Pair<Rule>) -> Result<MessageItem, ParseError> {
     // Peek and parse optional annotations
     if let Some(first) = inner.peek() {
         if first.as_rule() == Rule::optional_annotations {
-            annotations = first.into_inner().map(parse_annotation).collect::<Result<_,_>>()?;
+            annotations = first
+                .into_inner()
+                .map(parse_annotation)
+                .collect::<Result<_, _>>()?;
             inner.next();
         }
     }
 
     // Rule: "event" ~ ident ~ "@" ~ ord ~ "{" ~ fields* ~ "}"
-    let name = parse_ident(inner.next().ok_or(ParseError::MissingElement("event name".to_string()))?)?; // Consumes ident
-    let ordinal = parse_ordinal(inner.next().ok_or(ParseError::MissingElement("event ordinal".to_string()))?)?; // Consumes ordinal
+    let name = parse_ident(
+        inner
+            .next()
+            .ok_or(ParseError::MissingElement("event name".to_string()))?,
+    )?; // Consumes ident
+    let ordinal = parse_ordinal(
+        inner
+            .next()
+            .ok_or(ParseError::MissingElement("event ordinal".to_string()))?,
+    )?; // Consumes ordinal
 
     let mut fields = Vec::new();
     // Iterate through the rest: fields inside {}
@@ -433,20 +450,36 @@ fn parse_event_field(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
     // Peek and parse optional annotations
     if let Some(first) = inner.peek() {
         if first.as_rule() == Rule::optional_annotations {
-            annotations = first.into_inner().map(parse_annotation).collect::<Result<_,_>>()?;
+            annotations = first
+                .into_inner()
+                .map(parse_annotation)
+                .collect::<Result<_, _>>()?;
             inner.next();
         }
     }
 
-    let name = parse_ident(inner.next().ok_or(ParseError::MissingElement("field name".to_string()))?)?;
-    let ordinal = parse_ordinal(inner.next().ok_or(ParseError::MissingElement("field ordinal".to_string()))?)?;
+    let name = parse_ident(
+        inner
+            .next()
+            .ok_or(ParseError::MissingElement("field name".to_string()))?,
+    )?;
+    let ordinal = parse_ordinal(
+        inner
+            .next()
+            .ok_or(ParseError::MissingElement("field ordinal".to_string()))?,
+    )?;
 
-    let type_pair = inner.next().ok_or(ParseError::MissingElement("field type".to_string()))?;
+    let type_pair = inner
+        .next()
+        .ok_or(ParseError::MissingElement("field type".to_string()))?;
     let actual_type_pair = if type_pair.as_rule() == Rule::r#type {
-        type_pair.into_inner().next().ok_or(ParseError::UnexpectedRule {
-            rule: Rule::r#type,
-            context: "empty inner type".to_string(),
-        })?
+        type_pair
+            .into_inner()
+            .next()
+            .ok_or(ParseError::UnexpectedRule {
+                rule: Rule::r#type,
+                context: "empty inner type".to_string(),
+            })?
     } else {
         type_pair
     };
@@ -764,64 +797,10 @@ fn parse_transitions_block(pair: Pair<Rule>) -> Result<Vec<TransitionItem>, Pars
     Ok(parsed_transitions)
 }
 
-fn parse_context_block(pair: Pair<Rule>) -> Result<Vec<FieldDef>, ParseError> {
-    // pair matches context_block: "context" ~ "{" ~ field_def* ~ "}"
-    println!("Parsing context block...");
-    let mut fields = Vec::new();
-    for item_pair in pair.into_inner() {
-        match item_pair.as_rule() {
-            Rule::field_def => fields.push(parse_field_def(item_pair)?),
-            Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
-            _ => {
-                return Err(ParseError::UnexpectedRule {
-                    rule: item_pair.as_rule(),
-                    context: "context block definition".to_string(),
-                });
-            }
-        }
-    }
-    println!("Finished parsing context block with {} fields", fields.len());
-    Ok(fields)
-}
-
-fn parse_field_def(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
-    let mut inner = pair.into_inner();
-    let mut annotations = Vec::new();
-
-    // Peek and parse optional annotations
-    if let Some(first) = inner.peek() {
-        if first.as_rule() == Rule::optional_annotations {
-            annotations = first.into_inner().map(parse_annotation).collect::<Result<_,_>>()?;
-            inner.next();
-        }
-    }
-
-    let name = parse_ident(inner.next().ok_or(ParseError::MissingElement("field name".to_string()))?)?;
-    let ordinal = parse_ordinal(inner.next().ok_or(ParseError::MissingElement("field ordinal".to_string()))?)?;
-
-    let type_pair = inner.next().ok_or(ParseError::MissingElement("field type".to_string()))?;
-    let actual_type_pair = if type_pair.as_rule() == Rule::r#type {
-        type_pair.into_inner().next().ok_or(ParseError::UnexpectedRule {
-            rule: Rule::r#type,
-            context: "empty inner type".to_string(),
-        })?
-    } else {
-        type_pair
-    };
-    let field_type = parse_field_type(actual_type_pair)?;
-
-    Ok(FieldDef {
-        annotations,
-        name,
-        ordinal,
-        field_type,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{self, TransitionItem};
+    
     use pretty_assertions::assert_eq;
     use proc_macro2::Ident;
     use proc_macro2::Span;
@@ -882,7 +861,10 @@ mod tests {
         let ssot_file = result.unwrap();
 
         assert_eq!(ssot_file.file_id, 0x123456789ABCDEF0);
-        assert_eq!(ssot_file.package_declaration, Some("my.package".to_string()));
+        assert_eq!(
+            ssot_file.package_declaration,
+            Some("my.package".to_string())
+        );
         assert!(!ssot_file.top_level_annotations.is_empty());
         assert_eq!(ssot_file.state_machines.len(), 1);
 
@@ -1044,33 +1026,71 @@ mod tests {
         let idle_state = machine.states.iter().find(|s| s.name == "Idle").unwrap();
         assert_eq!(idle_state.annotations.len(), 1);
         assert_eq!(idle_state.annotations[0].name, "description");
-        assert_eq!(idle_state.annotations[0].value, Some(AnnotationValue::StringLiteral("Initial idle state.".to_string())));
+        assert_eq!(
+            idle_state.annotations[0].value,
+            Some(AnnotationValue::StringLiteral(
+                "Initial idle state.".to_string()
+            ))
+        );
 
         let running_state = machine.states.iter().find(|s| s.name == "Running").unwrap();
         assert_eq!(running_state.annotations.len(), 1);
         assert_eq!(running_state.annotations[0].name, "description");
-        assert_eq!(running_state.annotations[0].value, Some(AnnotationValue::StringLiteral("Machine is actively running.".to_string())));
+        assert_eq!(
+            running_state.annotations[0].value,
+            Some(AnnotationValue::StringLiteral(
+                "Machine is actively running.".to_string()
+            ))
+        );
 
         // Check Event and Field annotations
         let start_event = machine.events.iter().find(|e| e.name == "Start").unwrap();
         assert_eq!(start_event.annotations.len(), 1);
         assert_eq!(start_event.annotations[0].name, "description");
-        assert_eq!(start_event.annotations[0].value, Some(AnnotationValue::StringLiteral("Event to start processing.".to_string())));
+        assert_eq!(
+            start_event.annotations[0].value,
+            Some(AnnotationValue::StringLiteral(
+                "Event to start processing.".to_string()
+            ))
+        );
 
-        let userid_field = start_event.fields.iter().find(|f| f.name == "userId").unwrap();
+        let userid_field = start_event
+            .fields
+            .iter()
+            .find(|f| f.name == "userId")
+            .unwrap();
         assert_eq!(userid_field.annotations.len(), 1);
         assert_eq!(userid_field.annotations[0].name, "description");
-        assert_eq!(userid_field.annotations[0].value, Some(AnnotationValue::StringLiteral("User ID initiating the start.".to_string())));
+        assert_eq!(
+            userid_field.annotations[0].value,
+            Some(AnnotationValue::StringLiteral(
+                "User ID initiating the start.".to_string()
+            ))
+        );
 
-        let config_field = start_event.fields.iter().find(|f| f.name == "config").unwrap();
+        let config_field = start_event
+            .fields
+            .iter()
+            .find(|f| f.name == "config")
+            .unwrap();
         assert_eq!(config_field.annotations.len(), 1);
         assert_eq!(config_field.annotations[0].name, "description");
-        assert_eq!(config_field.annotations[0].value, Some(AnnotationValue::StringLiteral("Optional config string.".to_string())));
+        assert_eq!(
+            config_field.annotations[0].value,
+            Some(AnnotationValue::StringLiteral(
+                "Optional config string.".to_string()
+            ))
+        );
 
         let stop_event = machine.events.iter().find(|e| e.name == "Stop").unwrap();
         assert_eq!(stop_event.annotations.len(), 1);
         assert_eq!(stop_event.annotations[0].name, "description");
-        assert_eq!(stop_event.annotations[0].value, Some(AnnotationValue::StringLiteral("Event without payload.".to_string())));
+        assert_eq!(
+            stop_event.annotations[0].value,
+            Some(AnnotationValue::StringLiteral(
+                "Event without payload.".to_string()
+            ))
+        );
     }
 
     // #[test]

@@ -110,6 +110,23 @@ impl LightSwitchCallbacks for LightSwitch {
     fn deactivate_light_specific(&mut self, _event: &Event) {
         println!("Action: deactivate_light_specific called");
     }
+
+    // Add dummy implementations for entry/exit actions
+    fn log_idle_entry(&mut self) {
+        println!("Entry Action: log_idle_entry called");
+    }
+
+    fn start_processing(&mut self) {
+        println!("Entry Action: start_processing called");
+    }
+
+    fn stop_processing(&mut self) {
+        println!("Exit Action: stop_processing called");
+    }
+
+    fn log_completion(&mut self) {
+        println!("Entry Action: log_completion called");
+    }
 }
 
 #[cfg(test)]

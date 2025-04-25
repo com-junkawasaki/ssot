@@ -34,7 +34,13 @@ state_machine_item = { annotation | state_enum | event_definitions | transitions
 // parser.rs expects `state_enum` containing `state_variant`
 state_enum = { "states" ~ "{" ~ optional_whitespace ~ state_variant* ~ optional_whitespace ~ "}" }
 // Allow optional annotations before the state definition
-state_variant = { optional_annotations ~ identifier ~ "@" ~ ordinal ~ ";" ~ optional_whitespace }
+// Allow optional body block for entry/exit actions
+state_variant = { optional_annotations ~ identifier ~ "@" ~ ordinal ~ state_body? ~ ";" ~ optional_whitespace }
+state_body = { "{" ~ optional_whitespace ~ state_body_item* ~ optional_whitespace ~ "}" }
+state_body_item = { entry_action | exit_action }
+
+entry_action = { "entry" ~ ":" ~ identifier ~ ";" ~ optional_whitespace }
+exit_action  = { "exit" ~ ":" ~ identifier ~ ";" ~ optional_whitespace }
 
 // --- Event Definitions --- (Restored)
 // parser.rs expects `event_definitions` containing `event_struct`
