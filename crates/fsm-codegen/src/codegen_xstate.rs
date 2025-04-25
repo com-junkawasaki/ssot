@@ -178,38 +178,71 @@ pub(crate) fn generate_xstate_machine_internal(
     writeln!(output, "{indent}}},",)?; // Close states object
 
 
-    // --- Machine Options (Guards & Actions implementations - placeholders) ---
-    // For type safety, these should ideally reference implementations provided elsewhere.
-    // Generating placeholders for now.
-    let all_guards: std::collections::HashSet<_> = ast.transitions.iter().flat_map(|t| t.elements.iter().filter_map(|el| match el {
-        TransitionElement::Guard { function, .. } => Some(function.to_string()),
-        _ => None
-    })).collect();
-
-     let all_actions: std::collections::HashSet<_> = ast.states.iter().flat_map(|s| s.entry_actions.iter().chain(s.exit_actions.iter()).map(|a| a.to_string()))
-         .chain(ast.transitions.iter().flat_map(|t| t.elements.iter().filter_map(|el| match el {
-             TransitionElement::Action { function, .. } => Some(function.to_string()),
-             _ => None
-         })))
-         .collect();
-
+    // --- Machine Options (Guards & Actions implementations - improved placeholders) ---
+    let all_guards: std::collections::HashMap<String, bool> = ast.transitions.iter().filter_map(|t| {
+        let guard_fn = t.elements.iter().find_map(|el| match el { TransitionElement::Guard { function, .. } => Some(function), _ => None });
+        let event_name = t.elements.iter().find_map(|el| match el { TransitionElement::On { event, .. } => Some(event), _ => None });
+        if let (Some(g), Some(e)) = (guard_fn, event_name) {
+            let event_has_payload = ast.events.iter().any(|evt| &evt.name == e && !evt.fields.is_empty());
+            Some((g.to_string(), event_has_payload))
+        } else {
+            None
+        }
+    }).collect(); // Collect into HashMap<GuardName, HasPayload>
+    // For actions, consider entry/exit (no payload) and transition actions (payload possible)
+    let mut all_actions: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+    // Entry/Exit actions (no payload context)
+    for state in &ast.states {
+        for action in &state.entry_actions {
+            all_actions.entry(action.to_string()).or_insert(false);
+        }
+        for action in &state.exit_actions {
+            all_actions.entry(action.to_string()).or_insert(false);
+        }
+    }
+    // Transition actions (payload context)
+    for transition in &ast.transitions {
+        if let Some(action_fn) = transition.elements.iter().find_map(|el| match el { TransitionElement::Action { function, .. } => Some(function), _ => None }) {
+            if let Some(event_name) = transition.elements.iter().find_map(|el| match el { TransitionElement::On { event, .. } => Some(event), _ => None }) {
+                let event_has_payload = ast.events.iter().any(|evt| &evt.name == event_name && !evt.fields.is_empty());
+                // If the action is already present, update payload flag only if true
+                all_actions.entry(action_fn.to_string()).and_modify(|p| *p = *p || event_has_payload).or_insert(event_has_payload);
+            }
+        }
+    }
 
     if !all_guards.is_empty() || !all_actions.is_empty() {
         writeln!(output, "{indent}options: {{")?;
         if !all_guards.is_empty() {
             writeln!(output, "{indent}{indent}guards: {{")?;
-            for guard in all_guards {
-                 writeln!(output, "{indent}{indent}{indent}// TODO: Implement guard '{}'", guard)?;
-                 writeln!(output, "{indent}{indent}{indent}'{}': (context, event) => {{ console.warn('Guard \'{}\' not implemented'); return true; }},", guard, guard)?;
+            // Sort guards for consistent output
+            let mut sorted_guards: Vec<_> = all_guards.into_iter().collect();
+            sorted_guards.sort_by(|a, b| a.0.cmp(&b.0));
+            for (guard_name, has_payload) in sorted_guards {
+                writeln!(output, "{indent}{indent}{indent}// TODO: Implement guard '{}'", guard_name)?;
+                write!(output, "{indent}{indent}{indent}'{}': (context, event) => {{", guard_name)?;
+                if has_payload {
+                    write!(output, "\n{indent}{indent}{indent}{indent}// This guard might receive events with payloads ('payload' in event ? event.payload : undefined)")?;
+                }
+                write!(output, "\n{indent}{indent}{indent}{indent}console.warn('Guard \'{}\' not implemented, returning true');", guard_name)?;
+                write!(output, "\n{indent}{indent}{indent}{indent}return true;\n{indent}{indent}{indent}}},\n",)?; // Close guard func
             }
              writeln!(output, "{indent}{indent}}},",)?; // Close guards
         }
         if !all_actions.is_empty() {
             writeln!(output, "{indent}{indent}actions: {{")?;
-             for action in all_actions {
-                 writeln!(output, "{indent}{indent}{indent}// TODO: Implement action '{}'", action)?;
-                 writeln!(output, "{indent}{indent}{indent}'{}': (context, event) => {{ console.warn('Action \'{}\' not implemented'); }},", action, action)?;
-             }
+            // Sort actions for consistent output
+            let mut sorted_actions: Vec<_> = all_actions.into_iter().collect();
+            sorted_actions.sort_by(|a, b| a.0.cmp(&b.0));
+            for (action_name, has_payload) in sorted_actions {
+                writeln!(output, "{indent}{indent}{indent}// TODO: Implement action '{}'", action_name)?;
+                write!(output, "{indent}{indent}{indent}'{}': (context, event) => {{", action_name)?;
+                if has_payload {
+                    write!(output, "\n{indent}{indent}{indent}{indent}// This action might receive events with payloads ('payload' in event ? event.payload : undefined)")?;
+                }
+                write!(output, "\n{indent}{indent}{indent}{indent}console.warn('Action \'{}\' not implemented');", action_name)?;
+                write!(output, "\n{indent}{indent}{indent}}},\n",)?; // Close action func
+            }
              writeln!(output, "{indent}{indent}}},",)?; // Close actions
         }
          writeln!(output, "{indent}}},",)?; // Close options
