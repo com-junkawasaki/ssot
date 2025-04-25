@@ -130,6 +130,7 @@ This project is organized as a Cargo workspace containing the following crates:
     *   Generate database migration scripts (e.g., SQL `up`/`down`) based on diffs between `.ssot` file versions.
     *   Implement project-specific code generation orchestration (e.g., specifying `nextjs` target generates relevant Rust, TS, routing, migration scripts, etc.).
     *   Explore generating deployment/orchestration configuration hints (e.g., Docker Compose, Kubernetes manifests) based on the defined distributed system structure.
+    *   Add support for generating platform-specific configurations and deployment helpers (e.g., `fly.toml`, `vercel.json`, Supabase functions/config) based on `.ssot` definitions.
 *   **Developer Experience & Tooling:**
     *   Improve error messages and diagnostics from the parser and code generator.
     *   Enhance automated tests, particularly for `build.rs` logic (e.g., via integration tests) and edge cases in generation.
