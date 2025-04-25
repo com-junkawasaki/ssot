@@ -103,37 +103,13 @@ This project is organized as a Cargo workspace containing the following crates:
 *   **Error Handling:** Improve error messages and diagnostics from the parser and code generator.
 *   **Testing:** Enhance automated tests, particularly for `build.rs` logic (e.g., via integration tests) and edge cases in generation.
 *   **Procedural Macro:** Implement the `#[state_machine(...)]` procedural macro approach as an alternative integration method for Rust projects.
-
+*   **Expanded Output Formats:** Integrate generation capabilities based on various standard formats:
+    *   **Requirements:** ReqIF (`.xml`), Markdown/Asciidoc (`.md`, `.adoc`)
+    *   **Process/Architecture:** BPMN (`.bpmn`), ArchiMate (`.xml`)
+    *   **System Modeling:** UML/SysML (XMI `.xmi`)
+    *   **Data/Schema:** JSON Schema (`.json`), XSD (`.xsd`), Avro (`.avsc`), Protocol Buffers (`.proto`)
+    *   **API/Interface:** OpenAPI (`.yaml`/`.json`), gRPC (`.proto`), GraphQL SDL (`.graphql`), AsyncAPI (`.yaml`/`.json`)
+    *   **Database Schema:** Prisma Schema (`.prisma`), Drizzle ORM (`.ts`), Drizzle Kit Config (`drizzle.config.ts`), SQL (`.sql`), DBML (`.dbml`), Liquibase (`.xml`, `.yaml`, `.json`, `.sql`)
 *   **Codegen: sql**
 *   **Codegen: ReqIF**
 *   **Codegen: bpmn**
-
-	1.	要件定義フェーズ
-	•	基本的なビジネス／ユーザー要件をまずキャッチアップ
-	•	フォーマット：
-	•	ReqIF（複数ツール間の要件交換用）
-	•	Markdown／Asciidoc（軽量に共有・バージョン管理）
-	2.	業務プロセス＆エンタープライズアーキテクチャ設計
-	•	ビジネスフローや組織横断のアーキテクチャを可視化
-	•	フォーマット：
-	•	BPMN（.bpmn）
-	•	ArchiMate（.xml）
-	3.	システム構造モデル設計
-	•	クラス図・シーケンス図など、システム内部の振る舞いを定義
-	•	フォーマット：
-	•	UML (XMI, .xmi)
-	•	SysML (XMI, .xmi)
-	4.	データ・メッセージスキーマ定義
-	•	永続化や内部メッセージの型安全性を担保
-	•	フォーマット：
-	•	JSON Schema (.json)
-	•	XML Schema/XSD (.xsd)
-	•	Avro (.avsc)
-	•	Protocol Buffers (.proto)
-	5.	インターフェース／API仕様定義
-	•	外部連携やクライアント・サーバ間通信を明文化
-	•	フォーマット：
-	•	OpenAPI（.yaml/.json）
-	•	gRPC／Protocol Buffers（.proto）
-	•	GraphQL SDL（.graphql）
-	•	AsyncAPI（.yaml/.json）
