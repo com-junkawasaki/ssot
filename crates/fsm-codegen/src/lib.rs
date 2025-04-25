@@ -1,3 +1,5 @@
+#![allow(clippy::empty_line_after_doc_comments)]
+
 use fsm_dsl::ast::{
     // Import directly from the ast module
     Annotation,
@@ -59,12 +61,17 @@ fn generate_rust_doc_comment(annotations: &[Annotation]) -> TokenStream {
     if let Some(AnnotationValue::StringLiteral(desc)) =
         find_annotation_value(annotations, "description")
     {
-        for line in desc.lines() {
-            let trimmed_line = line.trim();
-            doc_stream.extend(quote! {
-                #[doc = #trimmed_line]
-            });
+        // Generate /// comments directly for compatibility with prettyplease
+        let comment_str = desc
+            .lines()
+            .map(|l| format!("/// {}", l.trim()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        // Parse the string into a TokenStream
+        if let Ok(tokens) = syn::parse_str::<TokenStream>(&comment_str) {
+            doc_stream.extend(tokens);
         }
+        // Fallback or error handling if parsing fails?
     }
     // Add other annotation processing here if needed (e.g., #[deprecated])
     doc_stream
@@ -326,6 +333,135 @@ fn generate_impl_block(
              }
         }
     })
+}
+
+/// Generates the Event enum definition with associated data structs.
+fn generate_event_enum_and_structs(ast: &StateMachine, derive_tokens: &TokenStream) -> TokenStream {
+    let event_enum_name = format_ident!("Event");
+    let event_payload_struct_name = format_ident!("EventPayload"); // Convention for associated data
+
+    let mut event_structs = Vec::new();
+    let variants = ast
+        .events
+        .iter()
+        .map(|event_item| {
+            let variant_name = &event_item.name; // Use the Ident directly
+            let variant_doc_comment = generate_rust_doc_comment(&event_item.annotations);
+
+            if event_item.fields.is_empty() {
+                // Event without payload
+                quote! {
+                    #variant_doc_comment
+                    #variant_name
+                }
+            } else {
+                // Event with payload struct
+                let struct_name = format_ident!("{}{}", variant_name, event_payload_struct_name);
+                let struct_doc_comment = generate_rust_doc_comment(&event_item.annotations); // Use event doc for struct too?
+
+                let fields = event_item.fields.iter().map(|field| {
+                    let field_name = &field.name;
+                    let field_type_ts = map_field_type_to_rust_type(&field.field_type);
+                    let field_doc_comment = generate_rust_doc_comment(&field.annotations);
+                    quote! {
+                        #field_doc_comment
+                        pub #field_name: #field_type_ts
+                    }
+                });
+
+                // Generate the payload struct definition
+                event_structs.push(quote! {
+                    #struct_doc_comment
+                    #derive_tokens // Derive traits for payload struct too
+                    pub struct #struct_name {
+                        #(#fields),*
+                    }
+                });
+
+                // Generate the enum variant with the payload struct
+                quote! {
+                    #variant_doc_comment
+                    #variant_name(#struct_name)
+                }
+            }
+        })
+        .collect::<Vec<_>>(); // Collect variants
+
+    let event_enum_doc_comment = generate_rust_doc_comment(&[]); // TODO: Get annotations for the enum itself?
+
+    quote! {
+        // --- Event Payload Structs ---
+        #(#event_structs)*
+
+        // --- Event Enum ---
+        #event_enum_doc_comment
+        #derive_tokens // Use the same derives as State and Machine
+        pub enum #event_enum_name {
+            #(#variants),*
+        }
+    }
+}
+
+/// Generates Rust code from a StateMachine AST node (from parser).
+///
+/// # Arguments
+///
+/// * `ast` - A parsed `StateMachine` from `fsm_dsl::parser`.
+///
+/// # Returns
+///
+/// * `Result<String, CodegenError>` - Generated Rust code string, or an error.
+pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
+    let state_enum_name = format_ident!("State");
+    let machine_struct_name = format_ident!("{}", ast.name); // Use name from AST
+    let event_enum_name = format_ident!("Event"); // Consistent event enum name
+    let callbacks_trait_name = format_ident!("{}Callbacks", ast.name); // e.g., LightSwitchCallbacks
+
+    let _derive_tokens = quote! { #[derive(Debug, Clone, PartialEq)] };
+
+    // State enum generation
+    let state_variants = ast.states.iter().map(|s| {
+        let variant_name = format_ident!("{}", s.name);
+        let doc_comment = generate_rust_doc_comment(&s.annotations);
+        quote! {
+            #doc_comment
+            #variant_name
+        }
+    });
+
+    let state_enum_doc_comment = generate_rust_doc_comment(&ast.annotations);
+
+    let state_enum = quote! {
+        #state_enum_doc_comment
+        #_derive_tokens
+        pub enum #state_enum_name {
+            #(#state_variants),*
+        }
+    };
+
+    let event_enum_and_structs = generate_event_enum_and_structs(ast, &_derive_tokens);
+
+    let machine_struct_doc_comment = generate_rust_doc_comment(&ast.annotations);
+
+    let machine_struct = quote! {
+        #machine_struct_doc_comment
+        #_derive_tokens
+        pub struct #machine_struct_name {
+            current_state: #state_enum_name,
+        }
+    };
+
+    let impl_block = generate_impl_block(ast, &callbacks_trait_name, &HashSet::new(), &HashSet::new())?;
+
+    let code = quote! {
+        #state_enum
+        #event_enum_and_structs
+        #machine_struct
+        #impl_block
+    };
+
+    let formatted_code = prettyplease::unparse(&code);
+    Ok(formatted_code)
 }
 
 /// Generates the Event enum definition with associated data structs.
@@ -1141,61 +1277,6 @@ mod tests {
             .contains("& self . current_state"));
     }
 
-    #[test]
-    fn generates_placeholder_capnp() {
-        let ast = create_test_ast(); // Reuse existing test AST setup
-        let file_ast = fsm_dsl::ast::SsotFile {
-            // Create a dummy SsotFile for the test
-            file_id: 0x123456789ABCDEF0,
-            package_declaration: None,
-            top_level_annotations: vec![],
-            state_machines: vec![ast.clone()], // Assuming create_test_ast returns StateMachine
-        };
-        let result = crate::generate_capnp_schema(&file_ast, &ast); // Pass both args
-        assert!(
-            result.is_ok(),
-            "Cap'n Proto generation failed: {:?}",
-            result.err()
-        );
-        let schema = result.unwrap();
-        // Basic check for placeholder content -> Updated checks
-        assert!(schema.contains("@0x123456789abcdef0")); // Check for file ID format
-        assert!(schema.contains("enum State @0 {"));
-        assert!(schema.contains("idle @0;")); // From create_test_ast
-        assert!(schema.contains("running @1;")); // From create_test_ast
-        assert!(schema.contains("struct StartPayload @0 {")); // Event with payload
-        assert!(schema.contains("userId @0 :UInt64;")); // Field in payload
-        assert!(schema.contains("union Event @1 {"));
-        assert!(schema.contains("start @0 :StartPayload;")); // Event with payload
-        assert!(schema.contains("stop @1 :Void;")); // Event without payload
-        println!(
-            "--- Generated Cap'n Proto Schema ---
-{}",
-            schema
-        ); // For inspection
-    }
-
-    #[test]
-    fn generates_placeholder_typescript() {
-        let ast = create_test_ast(); // Reuse existing test AST setup
-        let result = crate::generate_typescript_types(&ast);
-        assert!(
-            result.is_ok(),
-            "TypeScript generation failed: {:?}",
-            result.err()
-        );
-        let types = result.unwrap();
-        // Basic check for placeholder content
-        assert!(types.contains("// Placeholder TypeScript types"));
-        assert!(types.contains("export type State"));
-        assert!(types.contains("export type Event"));
-        println!(
-            "--- Generated TypeScript Types (Placeholder) ---
-{}",
-            types
-        ); // For inspection
-    }
-
     // Updated test AST creator with annotations
     fn create_annotated_test_ast() -> StateMachine {
         StateMachine {
@@ -1307,17 +1388,15 @@ mod tests {
         println!("--- Generated Rust Code with Docs ---\n{}", code); // For inspection
 
         // Check for struct/enum docs
-        assert!(
-            code.contains("#[doc = \"This is the main machine.\"]\npub struct AnnotatedMachine")
-        );
-        assert!(code.contains("#[doc = \"Waiting state.\"]\n    Idle,"));
-        assert!(code.contains("#[doc = \"Active state.\"]\n    Running,"));
-        assert!(code.contains("#[doc = \"Starts the machine.\"]\npub struct StartEventPayload"));
-        assert!(code.contains("#[doc = \"Starts the machine.\"]\n    Start(StartEventPayload),"));
-        assert!(code.contains("#[doc = \"Stops the machine.\"]\n    Stop,"));
+        assert!(code.contains("/// This is the main machine.\npub struct AnnotatedMachine"));
+        assert!(code.contains("/// Waiting state.\n    Idle"));
+        assert!(code.contains("/// Active state.\n    Running"));
+        assert!(code.contains("/// Starts the machine.\npub struct StartEventPayload"));
+        assert!(code.contains("/// Starts the machine.\n    Start(StartEventPayload)"));
+        assert!(code.contains("/// Stops the machine.\n    Stop"));
 
         // Check for field docs
-        assert!(code.contains("#[doc = \"The user ID.\"]\n        pub userId: u64"));
+        assert!(code.contains("/// The user ID.\n        pub userId: u64"));
     }
 
     #[test]

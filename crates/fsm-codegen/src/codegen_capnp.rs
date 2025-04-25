@@ -33,11 +33,14 @@ fn map_field_type_to_capnp_type(field_type: &FieldType) -> String {
 // Helper function to generate Cap'n Proto comments from annotations
 fn generate_capnp_comment(annotations: &[fsm_dsl::ast::Annotation], indent: &str) -> String {
     let mut comment_str = String::new();
-    // Use the find_annotation_value helper defined below
     if let Some(AnnotationValue::StringLiteral(desc)) =
         find_annotation_value(annotations, "description")
     {
-        for line in desc.lines() {
+        for (i, line) in desc.lines().enumerate() {
+            // Add newline before comment only if it's not the first line and not empty
+            if i > 0 && !comment_str.is_empty() && !comment_str.ends_with("\n\n") {
+                comment_str.push('\n');
+            }
             comment_str.push_str(&format!("{}# {}\n", indent, line.trim()));
         }
     }
@@ -92,10 +95,10 @@ pub(crate) fn generate_capnp_schema_internal(
             struct_id_counter += 1; // Increment for the next struct
             for field in &event.fields {
                 let field_capnp_type = map_field_type_to_capnp_type(&field.field_type);
-                event_payload_structs.push_str(&generate_capnp_comment(&field.annotations, "  ")); // Add comment for field
+                // Pass indent explicitly for field comments
+                event_payload_structs.push_str(&generate_capnp_comment(&field.annotations, "    ")); 
                 event_payload_structs.push_str(&format!(
-                    "  {} @{} :{};
-",
+                    "  {} @{} :{};\n",
                     field.name, field.ordinal, field_capnp_type
                 ));
             }
