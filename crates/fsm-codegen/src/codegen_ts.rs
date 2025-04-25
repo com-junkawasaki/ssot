@@ -60,7 +60,11 @@ pub(crate) fn generate_typescript_types_internal(
             let prefix = if i == 0 { "  " } else { "| " };
             // Combine prefix, doc (which includes indentation and newline), and the type string
             // Ensure doc ends with a newline if present, otherwise add space after prefix
-            let formatted_doc = if doc.is_empty() { "".to_string() } else { format!("{}\n", doc.trim_end()) };
+            let formatted_doc = if doc.is_empty() {
+                "".to_string()
+            } else {
+                format!("{}\n", doc.trim_end())
+            };
             // Add prefix spacing even if no doc
             format!("{}{}\"{}\"", prefix, formatted_doc, s.name)
         })

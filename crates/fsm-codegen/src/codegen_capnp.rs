@@ -96,7 +96,7 @@ pub(crate) fn generate_capnp_schema_internal(
             for field in &event.fields {
                 let field_capnp_type = map_field_type_to_capnp_type(&field.field_type);
                 // Pass indent explicitly for field comments
-                event_payload_structs.push_str(&generate_capnp_comment(&field.annotations, "    ")); 
+                event_payload_structs.push_str(&generate_capnp_comment(&field.annotations, "    "));
                 event_payload_structs.push_str(&format!(
                     "  {} @{} :{};\n",
                     field.name, field.ordinal, field_capnp_type
