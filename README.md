@@ -91,6 +91,8 @@ The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not 
     *   Support for more complex annotation values or specific annotations (e.g., `$deprecated`).
     *   Support for hierarchical state machines in the DSL.
     *   Add syntax for defining distributed system components/services and their interactions (potentially referencing external `.ssot` or interface files).
+    *   Support for multi-file/directory projects: Allow definitions to be split across multiple `.ssot` files, including discovery, integration, namespacing/imports, and conflict resolution.
+    *   Support for directory-level configuration (e.g., via a `.ssotconfig` file).
 *   **Expanding SSOT Scope (within DSL):** Defining more system aspects directly in `.ssot`.
     *   Integrate routing definition capabilities (e.g., mapping states/events to routes or defining navigation flows).
     *   Specify inter-service communication (e.g., RPC, messaging) linked to FSM events/actions, defaulting to Cap'n Proto.
@@ -128,3 +130,4 @@ The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not 
     *   Improve error messages and diagnostics from the parser and code generator.
     *   Enhance automated tests, particularly for `build.rs` logic (e.g., via integration tests) and edge cases in generation.
     *   Implement the `#[state_machine(...)]` procedural macro approach as an alternative integration method for Rust projects.
+    *   Improve tooling support for managing multi-file/directory `.ssot` projects.
