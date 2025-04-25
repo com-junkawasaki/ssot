@@ -97,6 +97,8 @@ This project is organized as a Cargo workspace containing the following crates:
     *   Explore generating visualization outputs (e.g., Mermaid syntax, Graphviz DOT) from the AST.
     *   Investigate support for hierarchical state machines in the DSL and generators.
     *   Generate Next.js routing configurations (e.g., `app/` directory structure, `route.ts` handlers based on FSM states/events).
+    *   Generate database migration scripts (e.g., SQL `up`/`down`) based on diffs between `.ssot` file versions.
+    *   Implement project-specific code generation orchestration (e.g., specifying `nextjs` target generates relevant Rust, TS, routing, etc.).
 *   **Improved DSL Features:**
     *   Add syntax for entry/exit actions on states.
     *   Enhance validation rules within the parser (e.g., duplicate name/ordinal checks, transition validity).
