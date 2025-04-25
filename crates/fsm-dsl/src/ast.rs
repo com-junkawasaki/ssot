@@ -29,7 +29,6 @@ impl std::fmt::Display for QualifiedIdent {
     }
 }
 
-
 // --- Annotations ---
 
 /// Represents an annotation attached to various elements in the `.ssot` file.
@@ -121,7 +120,6 @@ pub struct FieldDef {
     pub field_type: FieldType,
 }
 
-
 // --- File Structure ---
 
 /// Represents a single import declaration at the top level of an .ssot file.
@@ -179,7 +177,6 @@ pub enum TopLevelItem {
     // Add other potential top-level items here in the future (e.g., Enums)
 }
 
-
 // --- State Machine ---
 
 /// Represents a single `stateMachine` definition, encapsulating its logic and structure.
@@ -205,7 +202,6 @@ pub struct StateMachine {
     pub context: Vec<FieldDef>,
 }
 
-
 // --- States ---
 
 /// Represents a single state defined within the `states { ... }` block.
@@ -226,7 +222,6 @@ pub struct StateItem {
     pub exit_actions: Vec<QualifiedIdent>,
 }
 
-
 // --- Events (Messages) ---
 
 /// Represents an event (or message) definition within the `events { ... }` block.
@@ -245,7 +240,6 @@ pub struct MessageItem {
     /// If the event has no payload, this list is empty.
     pub fields: Vec<FieldDef>,
 }
-
 
 // --- Transitions ---
 

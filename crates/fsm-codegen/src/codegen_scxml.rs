@@ -160,14 +160,6 @@ fn generate_scxml_action_content(
     content
 }
 
-// Helper to get the simple Ident from a QualifiedIdent
-fn get_simple_ident(qident: &fsm_dsl::ast::QualifiedIdent) -> &fsm_dsl::ast::Ident {
-    match qident {
-        fsm_dsl::ast::QualifiedIdent::Simple(id) => id,
-        fsm_dsl::ast::QualifiedIdent::Qualified { name, .. } => name,
-    }
-}
-
 pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, CodegenError> {
     let mut output = String::new();
     let indent = "  ";

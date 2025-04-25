@@ -364,68 +364,94 @@ fn generate_impl_block(
 /// Generates the Event enum definition with associated data structs.
 fn generate_event_enum_and_structs(
     ast: &StateMachine,
+    context: &ResolutionContext, // Context is already passed
     derive_tokens: &TokenStream,
-) -> Result<TokenStream, CodegenError> {
-    let mut event_structs = quote! {};
-    let mut event_variants = Vec::new();
-
-    for item in &ast.events {
-        let event_name = &item.name;
-        let event_doc_comment = generate_rust_doc_comment(&item.annotations);
-
-        if item.fields.is_empty() {
-            // Event without payload
-            event_variants.push(quote! {
-                #event_doc_comment
-                #event_name
-            });
-        } else {
-            // Event with payload
-            let payload_struct_name = format_ident!("{}", item.name);
-            let fields: Vec<TokenStream> = item
-                .fields
-                .iter()
-                .map(|field| {
-                    let field_name = &field.name;
-                    // Use updated map_field_type_to_rust_type without context
-                    let field_type_tokens = map_field_type_to_rust_type(&field.field_type)?;
-                    let field_doc_comment = generate_rust_doc_comment(&field.annotations);
-                    Ok(quote! {
-                        #field_doc_comment
-                        pub #field_name: #field_type_tokens
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?; // Collect results here
-
-            let payload_doc_comment = generate_rust_doc_comment(&item.annotations); // Use event's doc for payload struct
-            event_structs.extend(quote! {
-                #payload_doc_comment
-                #derive_tokens
-                pub struct #payload_struct_name {
-                    #(#fields),*
-                }
-            });
-
-            event_variants.push(quote! {
-                #event_doc_comment
-                #event_name(#payload_struct_name)
-            });
-        }
-    }
-
+) -> Result<TokenStream, CodegenError> { // Return Result
     let event_enum_name = format_ident!("Event");
+    // Use a more descriptive convention for payload structs, e.g., EventNamePayload
+    // let event_payload_struct_suffix = format_ident!("Payload");
+
+    let mut event_structs = Vec::new();
+    let variants_results: Result<Vec<TokenStream>, CodegenError> = ast
+        .events
+        .iter()
+        .map(|event_item| {
+            let variant_name = &event_item.name;
+            let variant_doc_comment = generate_rust_doc_comment(&event_item.annotations);
+
+            if event_item.fields.is_empty() {
+                // Event without payload
+                Ok(quote! {
+                    #variant_doc_comment
+                    #variant_name
+                })
+            } else {
+                // Event with payload struct
+                let struct_name = format_ident!("{}Payload", variant_name); // Convention: EventNamePayload
+                let struct_doc_comment = generate_rust_doc_comment(&event_item.annotations); // Use event doc for struct
+
+                // Use machine FQN prefix as scope for resolving field types inside event structs
+                // TODO: Revisit this if events can be defined outside machines
+                let machine_fqn_prefix = format!(
+                    "{}.{}",
+                    context.get_package_for_machine(&ast.name).unwrap_or(""), // Helper needed
+                    ast.name
+                );
+
+                // Generate fields, resolving types using the context
+                let fields_results: Result<Vec<TokenStream>, CodegenError> = event_item
+                    .fields
+                    .iter()
+                    .map(|field| {
+                        let field_name = &field.name;
+                        // Resolve field type using context and machine scope
+                        let field_type_ts = map_field_type_to_rust_type(
+                            &field.field_type,
+                            context,
+                            &machine_fqn_prefix, // Pass machine FQN as scope
+                        )?;
+                        let field_doc_comment = generate_rust_doc_comment(&field.annotations);
+                        Ok(quote! {
+                            #field_doc_comment
+                            pub #field_name: #field_type_ts
+                        })
+                    })
+                    .collect(); // Collect results for fields
+
+                let fields = fields_results?;
+
+                // Generate the payload struct definition
+                event_structs.push(quote! {
+                    #struct_doc_comment
+                    #derive_tokens // Derive traits for payload struct too
+                    pub struct #struct_name {
+                        #(#fields),*
+                    }
+                });
+
+                // Generate the enum variant with the payload struct
+                Ok(quote! {
+                    #variant_doc_comment
+                    #variant_name(#struct_name)
+                })
+            }
+        })
+        .collect(); // Collect results for variants
+
+    let variants = variants_results?;
+
     let event_enum_doc_comment = generate_rust_doc_comment(&[]); // TODO: Get annotations for the enum itself?
-    let event_enum = quote! {
-        #event_enum_doc_comment
-        #derive_tokens
-        pub enum #event_enum_name {
-            #(#event_variants),*
-        }
-    };
 
     Ok(quote! {
-        #event_structs
-        #event_enum
+        // --- Event Payload Structs ---
+        #(#event_structs)*
+
+        // --- Event Enum ---
+        #event_enum_doc_comment
+        #derive_tokens // Use the same derives as State and Machine
+        pub enum #event_enum_name {
+            #(#variants),*
+        }
     })
 }
 
@@ -467,7 +493,7 @@ pub fn generate_rust_code(
 
     // Event enum and payload struct generation
     let event_derive_tokens = quote! { #[derive(Debug, Clone, PartialEq)] };
-    let event_defs = generate_event_enum_and_structs(machine_ast, &event_derive_tokens)?;
+    let event_defs = generate_event_enum_and_structs(machine_ast, &ResolutionContext { symbol_table: &HashMap::new() }, &event_derive_tokens)?;
 
     // Machine struct definition
     let machine_struct_doc_comment = generate_rust_doc_comment(&machine_ast.annotations);
@@ -1509,6 +1535,22 @@ impl<'a> ResolutionContext<'a> {
                 }
             }
         }
+    }
+
+    // Helper to find the package declaration for the file containing a machine
+    // This is a simplified approach; might need refinement based on how context is built.
+    fn get_package_for_machine(&self, machine_name: &Ident) -> Option<&str> {
+        // Find the machine definition in the symbol table
+        // This requires knowing the potential FQN, which depends on the package...
+        // This approach has limitations. A better way might be needed.
+
+        // Alternative: Iterate through files, find the machine, return its package.
+        for file_ast in self.files.values() {
+            if file_ast.state_machines.iter().any(|m| m.name == *machine_name) {
+                return file_ast.package_declaration.as_deref();
+            }
+        }
+        None // Machine not found (shouldn't happen if context is valid)
     }
 }
 
