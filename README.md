@@ -92,34 +92,36 @@ This project is organized as a Cargo workspace containing the following crates:
 
 ## Roadmap / Future Enhancements
 
-*   **Enhanced Code Generation:**
-    *   Generate placeholder or skeleton functions for defined `guard` and `action` attributes **in Rust**.
-    *   Explore generating visualization outputs (e.g., Mermaid syntax, Graphviz DOT) from the AST.
-    *   Investigate support for hierarchical state machines in the DSL and generators.
-    *   Generate Next.js routing configurations (e.g., `app/` directory structure, `route.ts` handlers based on FSM states/events).
-    *   Generate database migration scripts (e.g., SQL `up`/`down`) based on diffs between `.ssot` file versions.
-    *   Implement project-specific code generation orchestration (e.g., specifying `nextjs` target generates relevant Rust, TS, routing, etc.).
-*   **Improved DSL Features:**
+*   **Core DSL Enhancements:**
     *   Add syntax for entry/exit actions on states.
     *   Enhance validation rules within the parser (e.g., duplicate name/ordinal checks, transition validity).
     *   Support for more complex annotation values or specific annotations (e.g., `$deprecated`).
+    *   Investigate support for hierarchical state machines in the DSL.
+*   **Expanding SSOT Scope (within DSL):**
     *   Integrate routing definition capabilities (e.g., mapping states/events to routes or defining navigation flows).
-    *   **Expand SSOT Scope:** Explore defining related concerns within `.ssot`:
+    *   Explore defining related concerns within `.ssot`:
         *   UI/UX Component Mapping (Linking states/events to UI elements/actions).
         *   API Call / Event Integration (Defining external calls or internal events triggered by FSM).
         *   Authorization / Permissions (Specifying required roles/permissions for transitions/events).
         *   Test Scenario / BDD Definitions (Describing test cases or BDD features based on FSM paths).
         *   Monitoring / Logging / Alerting Rules (Defining observability requirements per state/transition).
-*   **Error Handling:** Improve error messages and diagnostics from the parser and code generator.
-*   **Testing:** Enhance automated tests, particularly for `build.rs` logic (e.g., via integration tests) and edge cases in generation.
-*   **Procedural Macro:** Implement the `#[state_machine(...)]` procedural macro approach as an alternative integration method for Rust projects.
-*   **Expanded Output Formats:** Integrate generation capabilities based on various standard formats:
-    *   **Requirements:** ReqIF (`.xml`), Markdown/Asciidoc (`.md`, `.adoc`)
-    *   **Process/Architecture:** BPMN (`.bpmn`), ArchiMate (`.xml`)
-    *   **System Modeling:** UML/SysML (XMI `.xmi`)
-    *   **Data/Schema:** JSON Schema (`.json`), XSD (`.xsd`), Avro (`.avsc`), Protocol Buffers (`.proto`)
-    *   **API/Interface:** OpenAPI (`.yaml`/`.json`), gRPC (`.proto`), GraphQL SDL (`.graphql`), AsyncAPI (`.yaml`/`.json`)
-    *   **Database Schema:** Prisma Schema (`.prisma`), Drizzle ORM (`.ts`), Drizzle Kit Config (`drizzle.config.ts`), SQL (`.sql`), DBML (`.dbml`), Liquibase (`.xml`, `.yaml`, `.json`, `.sql`)
-*   **Codegen: sql**
-*   **Codegen: ReqIF**
-*   **Codegen: bpmn**
+*   **Core Code Generation Enhancements:**
+    *   Generate placeholder or skeleton functions for defined `guard` and `action` attributes **in Rust**.
+    *   Improve generation for hierarchical state machines (dependent on DSL enhancement).
+*   **Expanded Code Generation Targets & Formats:**
+    *   Explore generating visualization outputs (e.g., Mermaid syntax, Graphviz DOT) from the AST.
+    *   Integrate generation capabilities based on various standard formats:
+        *   **Requirements:** ReqIF (`.xml`), Markdown/Asciidoc (`.md`, `.adoc`)
+        *   **Process/Architecture:** BPMN (`.bpmn`), ArchiMate (`.xml`)
+        *   **System Modeling:** UML/SysML (XMI `.xmi`)
+        *   **Data/Schema:** JSON Schema (`.json`), XSD (`.xsd`), Avro (`.avsc`), Protocol Buffers (`.proto`)
+        *   **API/Interface:** OpenAPI (`.yaml`/`.json`), gRPC (`.proto`), GraphQL SDL (`.graphql`), AsyncAPI (`.yaml`/`.json`)
+        *   **Database Schema:** Prisma Schema (`.prisma`), Drizzle ORM (`.ts`), Drizzle Kit Config (`drizzle.config.ts`), SQL (`.sql`), DBML (`.dbml`), Liquibase (`.xml`, `.yaml`, `.json`, `.sql`)
+*   **Project-Specific Generation & Integration:**
+    *   Generate Next.js routing configurations (e.g., `app/` directory structure, `route.ts` handlers based on FSM states/events).
+    *   Generate database migration scripts (e.g., SQL `up`/`down`) based on diffs between `.ssot` file versions.
+    *   Implement project-specific code generation orchestration (e.g., specifying `nextjs` target generates relevant Rust, TS, routing, migration scripts, etc.).
+*   **Developer Experience & Tooling:**
+    *   Improve error messages and diagnostics from the parser and code generator.
+    *   Enhance automated tests, particularly for `build.rs` logic (e.g., via integration tests) and edge cases in generation.
+    *   Implement the `#[state_machine(...)]` procedural macro approach as an alternative integration method for Rust projects.
