@@ -97,19 +97,27 @@ This project is organized as a Cargo workspace containing the following crates:
     *   Enhance validation rules within the parser (e.g., duplicate name/ordinal checks, transition validity).
     *   Support for more complex annotation values or specific annotations (e.g., `$deprecated`).
     *   Investigate support for hierarchical state machines in the DSL.
+    *   Add syntax for defining distributed system components/services and their interactions (potentially referencing external `.ssot` or interface files).
 *   **Expanding SSOT Scope (within DSL):**
     *   Integrate routing definition capabilities (e.g., mapping states/events to routes or defining navigation flows).
+    *   Specify inter-service communication mechanisms (e.g., RPC, messaging) and link them to FSM events/actions, defaulting to Cap'n Proto for interfaces.
     *   Explore defining related concerns within `.ssot`:
         *   UI/UX Component Mapping (Linking states/events to UI elements/actions).
         *   API Call / Event Integration (Defining external calls or internal events triggered by FSM).
         *   Authorization / Permissions (Specifying required roles/permissions for transitions/events).
         *   Test Scenario / BDD Definitions (Describing test cases or BDD features based on FSM paths).
         *   Monitoring / Logging / Alerting Rules (Defining observability requirements per state/transition).
+        *   Configuration Management / Feature Flag Integration (Defining or linking configuration values).
+        *   Compliance / Audit Log Requirements (Specifying necessary audit trails).
+        *   Formal Verification / Simulation Support (Adding annotations for model checking/simulation).
 *   **Core Code Generation Enhancements:**
     *   Generate placeholder or skeleton functions for defined `guard` and `action` attributes **in Rust**.
     *   Improve generation for hierarchical state machines (dependent on DSL enhancement).
+    *   Generate Cap'n Proto interface definitions (`.capnp`) specifically for defined inter-service interactions.
+    *   Generate Cap'n Proto-based client/server communication stubs in target languages (Rust, TypeScript, etc.) based on defined interactions.
 *   **Expanded Code Generation Targets & Formats:**
     *   Explore generating visualization outputs (e.g., Mermaid syntax, Graphviz DOT) from the AST.
+    *   Generate advanced documentation (e.g., state tables, sequence diagrams, user guide sections).
     *   Integrate generation capabilities based on various standard formats:
         *   **Requirements:** ReqIF (`.xml`), Markdown/Asciidoc (`.md`, `.adoc`)
         *   **Process/Architecture:** BPMN (`.bpmn`), ArchiMate (`.xml`)
@@ -121,6 +129,7 @@ This project is organized as a Cargo workspace containing the following crates:
     *   Generate Next.js routing configurations (e.g., `app/` directory structure, `route.ts` handlers based on FSM states/events).
     *   Generate database migration scripts (e.g., SQL `up`/`down`) based on diffs between `.ssot` file versions.
     *   Implement project-specific code generation orchestration (e.g., specifying `nextjs` target generates relevant Rust, TS, routing, migration scripts, etc.).
+    *   Explore generating deployment/orchestration configuration hints (e.g., Docker Compose, Kubernetes manifests) based on the defined distributed system structure.
 *   **Developer Experience & Tooling:**
     *   Improve error messages and diagnostics from the parser and code generator.
     *   Enhance automated tests, particularly for `build.rs` logic (e.g., via integration tests) and edge cases in generation.
