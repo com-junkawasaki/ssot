@@ -576,22 +576,34 @@ fn parse_event_struct(pair: Pair<Rule>) -> Result<MessageItem, ParseError> {
     // We don't get a pair for the literal "event".
 
     // 3. Parse identifier (event name)
-    let name_pair = inner.next().ok_or_else(|| ParseError::MissingElement("event name after 'event' keyword".to_string()))?;
+    let name_pair = inner.next().ok_or_else(|| {
+        ParseError::MissingElement("event name after 'event' keyword".to_string())
+    })?;
     if name_pair.as_rule() != Rule::identifier {
-        return Err(ParseError::UnexpectedRule { rule: name_pair.as_rule(), context: "expected event name (identifier)".to_string() });
+        return Err(ParseError::UnexpectedRule {
+            rule: name_pair.as_rule(),
+            context: "expected event name (identifier)".to_string(),
+        });
     }
     let name = parse_ident(name_pair)?;
 
     // 4. Parse ordinal
-    let ordinal_pair = inner.next().ok_or_else(|| ParseError::MissingElement("event ordinal after name".to_string()))?;
+    let ordinal_pair = inner
+        .next()
+        .ok_or_else(|| ParseError::MissingElement("event ordinal after name".to_string()))?;
     if ordinal_pair.as_rule() != Rule::ordinal {
-        return Err(ParseError::UnexpectedRule { rule: ordinal_pair.as_rule(), context: "expected event ordinal".to_string() });
+        return Err(ParseError::UnexpectedRule {
+            rule: ordinal_pair.as_rule(),
+            context: "expected event ordinal".to_string(),
+        });
     }
     let ordinal = parse_ordinal(ordinal_pair)?;
 
     // 5. Parse event body or terminator
     let mut fields: Vec<FieldDef> = Vec::new();
-    let body_or_terminator_pair = inner.next().ok_or_else(|| ParseError::MissingElement("event body {} or terminator ; after ordinal".to_string()))?;
+    let body_or_terminator_pair = inner.next().ok_or_else(|| {
+        ParseError::MissingElement("event body {} or terminator ; after ordinal".to_string())
+    })?;
 
     match body_or_terminator_pair.as_rule() {
         Rule::event_body => {
@@ -602,25 +614,31 @@ fn parse_event_struct(pair: Pair<Rule>) -> Result<MessageItem, ParseError> {
                         fields.push(parse_event_field(field_pair)?);
                     }
                     Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
-                    _ => return Err(ParseError::UnexpectedRule {
-                        rule: field_pair.as_rule(),
-                        context: "inside event_body".to_string(),
-                    })
+                    _ => {
+                        return Err(ParseError::UnexpectedRule {
+                            rule: field_pair.as_rule(),
+                            context: "inside event_body".to_string(),
+                        })
+                    }
                 }
             }
         }
         Rule::event_terminator => {
             // No fields to parse for terminator
         }
-        _ => return Err(ParseError::UnexpectedRule {
-            rule: body_or_terminator_pair.as_rule(),
-            context: "expected event_body or event_terminator".to_string()
-        })
+        _ => {
+            return Err(ParseError::UnexpectedRule {
+                rule: body_or_terminator_pair.as_rule(),
+                context: "expected event_body or event_terminator".to_string(),
+            })
+        }
     }
-    
+
     // Ensure no extra pairs are left
     if inner.next().is_some() {
-        return Err(ParseError::SemanticError("Unexpected tokens after event definition".to_string()));
+        return Err(ParseError::SemanticError(
+            "Unexpected tokens after event definition".to_string(),
+        ));
     }
 
     Ok(MessageItem {
