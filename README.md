@@ -74,6 +74,101 @@ This project is organized as a Cargo workspace:
 
 *(Refer to `fsm-example/build.rs` for a concrete implementation.)*
 
+## DSL Syntax Reference
+
+A `.ssot` file defines one or more state machines. Here's a breakdown of the syntax:
+
+**1. File ID (Required, Top-Level):**
+
+*   Specifies a unique identifier for the file, primarily for Cap'n Proto compatibility.
+*   Syntax: `@0x<hexadecimal_id>;`
+*   Example: `@0xcafebabe12345678;`
+
+**2. Top-Level Annotations (Optional):**
+
+*   Apply metadata to the entire file or provide default settings.
+*   Common annotations:
+    *   `$rust_out("path/to/dir")`: Default output directory for Rust code. **Required** if not specified per-machine.
+    *   `$capnp_out("path/to/dir")`: Default output directory for Cap'n Proto schemas.
+    *   `$ts_out("path/to/dir")`: Default output directory for TypeScript types.
+    *   `$xstate_out("path/to/dir")`: Default output directory for XState configurations.
+    *   `$scxml_out("path/to/dir")`: Default output directory for SCXML documents.
+    *   `$description("...")`: Documentation for the entire file.
+*   Syntax: `$AnnotationName("value");` or `$AnnotationName(value);`
+
+**3. State Machine Definition:**
+
+*   Defines a single state machine. A file can contain multiple machines.
+*   Syntax:
+    ```ssot
+    $description("Optional description for the machine."); // Optional annotation
+    $rust_out("path/to/override_dir"); // Optional: Override default output
+    stateMachine MachineName {
+        $initial(InitialStateName); // Required: Specifies the entry state
+
+        // states block (required)
+        states { ... }
+
+        // events block (required)
+        events { ... }
+
+        // transitions block (required)
+        transitions { ... }
+    }
+    ```
+
+**4. States Block:**
+
+*   Defines the possible states of the machine.
+*   Syntax within `states { ... }`:
+    ```ssot
+    $description("Optional description for the state.");
+    StateName @Ordinal { // Ordinal is a unique non-negative integer
+        entry: entryActionName; // Optional: Action executed on entering the state
+        exit: exitActionName;   // Optional: Action executed on exiting the state
+    }
+
+    AnotherState @AnotherOrdinal; // Simple state without entry/exit actions
+    ```
+
+**5. Events Block:**
+
+*   Defines the events that can trigger transitions.
+*   Syntax within `events { ... }`:
+    ```ssot
+    $description("Optional description for the event.");
+    event EventName @Ordinal { // Ordinal is a unique non-negative integer
+        $description("Optional description for the field.");
+        fieldName @FieldOrdinal : FieldType; // Optional: Payload field
+
+        anotherField @AnotherFieldOrdinal : AnotherFieldType; // Can have multiple fields
+        // ... more fields
+    }
+
+    SimpleEvent @SomeOrdinal; // Event without a payload (use empty braces {} or just semicolon ;)
+    ```
+*   **Supported Field Types (`FieldType`):** Corresponds to Cap'n Proto primitive types:
+    *   `Void`, `Bool`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, `Float64`, `Text`, `Data`, `AnyPointer` (use with caution)
+    *   Can also reference structs/enums defined *within the same `.ssot` file* (though struct/enum definition syntax is not yet fully implemented in the DSL parser/codegen). List types (`List(Type)`) are planned but not yet supported.
+
+**6. Transitions Block:**
+
+*   Defines the valid transitions between states based on events.
+*   Syntax within `transitions { ... }`:
+    ```ssot
+    $description("Optional description for the transition.");
+    transition TransitionName from SourceState to TargetState {
+        on @EventOrdinal EventName; // Required: Event triggering the transition
+        guard @GuardOrdinal guardFunctionName;   // Optional: Condition that must be true
+        action @ActionOrdinal actionFunctionName; // Optional: Action executed during the transition
+    }
+    ```
+    *   `TransitionName`: A unique identifier for the transition definition.
+    *   `SourceState`, `TargetState`: Names of states defined in the `states` block.
+    *   `EventName`: Name of an event defined in the `events` block.
+    *   `guardFunctionName`, `actionFunctionName`: Names referencing functions/methods expected to be implemented in the target language (e.g., in the Rust callback trait). The code generator **does not** generate the implementation for these, only the calls or references.
+    *   `@EventOrdinal`, `@GuardOrdinal`, `@ActionOrdinal`: Unique non-negative integers within the scope of the `stateMachine`, used primarily for Cap'n Proto schema generation. These ordinals **must be distinct** across all `on`, `guard`, and `action` declarations within a single `stateMachine`.
+
 ## Key DSL Annotations
 
 *   **File ID:** `@0x...;`: **Required** top-level unique ID (Cap'n Proto compatible).
