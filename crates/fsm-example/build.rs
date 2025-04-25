@@ -1,12 +1,15 @@
+use std::collections::HashMap; // Use HashMap to store ASTs by path
 use std::env;
 use std::fs;
-use std::path::PathBuf;
-use std::process::Command; // To run rustfmt
+use std::path::{Path, PathBuf};
+// Remove unused Command import for now
+// use std::process::Command;
 
+// Keep codegen imports for now, might be needed later for the integrated generation
 use fsm_codegen::{generate_capnp_schema, generate_rust_code, generate_typescript_types};
-// Use the new parser function and AST types
-use fsm_dsl::ast::{Annotation, AnnotationValue, SsotFile};
-use fsm_dsl::parser::{parse_file, ParseError as DslParseError};
+// Use the parser function and AST types
+use fsm_dsl::ast::{Annotation, AnnotationValue, SsotFile, ImportDeclaration, MessageItem, QualifiedIdent, StateMachine, UseDeclaration}; // Keep AST import
+use fsm_dsl::parser::{parse_file, ParseError as DslParseError}; // Keep parser imports
 use glob::glob;
 use thiserror::Error;
 
@@ -25,20 +28,45 @@ enum BuildError {
     DslParse {
         path: PathBuf,
         #[source]
-        source: DslParseError, // Use the renamed error type
+        source: DslParseError,
     },
-    #[error("Code generation error for state machine '{machine_name}' in file {path:?}: {source}")]
-    Codegen {
-        path: PathBuf,
-        machine_name: String,
-        #[source]
-        source: fsm_codegen::CodegenError,
+    // Remove Codegen error for now, as generation is deferred
+    // #[error("Code generation error for state machine '{machine_name}' in file {path:?}: {source}")]
+    // Codegen {
+    //     path: PathBuf,
+    //     machine_name: String,
+    //     #[source]
+    //     source: fsm_codegen::CodegenError,
+    // },
+    // #[error("Missing '$rust_out(\"...")' annotation (top-level or per-machine) in {path:?}")]
+    // MissingRustOut { path: PathBuf },
+    #[error("Duplicate package declaration '{package_name}' found in files {file1:?} and {file2:?}")]
+    DuplicatePackage {
+        package_name: String,
+        file1: PathBuf,
+        file2: PathBuf,
     },
-    #[error(r#"Missing '$rust_out("...")' annotation (top-level or per-machine) in {path:?}"#)]
-    MissingRustOut { path: PathBuf },
+    #[error("Package '{package_name}' imported in {importer_file:?} not found.")]
+    PackageNotFound {
+        package_name: String,
+        importer_file: PathBuf,
+    },
+    #[error("Symbol '{symbol_name}' not found (referenced in {referencing_file:?})")]
+    SymbolNotFound {
+        symbol_name: String, // Fully qualified name or name used in context
+        referencing_file: PathBuf, // File where the reference occurs
+    },
+    #[error("Ambiguous symbol '{symbol_name}' used in {referencing_file:?}. Could refer to multiple definitions.")]
+    AmbiguousSymbol {
+        symbol_name: String,
+        referencing_file: PathBuf,
+        // Optional: Add locations of conflicting definitions
+    },
+    #[error("Circular dependency detected involving package '{package_name}'")]
+    CircularDependency { package_name: String },
 }
 
-// Helper to wrap std::io::Error with path context
+// Helper to wrap std::io::Error with path context (keep)
 fn io_err(path: impl Into<PathBuf>, source: std::io::Error) -> BuildError {
     BuildError::Io {
         path: path.into(),
@@ -46,7 +74,7 @@ fn io_err(path: impl Into<PathBuf>, source: std::io::Error) -> BuildError {
     }
 }
 
-// Helper to find annotation value by name from a slice
+// Helper to find annotation value by name from a slice (keep, might be useful later)
 fn find_annotation_str_value<'a>(annotations: &'a [Annotation], name: &str) -> Option<&'a str> {
     annotations
         .iter()
@@ -57,213 +85,223 @@ fn find_annotation_str_value<'a>(annotations: &'a [Annotation], name: &str) -> O
         })
 }
 
+// Helper to convert CamelCase to snake_case (keep, might be useful later)
+fn camel_to_snake(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+    let mut previous_was_uppercase = false;
+
+    while let Some(c) = chars.next() {
+        if c.is_uppercase() {
+            if !result.is_empty() && !previous_was_uppercase {
+                result.push('_');
+            }
+            result.extend(c.to_lowercase());
+            previous_was_uppercase = true;
+        } else {
+            result.push(c);
+            previous_was_uppercase = false;
+        }
+    }
+    result
+}
+
+/// Holds references to all parsed ASTs and mappings for resolution.
+struct ParsedContext<'a> {
+    /// Maps canonical file path to the parsed SsotFile AST.
+    files: &'a HashMap<PathBuf, SsotFile>,
+    /// Maps package name (String) to the canonical path of the file declaring it.
+    package_map: HashMap<String, PathBuf>,
+    // /// Maps fully qualified symbol name (e.g., "pkg.common.EventA") to its definition.
+    // /// Might need a more complex structure like an enum SymbolDefinition { Event(MessageItem), State(...), ... }
+    // symbol_table: HashMap<String, SymbolDefinition<'a>>, // To be built
+}
+
 fn main() -> Result<(), BuildError> {
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let crate_path = PathBuf::from(crate_dir);
-    let spec_dir = crate_path.join("spec"); // Assuming spec files are in spec/
+    let spec_dir = crate_path.join("spec");
     let pattern = spec_dir.join("**/*.ssot");
 
     println!("cargo:rerun-if-changed={}", spec_dir.display());
-    // Implicitly rerun if fsm-dsl or fsm-codegen changes due to dependency
 
-    let mut generated_mod_files = Vec::new();
+    // Store parsed ASTs mapped by their path
+    let mut parsed_files: HashMap<PathBuf, SsotFile> = HashMap::new();
+
+    println!("Searching for FSM definitions in: {}", pattern.display());
 
     for entry in glob(pattern.to_str().unwrap())? {
         let ssot_path = entry?;
         println!("cargo:rerun-if-changed={}", ssot_path.display());
-        println!("Processing FSM definition: {}", ssot_path.display());
+        println!("Found FSM definition: {}", ssot_path.display());
 
-        // Parse the entire .ssot file using the new parser
-        let ssot_file_ast: SsotFile = parse_file(&ssot_path).map_err(|e| BuildError::DslParse {
-            path: ssot_path.clone(),
-            source: e,
-        })?;
+        // Parse the .ssot file
+        let ssot_file_ast = match parse_file(&ssot_path) {
+             Ok(ast) => {
+                 println!("  -> Successfully parsed: {}", ssot_path.display());
+                 ast
+             }
+             Err(e) => {
+                 // Report the parsing error but continue to try parsing other files
+                 eprintln!("Error parsing file {}: {}", ssot_path.display(), e);
+                 // Convert the error and return to stop the build process
+                 return Err(BuildError::DslParse {
+                     path: ssot_path.clone(),
+                     source: e,
+                 });
+                 // Or, if you want to allow the build to continue despite errors:
+                 // continue;
+             }
+        };
 
-        // Determine the base output directory (can be overridden per machine)
-        let top_level_rust_out =
-            find_annotation_str_value(&ssot_file_ast.top_level_annotations, "rust_out");
-        // Look for top-level Cap'n Proto and TS output annotations
-        let top_level_capnp_out =
-            find_annotation_str_value(&ssot_file_ast.top_level_annotations, "capnp_out");
-        let top_level_ts_out =
-            find_annotation_str_value(&ssot_file_ast.top_level_annotations, "ts_out");
 
-        // Process each state machine defined in the file
-        for machine_ast in &ssot_file_ast.state_machines {
-            let machine_name_str = machine_ast.name.to_string();
+        // --- Store the parsed AST ---
+        // Use canonicalize to get an absolute, normalized path as the key
+        let canonical_path = ssot_path.canonicalize().map_err(|e| io_err(&ssot_path, e))?;
+        parsed_files.insert(canonical_path, ssot_file_ast);
 
-            // Determine output dir: use machine-specific $rust_out or fallback to top-level
-            let rust_out_dir_str = find_annotation_str_value(&machine_ast.annotations, "rust_out")
-                .or(top_level_rust_out)
-                .ok_or_else(|| BuildError::MissingRustOut {
-                    path: ssot_path.clone(),
-                })?;
+        // --- Removed code generation logic for individual files ---
+        // The logic for generating rust, capnp, ts, formatting, and mod.rs
+        // for each machine within this file has been removed.
+        // It will be replaced by a consolidated generation step after parsing all files.
 
-            let out_dir_path = crate_path.join(rust_out_dir_str);
-            fs::create_dir_all(&out_dir_path).map_err(|e| io_err(&out_dir_path, e))?;
+    } // End of loop iterating through .ssot files
 
-            // Generate filename based on state machine name (snake_case)
-            let machine_name_snake = camel_to_snake(&machine_name_str);
-            let out_file_path = out_dir_path.join(format!("{}.rs", machine_name_snake));
+    println!(
+        "Parsed {} .ssot file(s). Next steps: Resolve imports and generate code.",
+        parsed_files.len()
+    );
 
-            println!(
-                "Generating Rust code for '{}' to: {}",
-                machine_name_str,
-                out_file_path.display()
-            );
-
-            // Generate code for the current state machine
-            let generated_code =
-                generate_rust_code(machine_ast).map_err(|e| BuildError::Codegen {
-                    path: ssot_path.clone(),
-                    machine_name: machine_name_str.clone(),
-                    source: e,
-                })?;
-
-            fs::write(&out_file_path, &generated_code).map_err(|e| io_err(&out_file_path, e))?;
-
-            // Store the stem for mod.rs generation
-            if out_dir_path == crate_path.join("src/generated") {
-                // Only auto-gen mod.rs for standard path
-                generated_mod_files.push(machine_name_snake.clone());
+    // 2. --- Build Package Map ---
+    println!("Building package map...");
+    let mut package_map: HashMap<String, PathBuf> = HashMap::new();
+    for (path, ast) in &parsed_files {
+        if let Some(pkg_name) = &ast.package_declaration {
+            if let Some(existing_path) = package_map.get(pkg_name) {
+                // Found duplicate package declaration
+                return Err(BuildError::DuplicatePackage {
+                    package_name: pkg_name.clone(),
+                    file1: existing_path.clone(),
+                    file2: path.clone(),
+                });
             }
-
-            // Attempt to format the generated code using rustfmt
-            match Command::new("rustfmt").arg(&out_file_path).output() {
-                Ok(output) => {
-                    if !output.status.success() {
-                        eprintln!(
-                            "warning: Failed to format generated code {}: {}",
-                            out_file_path.display(),
-                            String::from_utf8_lossy(&output.stderr)
-                        );
-                        // Optionally treat as hard error
-                    }
-                }
-                Err(e) => {
-                    eprintln!(
-                         "warning: Failed to run rustfmt for {}: {}. Ensure rustfmt is installed and in PATH.",
-                         out_file_path.display(),
-                         e
-                     );
-                }
-            }
-
-            // --- Cap'n Proto Schema Generation (Optional) ---
-            let capnp_out_dir_str =
-                find_annotation_str_value(&machine_ast.annotations, "capnp_out")
-                    .or(top_level_capnp_out);
-
-            if let Some(capnp_out_dir_str) = capnp_out_dir_str {
-                let out_dir_path = crate_path.join(capnp_out_dir_str);
-                fs::create_dir_all(&out_dir_path).map_err(|e| io_err(&out_dir_path, e))?;
-                // Use original machine name for capnp file
-                let out_file_path = out_dir_path.join(format!("{}.capnp", machine_name_str));
-
-                println!(
-                    "Generating Cap'n Proto schema for '{}' to: {}",
-                    machine_name_str,
-                    out_file_path.display()
-                );
-
-                let generated_schema =
-                    generate_capnp_schema(&ssot_file_ast, machine_ast).map_err(|e| {
-                        BuildError::Codegen {
-                            path: ssot_path.clone(),
-                            machine_name: machine_name_str.clone(),
-                            source: e,
-                        }
-                    })?;
-
-                fs::write(&out_file_path, &generated_schema)
-                    .map_err(|e| io_err(&out_file_path, e))?;
-                // No formatting needed for .capnp usually
-            }
-
-            // --- TypeScript Type Generation (Optional) ---
-            let ts_out_dir_str =
-                find_annotation_str_value(&machine_ast.annotations, "ts_out").or(top_level_ts_out);
-
-            if let Some(ts_out_dir_str) = ts_out_dir_str {
-                let out_dir_path = crate_path.join(ts_out_dir_str);
-                fs::create_dir_all(&out_dir_path).map_err(|e| io_err(&out_dir_path, e))?;
-                // Use original machine name + .types.ts convention
-                let out_file_path = out_dir_path.join(format!("{}.types.ts", machine_name_str));
-
-                println!(
-                    "Generating TypeScript types for '{}' to: {}",
-                    machine_name_str,
-                    out_file_path.display()
-                );
-
-                let generated_types =
-                    generate_typescript_types(machine_ast).map_err(|e| BuildError::Codegen {
-                        path: ssot_path.clone(),
-                        machine_name: machine_name_str.clone(),
-                        source: e,
-                    })?;
-
-                fs::write(&out_file_path, &generated_types)
-                    .map_err(|e| io_err(&out_file_path, e))?;
-
-                // Optional: Run Prettier or other TS formatter
-                match Command::new("prettier")
-                    .arg("--write")
-                    .arg(&out_file_path)
-                    .output()
-                {
-                    Ok(output) => {
-                        if !output.status.success() {
-                            eprintln!(
-                                "warning: Failed to format generated TypeScript {}: {}",
-                                out_file_path.display(),
-                                String::from_utf8_lossy(&output.stderr)
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                              "warning: Failed to run prettier for {}: {}. Ensure prettier is installed and in PATH.",
-                              out_file_path.display(),
-                              e
-                          );
-                    }
-                }
-            }
+            println!("  -> Mapping package '{}' to file {:?}", pkg_name, path.strip_prefix(&crate_path).unwrap_or(path));
+            package_map.insert(pkg_name.clone(), path.clone());
         }
     }
 
-    // Generate src/generated/mod.rs if needed
-    if !generated_mod_files.is_empty() {
-        let generated_mod_path = crate_path.join("src/generated/mod.rs");
-        let mod_content = generated_mod_files
-            .iter()
-            .map(|mod_name| format!("pub mod {};", mod_name))
-            .collect::<Vec<_>>()
-            .join("\n");
+    let context = ParsedContext {
+        files: &parsed_files,
+        package_map,
+        // symbol_table: HashMap::new(), // Initialize later
+    };
 
-        fs::write(&generated_mod_path, mod_content).map_err(|e| io_err(generated_mod_path, e))?;
-        println!("Generated src/generated/mod.rs");
-    }
+    println!("Package map built. Starting import resolution...");
+
+    // 3. --- Resolve Imports and Build Symbol Table (Conceptual) ---
+    //    This is where the main resolution logic will go.
+    //    We need to iterate through machines, resolve 'use' statements based on imports,
+    //    and then traverse the AST to resolve all QualifiedIdents.
+
+    // Placeholder for resolved machines
+    // let mut resolved_machines: Vec<ResolvedStateMachine> = Vec::new();
+
+    for (file_path, file_ast) in context.files {
+        let file_display_path = file_path.strip_prefix(&crate_path).unwrap_or(file_path);
+        println!("Resolving symbols in file: {:?}", file_display_path);
+
+        // Process imports for this file
+        let mut imported_packages: HashMap<String, &SsotFile> = HashMap::new(); // Map alias/last part -> imported AST
+        for import_decl in &file_ast.imports {
+            let target_pkg_name = &import_decl.package_name;
+            if let Some(target_file_path) = context.package_map.get(target_pkg_name) {
+                 if let Some(target_ast) = context.files.get(target_file_path) {
+                     // Simple mapping for now: use the last part of the package name as alias
+                     // e.g., import test.fsm.common; -> alias "common" maps to target_ast
+                     let alias = target_pkg_name.split('.').last().unwrap_or(target_pkg_name).to_string();
+                     println!("  -> Imported package '{}' as alias '{}' from {:?}", target_pkg_name, alias, target_file_path.strip_prefix(&crate_path).unwrap_or(target_file_path));
+                     imported_packages.insert(alias, target_ast);
+                 } else {
+                     // Should not happen if package_map is consistent with files
+                      eprintln!("Internal error: File path from package_map not found in parsed_files.");
+                 }
+            } else {
+                 return Err(BuildError::PackageNotFound {
+                    package_name: target_pkg_name.clone(),
+                    importer_file: file_path.clone(),
+                });
+            }
+        }
+
+
+        for machine in &file_ast.state_machines {
+            println!("  Resolving machine: {}", machine.name);
+
+            // Build local name resolution map based on 'use' statements
+            let mut local_resolution_map: HashMap<String, String> = HashMap::new(); // SimpleName -> FullyQualifiedName
+            for use_decl in &machine.use_declarations {
+                match &use_decl.target {
+                    QualifiedIdent::Simple(name) => {
+                        // 'use SimpleName;' - needs searching through imports or local defs later
+                        println!("    -> Found 'use {}' (simple) - Resolution deferred", name);
+                        // Potentially ambiguous, handle later during symbol resolution
+                    }
+                    QualifiedIdent::Qualified { qualifier, name } => {
+                        // 'use qualifier.Name;'
+                        let qualifier_str = qualifier.to_string();
+                        let name_str = name.to_string();
+                        println!("    -> Found 'use {}.{}'", qualifier_str, name_str);
+
+                        // Check if qualifier matches an imported package alias
+                        if let Some(imported_ast) = imported_packages.get(&qualifier_str) {
+                           // Construct the fully qualified name assuming the qualifier is the last part of the imported package
+                            let full_qualifier = imported_ast.package_declaration.as_deref().unwrap_or("");
+                            let fqn = format!("{}.{}", full_qualifier, name_str);
+                             println!("      -> Resolved '{}' to FQN '{}'", name_str, fqn);
+                             // Check for local name collision before inserting
+                            if local_resolution_map.contains_key(&name_str) {
+                                // Handle ambiguity/error
+                                return Err(BuildError::AmbiguousSymbol { symbol_name: name_str.clone(), referencing_file: file_path.clone() });
+                            }
+                            local_resolution_map.insert(name_str, fqn);
+
+                        } else {
+                            // Qualifier doesn't match an import alias - potentially error or local nested structure?
+                             println!("      -> Warning: Qualifier '{}' in 'use' statement does not match any imported package alias.", qualifier_str);
+                             // For now, treat as unresolved
+                        }
+                    }
+                }
+            }
+            println!("    -> Local Resolution Map: {:?}", local_resolution_map);
+
+
+            // --- Placeholder: Traverse Machine AST (states, events, transitions) ---
+            // For each QualifiedIdent:
+            //   - If Qualified: Use the full name (qualifier.Name) - need to ensure qualifier maps to a valid package
+            //   - If Simple:
+            //     - Try resolving using local_resolution_map.
+            //     - If not found locally, check if defined within the current machine (e.g., state name, local event).
+            //     - If still not found, check imports without explicit 'use' (maybe?) or error.
+            // Need to build the global symbol table first or resolve on the fly.
+
+        } // End loop machines
+    } // End loop files
+
+    // --- Placeholder for Consolidated Code Generation ---
+    // This step will now use the resolved information (e.g., `resolved_machines` or resolved ASTs)
+    // to generate the final code.
+
+    println!("Import resolution phase complete (basic structure). Next: Full symbol resolution and code generation.");
+
+
+    // --- Removed mod.rs generation for now ---
+    // Will be added back as part of the consolidated code generation step.
+
 
     Ok(())
-}
-
-// Simple CamelCase to snake_case conversion
-fn camel_to_snake(s: &str) -> String {
-    let mut snake = String::new();
-    let mut prev_is_underscore = true; // Avoid leading underscore
-    for ch in s.chars() {
-        if ch.is_uppercase() {
-            if !prev_is_underscore {
-                snake.push('_');
-            }
-            snake.push(ch.to_ascii_lowercase());
-            prev_is_underscore = true;
-        } else {
-            snake.push(ch);
-            prev_is_underscore = ch == '_';
-        }
-    }
-    snake
 }
