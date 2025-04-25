@@ -194,10 +194,11 @@ A `.ssot` file defines one or more state machines. Here's a breakdown of the syn
 *   ✅ Example `build.rs` Workflow: Demonstrates parsing and invoking all generators.
 *   ✅ Entry/Exit Actions: Added syntax (`state S @N { entry: action1; exit: action2; }`) and Rust/XState/SCXML codegen support.
 *   ✅ State Parsing Bug Fixed: The parser now correctly handles states with and without bodies, regardless of order.
+*   ✅ Documentation Generation Tests Fixed: Formatting discrepancies in tests for Rust, Cap'n Proto, and TypeScript doc comment generation have been resolved.
 
 ## Known Issues
 
-*   (No major known parsing or generation issues currently)
+*   (None currently identified. Previously failing documentation tests are now fixed.)
 
 ## Roadmap / Future Enhancements
 

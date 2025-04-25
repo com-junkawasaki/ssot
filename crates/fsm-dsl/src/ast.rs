@@ -12,62 +12,71 @@ pub use proc_macro2::Ident;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Annotation {
     /// The name of the annotation (e.g., `description`, `initial`, `id`).
+    /// This corresponds to the part after the `$` symbol.
     pub name: Ident,
-    /// The optional value associated with the annotation.
+    /// The optional value associated with the annotation, enclosed in parentheses.
+    /// If the parentheses are omitted, the value is `None`.
     pub value: Option<AnnotationValue>,
 }
 
-/// Represents the possible value types within an annotation.
+/// Represents the possible value types within an annotation's parentheses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnnotationValue {
-    /// A string literal value, e.g., `"some text"`.
+    /// A string literal value, enclosed in double quotes (e.g., `"some text"`).
     StringLiteral(String),
-    /// A boolean literal value, e.g., `true` or `false`.
+    /// A boolean literal value (`true` or `false`).
     BooleanLiteral(bool),
-    /// An integer literal value, e.g., `123`.
+    /// An integer literal value (e.g., `123`, `-45`).
     NumberLiteral(i64),
-    /// An identifier used as a value, potentially referencing another element.
+    /// An identifier used as a value, potentially referencing another definition (e.g., a state name in `$initial(StateName)`).
     Identifier(Ident),
-    /// An array of string literals, e.g., `["derive1", "derive2"]`. Used for annotations like `$derive`.
+    /// An array of string literals, enclosed in square brackets (e.g., `["derive1", "derive2"]`).
+    /// Typically used for annotations like `$derive`.
     ArrayLiteral(Vec<String>),
 }
 
 // --- Types for Payloads and Values ---
 
-/// Defines the possible data types for fields within events or context, mirroring Cap'n Proto types.
+/// Defines the possible data types for fields within events or context.
+///
+/// These types directly correspond to the primitive types available in Cap'n Proto,
+/// ensuring compatibility when generating Cap'n Proto schemas.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FieldType {
-    /// Represents the absence of a value (similar to `()` in Rust).
+    /// Represents the absence of a value (similar to `()` in Rust or `Void` in Cap'n Proto).
     Void,
-    /// A boolean value (`true` or `false`).
+    /// A boolean value (`true` or `false`). Corresponds to `Bool` in Cap'n Proto.
     Bool,
-    /// An 8-bit signed integer.
+    /// An 8-bit signed integer. Corresponds to `Int8` in Cap'n Proto.
     Int8,
-    /// A 16-bit signed integer.
+    /// A 16-bit signed integer. Corresponds to `Int16` in Cap'n Proto.
     Int16,
-    /// A 32-bit signed integer.
+    /// A 32-bit signed integer. Corresponds to `Int32` in Cap'n Proto.
     Int32,
-    /// A 64-bit signed integer.
+    /// A 64-bit signed integer. Corresponds to `Int64` in Cap'n Proto.
     Int64,
-    /// An 8-bit unsigned integer.
+    /// An 8-bit unsigned integer. Corresponds to `UInt8` in Cap'n Proto.
     UInt8,
-    /// A 16-bit unsigned integer.
+    /// A 16-bit unsigned integer. Corresponds to `UInt16` in Cap'n Proto.
     UInt16,
-    /// A 32-bit unsigned integer.
+    /// A 32-bit unsigned integer. Corresponds to `UInt32` in Cap'n Proto.
     UInt32,
-    /// A 64-bit unsigned integer.
+    /// A 64-bit unsigned integer. Corresponds to `UInt64` in Cap'n Proto.
     UInt64,
-    /// A 32-bit floating-point number.
+    /// A 32-bit floating-point number. Corresponds to `Float32` in Cap'n Proto.
     Float32,
-    /// A 64-bit floating-point number.
+    /// A 64-bit floating-point number. Corresponds to `Float64` in Cap'n Proto.
     Float64,
-    /// A UTF-8 encoded string.
+    /// A UTF-8 encoded string. Corresponds to `Text` in Cap'n Proto.
     Text,
-    /// Arbitrary binary data.
+    /// Arbitrary binary data. Corresponds to `Data` in Cap'n Proto.
     Data,
-    /// A list containing elements of the specified type.
+    /// A list containing elements of the specified inner type. Corresponds to `List(T)` in Cap'n Proto.
+    /// (Note: DSL syntax for lists might still be under development).
     List(Box<FieldType>),
-    /// An identifier referencing a user-defined struct or enum (requires resolution during code generation).
+    /// An identifier referencing a user-defined struct or enum defined elsewhere (potentially within the same `.ssot` file).
+    /// This requires resolution during the code generation phase to map to the actual type.
+    /// Corresponds to using struct/enum types in Cap'n Proto.
     Identifier(Ident),
 }
 
@@ -75,131 +84,144 @@ pub enum FieldType {
 
 /// Represents the root Abstract Syntax Tree (AST) node for a parsed `.ssot` file.
 ///
-/// Contains the overall structure including file ID, package declaration,
-/// top-level annotations, and state machine definitions.
+/// This is the top-level container holding all information parsed from a single file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SsotFile {
-    /// The Cap'n Proto schema file ID, specified like `@0x123456789abcdef0;`.
+    /// The unique Cap'n Proto schema file ID, specified at the top of the file (e.g., `@0x123456789abcdef0;`).
+    /// Required for Cap'n Proto schema generation.
     pub file_id: u64,
-    /// An optional package declaration, e.g., `package com.example.fsm;`.
+    /// An optional package declaration (e.g., `package com.example.fsm;`).
+    /// Primarily relevant for organizing generated code in some target languages.
     pub package_declaration: Option<String>,
-    /// Annotations defined at the top level of the file, applying globally or to the generation process.
-    pub top_level_annotations: Vec<Annotation>, // e.g., $rust_out, $derive
-    /// The list of state machines defined within the file.
+    /// Annotations defined at the top level of the file, before any `stateMachine` definitions.
+    /// These often provide global configuration for code generation (e.g., `$rust_out`).
+    pub top_level_annotations: Vec<Annotation>,
+    /// A list of all `stateMachine` blocks defined within the file.
     pub state_machines: Vec<StateMachine>,
 }
 
 // --- State Machine ---
 
-/// Represents a single `state_machine` definition within the `.ssot` file.
+/// Represents a single `stateMachine` definition, encapsulating its logic and structure.
 ///
-/// Defines the core components of a state machine: its name, states, events,
-/// transitions, context data, and associated annotations.
+/// This is the core unit of definition in an `.ssot` file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StateMachine {
-    /// The name identifier of the state machine.
+    /// The name identifier of the state machine (e.g., `LightSwitch`).
     pub name: Ident,
-    /// Annotations specific to this state machine, like `$description` or `$initial`.
-    pub annotations: Vec<Annotation>, // Includes $description, $initial etc.
-    /// The set of possible states the machine can be in.
+    /// Annotations specific to this state machine definition, such as `$description`, `$initial`,
+    /// or overrides for output directories (e.g., `$rust_out`).
+    pub annotations: Vec<Annotation>,
+    /// The complete set of possible states defined for this machine within the `states { ... }` block.
     pub states: Vec<StateItem>,
-    /// The set of events (messages) that can trigger transitions or be processed by the machine.
-    pub events: Vec<MessageItem>, // Renamed from messages to events
-    /// The defined transitions between states, triggered by events.
+    /// The complete set of events (messages) defined for this machine within the `events { ... }` block.
+    pub events: Vec<MessageItem>,
+    /// The complete set of transition rules defined for this machine within the `transitions { ... }` block.
     pub transitions: Vec<TransitionItem>,
-    /// The data fields representing the internal context or memory of the state machine.
-    pub context: Vec<FieldDef>, // Added: Context fields for the state machine
+    /// Data fields representing the internal context or memory of the state machine.
+    /// (Note: DSL syntax for context might still be under development or implicitly defined).
+    pub context: Vec<FieldDef>,
 }
 
 // --- States ---
 
-/// Represents a single state defined within the `states` block of a state machine.
+/// Represents a single state defined within the `states { ... }` block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateItem {
-    /// Annotations specific to this state.
-    pub annotations: Vec<Annotation>, // Added annotations
-    /// The name identifier of the state.
+    /// Annotations specific to this state definition (e.g., `$description`).
+    pub annotations: Vec<Annotation>,
+    /// The name identifier of the state (e.g., `On`, `Off`).
     pub name: Ident,
-    /// The ordinal value (like `@0`) associated with the state, used for serialization/identification.
+    /// The unique non-negative integer (`@N`) associated with the state.
+    /// Used for serialization and identification, especially in Cap'n Proto.
     pub ordinal: u64,
-    /// A list of action identifiers to be executed when entering this state.
-    pub entry_actions: Vec<Ident>, // Added: Actions to execute on entry
-    /// A list of action identifiers to be executed when exiting this state.
-    pub exit_actions: Vec<Ident>, // Added: Actions to execute on exit
+    /// A list of action identifiers to be executed upon entering this state.
+    /// Defined using `entry: actionName;` within the state definition.
+    pub entry_actions: Vec<Ident>,
+    /// A list of action identifiers to be executed upon exiting this state.
+    /// Defined using `exit: actionName;` within the state definition.
+    pub exit_actions: Vec<Ident>,
 }
 
 // --- Events (Messages) ---
 
-/// Represents an event (or message) definition within the `events` block.
+/// Represents an event (or message) definition within the `events { ... }` block.
 ///
-/// Events typically carry data payloads (fields) and trigger state transitions.
+/// Events are the triggers for state transitions and can carry data payloads.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MessageItem {
-    /// Annotations specific to this event definition.
-    pub annotations: Vec<Annotation>, // Added annotations
-    /// The name identifier of the event struct.
+    /// Annotations specific to this event definition (e.g., `$description`).
+    pub annotations: Vec<Annotation>,
+    /// The name identifier of the event struct (e.g., `Toggle`, `TurnOn`).
     pub name: Ident,
-    /// The ordinal value (`@N`) associated with the event struct.
+    /// The unique non-negative integer (`@N`) associated with the event struct.
+    /// Used for serialization and identification.
     pub ordinal: u64,
-    /// The data fields contained within this event.
+    /// The data fields contained within this event's payload, defined within the event's braces `{ ... }`.
+    /// If the event has no payload, this list is empty.
     pub fields: Vec<FieldDef>,
 }
 
-/// Represents a single field within an event definition or the state machine's context.
+/// Represents a single data field within an event's payload or the state machine's context.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldDef {
-    /// Annotations specific to this field.
-    pub annotations: Vec<Annotation>, // Added annotations
-    /// The name identifier of the field.
+    /// Annotations specific to this field definition (e.g., `$description`).
+    pub annotations: Vec<Annotation>,
+    /// The name identifier of the field (e.g., `brightness`).
     pub name: Ident,
-    /// The ordinal value (`@N`) associated with the field within its containing struct.
+    /// The unique non-negative integer (`@N`) associated with the field within its containing struct.
+    /// Used for serialization and identification.
     pub ordinal: u64,
-    /// The data type of the field.
+    /// The data type of the field (e.g., `UInt8`, `Text`).
     pub field_type: FieldType,
 }
 
 // --- Transitions ---
 
-/// Represents a state transition rule defined within the `transitions` block.
+/// Represents a state transition rule defined within the `transitions { ... }` block.
 ///
-/// Specifies how the state machine moves from one state (`from`) to another (`to`)
-/// based on triggers (`on`), conditions (`guard`), and actions (`action`).
+/// Describes how the machine moves from a source state to a target state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransitionItem {
-    /// An optional name for the transition, useful for identification or documentation.
-    pub name: Option<Ident>, // Added optional name
-    /// The source state identifier for this transition.
+    /// An optional name identifier for the transition definition (e.g., `transition MyTransition from ...`).
+    /// Useful for identification, documentation, or specific referencing.
+    pub name: Option<Ident>,
+    /// The identifier of the state from which this transition originates.
     pub from: Ident,
-    /// The target state identifier for this transition.
+    /// The identifier of the state to which this transition leads.
     pub to: Ident,
-    /// The components defining the transition's trigger, condition, and effect.
-    pub elements: Vec<TransitionElement>, // on, guard, action
-    /// Annotations specific to this transition, like `$id`.
-    pub annotations: Vec<Annotation>, // e.g., $id(...)
+    /// The core components defining the transition's trigger (`on`), condition (`guard`), and effect (`action`).
+    /// There must be exactly one `on` element, and zero or one `guard` and `action` elements.
+    pub elements: Vec<TransitionElement>,
+    /// Annotations specific to this transition definition (e.g., `$description`).
+    pub annotations: Vec<Annotation>,
 }
 
-/// Represents the constituent parts of a transition definition (`on`, `guard`, `action`).
+/// Represents the distinct parts that define a transition's behavior: `on`, `guard`, `action`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransitionElement {
     /// Specifies the event that triggers the transition.
+    /// Syntax: `on @Ordinal EventName;`
     On {
-        /// The ordinal of the `on` element within the transition block.
+        /// The unique non-negative integer ordinal (`@N`) for this `on` declaration within the state machine.
         ordinal: u64,
-        /// The identifier of the triggering event.
+        /// The identifier of the triggering event (must match an event defined in the `events` block).
         event: Ident,
     },
-    /// Specifies a condition (guard function) that must be true for the transition to occur.
+    /// Specifies a condition (guard function) that must evaluate to true for the transition to be taken.
+    /// Syntax: `guard @Ordinal guardFunctionName;`
     Guard {
-        /// The ordinal of the `guard` element within the transition block.
+        /// The unique non-negative integer ordinal (`@N`) for this `guard` declaration within the state machine.
         ordinal: u64,
-        /// The identifier of the guard function.
+        /// The identifier of the guard function. The actual function implementation is expected in the target code.
         function: Ident,
     },
-    /// Specifies an action (function) to be executed when the transition occurs.
+    /// Specifies an action (function) to be executed when the transition is taken.
+    /// Syntax: `action @Ordinal actionFunctionName;`
     Action {
-        /// The ordinal of the `action` element within the transition block.
+        /// The unique non-negative integer ordinal (`@N`) for this `action` declaration within the state machine.
         ordinal: u64,
-        /// The identifier of the action function.
+        /// The identifier of the action function. The actual function implementation is expected in the target code.
         function: Ident,
     },
 }

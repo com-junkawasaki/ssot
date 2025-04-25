@@ -2,7 +2,8 @@
 
 // Basic whitespace and comments (Silent rules)
 WHITESPACE = _{ (" " | "\t" | "\n" | "\r")+ }
-COMMENT    = _{ "#" ~ (!("\n" | "\r") ~ ANY)* } // Restore original
+// Allow both # and // style comments
+COMMENT    = _{ ("#" | "//") ~ (!("\n" | "\r") ~ ANY)* }
 // Revert optional_whitespace to simple silent rule
 optional_whitespace = _{ (WHITESPACE | COMMENT)* } // Restore SILENT
 
@@ -51,7 +52,12 @@ event_definitions = { "events" ~ "{" ~ optional_whitespace ~ event_struct* ~ opt
 
 // parser.rs expects `event_struct` containing `event_field`
 // Allow optional annotations before the event keyword
-event_struct = { optional_annotations ~ "event" ~ identifier ~ "@" ~ ordinal ~ "{" ~ optional_whitespace ~ (event_field ~ optional_whitespace)* ~ optional_whitespace ~ "}" }
+// Modify event_struct to accept either a body {} or a semicolon ;
+event_struct = { optional_annotations ~ "event" ~ identifier ~ "@" ~ ordinal ~ (event_body | event_terminator) }
+
+// Define the two possible endings for an event definition
+event_body = { "{" ~ optional_whitespace ~ (event_field ~ optional_whitespace)* ~ optional_whitespace ~ "}" }
+event_terminator = { ";" ~ optional_whitespace }
 
 // parser.rs expects `event_field`
 // Allow optional annotations before the field definition

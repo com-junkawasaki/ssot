@@ -19,30 +19,44 @@ use std::fs;
 use std::path::Path;
 use thiserror::Error;
 
+/// The Pest parser instance derived from the `ssot.pest` grammar file.
+/// This struct itself is typically not used directly, but its generated `parse` method is.
 #[derive(Parser)]
 #[grammar = "ssot.pest"]
 pub struct SsotParser;
 
+/// Enumerates the possible errors that can occur during parsing of an `.ssot` file.
 #[derive(Error, Debug)]
 pub enum ParseError {
+    /// Error encountered while trying to read the input file.
     #[error("Failed to read file: {0}")]
     FileReadError(#[from] std::io::Error),
+    /// An error reported directly by the Pest parser, indicating a grammar mismatch.
     #[error("Pest parsing error: {0}")]
     PestError(#[from] Box<pest::error::Error<Rule>>),
+    /// An identifier string encountered in the input is not valid according to Rust identifier rules.
     #[error("Invalid identifier: '{0}'")]
     InvalidIdentifier(String),
+    /// A numeric literal encountered could not be parsed into the expected integer type (e.g., u64 for ordinals/IDs).
     #[error("Invalid number format: '{0}' - {1}")]
-    InvalidNumber(String, String),
+    InvalidNumber(String, String), // value, error message
+    /// The file ID (`@0x...;`) format is incorrect or could not be parsed as a hex u64.
     #[error("Invalid file ID format: '{0}'")]
     InvalidFileId(String),
+    /// A type name used for a field (e.g., `fieldName: TypeName`) is not recognized as a valid `FieldType`.
     #[error("Invalid type string: '{0}'")]
     InvalidTypeString(String),
+    /// A required element according to the grammar or semantics was not found (e.g., missing `$initial` state, missing `file_id`).
     #[error("Missing required element: {0}")]
     MissingElement(String),
+    /// A definition with the same name/ordinal was encountered multiple times where uniqueness is required (e.g., duplicate state names).
     #[error("Duplicate definition: {0}")]
     DuplicateDefinition(String),
+    /// An internal parser error occurred, indicating a mismatch between the parsing logic and the expected grammar rules.
+    /// This usually suggests a bug in the parser implementation itself.
     #[error("Internal parser error: Unexpected rule '{rule:?}' encountered in '{context}'")]
     UnexpectedRule { rule: Rule, context: String },
+    /// A general semantic error was detected (e.g., inconsistent use of annotations, violation of specific DSL rules not caught by grammar).
     #[error("Semantic error: {0}")]
     SemanticError(String),
 }
@@ -200,6 +214,9 @@ pub fn parse_str(input: &str) -> Result<SsotFile, ParseError> {
     })
 }
 
+/// Parses an annotation rule (e.g., `$name(value);` or `$name;`).
+///
+/// Corresponds to the `annotation` rule in `ssot.pest`.
 fn parse_annotation(pair: Pair<Rule>) -> Result<Annotation, ParseError> {
     let mut inner = pair.into_inner();
     let name = parse_ident(inner.next().unwrap())?;
@@ -226,6 +243,9 @@ fn parse_annotation(pair: Pair<Rule>) -> Result<Annotation, ParseError> {
     Ok(Annotation { name, value })
 }
 
+/// Parses the value part of an annotation (inside the parentheses).
+///
+/// Corresponds to the `annotation_value` and `annotation_value_inner` rules.
 fn parse_annotation_value(pair: Pair<Rule>) -> Result<AnnotationValue, ParseError> {
     // pair matches annotation_value rule: "(" ~ annotation_value_inner? ~ ")"
     if let Some(annotation_value_inner_pair) = pair.into_inner().next() {
@@ -300,6 +320,9 @@ fn parse_annotation_value(pair: Pair<Rule>) -> Result<AnnotationValue, ParseErro
     }
 }
 
+/// Parses a state machine definition block.
+///
+/// Corresponds to the `state_machine` rule.
 fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
     let mut inner = pair.into_inner();
     let name = parse_ident(inner.next().unwrap())?;
@@ -394,6 +417,9 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
     })
 }
 
+/// Parses the `states` block within a state machine.
+///
+/// Corresponds to the `state_enum` rule (historical name).
 fn parse_state_enum(pair: Pair<Rule>) -> Result<Vec<StateItem>, ParseError> {
     pair.into_inner()
         // Revert filter to original state_variant rule
@@ -402,6 +428,11 @@ fn parse_state_enum(pair: Pair<Rule>) -> Result<Vec<StateItem>, ParseError> {
         .collect()
 }
 
+/// Parses a single state definition within the `states` block.
+///
+/// Can handle both simple states (`State @N;`) and states with bodies containing
+/// entry/exit actions (`State @N { entry: ...; exit: ...; }`).
+/// Corresponds to the `state_item` rule.
 fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
     let inner = pair.into_inner(); // Consumes the outer state_variant rule
     let mut annotations = Vec::new();
@@ -508,6 +539,8 @@ fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
     })
 }
 
+/// Parses the `events` block within a state machine.
+/// Corresponds to the `event_definitions` rule.
 fn parse_event_definitions(pair: Pair<Rule>) -> Result<Vec<MessageItem>, ParseError> {
     pair.into_inner()
         .filter(|p| p.as_rule() == Rule::event_struct) // Ensure only event_structs are processed
@@ -515,58 +548,92 @@ fn parse_event_definitions(pair: Pair<Rule>) -> Result<Vec<MessageItem>, ParseEr
         .collect()
 }
 
+/// Parses a single event definition within the `events` block.
+///
+/// Handles events with or without payload fields.
+/// Corresponds to the `event_struct` rule.
 fn parse_event_struct(pair: Pair<Rule>) -> Result<MessageItem, ParseError> {
+    // pair should match Rule::event_struct
+    debug_assert_eq!(pair.as_rule(), Rule::event_struct);
+
     let mut inner = pair.into_inner();
     let mut annotations = Vec::new();
 
-    // Peek and parse optional annotations
-    if let Some(first) = inner.peek() {
-        if first.as_rule() == Rule::optional_annotations {
-            annotations = first
-                .into_inner()
+    // 1. Parse optional annotations first
+    if let Some(potential_annotations_pair) = inner.peek() {
+        if potential_annotations_pair.as_rule() == Rule::optional_annotations {
+            annotations = potential_annotations_pair
+                .into_inner() // Iterate inside optional_annotations
                 .map(parse_annotation)
                 .collect::<Result<_, _>>()?;
-            inner.next();
+            inner.next(); // Consume the optional_annotations pair
         }
+        // If not Rule::optional_annotations, it should be Rule::identifier (handled next)
     }
 
-    // Rule: "event" ~ ident ~ "@" ~ ord ~ "{" ~ fields* ~ "}"
-    let name = parse_ident(
-        inner
-            .next()
-            .ok_or(ParseError::MissingElement("event name".to_string()))?,
-    )?; // Consumes ident
-    let ordinal = parse_ordinal(
-        inner
-            .next()
-            .ok_or(ParseError::MissingElement("event ordinal".to_string()))?,
-    )?; // Consumes ordinal
+    // 2. Consume the "event" keyword (implicitly handled by grammar structure, not a rule itself)
+    // No, the rule is `optional_annotations ~ "event" ~ identifier ...`
+    // We don't get a pair for the literal "event".
 
-    let mut fields = Vec::new();
-    // Iterate through the rest: fields inside {}
-    for inner_pair in inner {
-        match inner_pair.as_rule() {
-            Rule::event_field => {
-                fields.push(parse_event_field(inner_pair)?);
-            }
-            Rule::WHITESPACE | Rule::COMMENT | Rule::optional_whitespace => { /* Ignore */ }
-            _ => {
-                return Err(ParseError::UnexpectedRule {
-                    rule: inner_pair.as_rule(),
-                    context: "inside event struct block {}".to_string(),
-                });
+    // 3. Parse identifier (event name)
+    let name_pair = inner.next().ok_or_else(|| ParseError::MissingElement("event name after 'event' keyword".to_string()))?;
+    if name_pair.as_rule() != Rule::identifier {
+        return Err(ParseError::UnexpectedRule { rule: name_pair.as_rule(), context: "expected event name (identifier)".to_string() });
+    }
+    let name = parse_ident(name_pair)?;
+
+    // 4. Parse ordinal
+    let ordinal_pair = inner.next().ok_or_else(|| ParseError::MissingElement("event ordinal after name".to_string()))?;
+    if ordinal_pair.as_rule() != Rule::ordinal {
+        return Err(ParseError::UnexpectedRule { rule: ordinal_pair.as_rule(), context: "expected event ordinal".to_string() });
+    }
+    let ordinal = parse_ordinal(ordinal_pair)?;
+
+    // 5. Parse event body or terminator
+    let mut fields: Vec<FieldDef> = Vec::new();
+    let body_or_terminator_pair = inner.next().ok_or_else(|| ParseError::MissingElement("event body {} or terminator ; after ordinal".to_string()))?;
+
+    match body_or_terminator_pair.as_rule() {
+        Rule::event_body => {
+            // Iterate inside the event_body pair for event_fields
+            for field_pair in body_or_terminator_pair.into_inner() {
+                match field_pair.as_rule() {
+                    Rule::event_field => {
+                        fields.push(parse_event_field(field_pair)?);
+                    }
+                    Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
+                    _ => return Err(ParseError::UnexpectedRule {
+                        rule: field_pair.as_rule(),
+                        context: "inside event_body".to_string(),
+                    })
+                }
             }
         }
+        Rule::event_terminator => {
+            // No fields to parse for terminator
+        }
+        _ => return Err(ParseError::UnexpectedRule {
+            rule: body_or_terminator_pair.as_rule(),
+            context: "expected event_body or event_terminator".to_string()
+        })
+    }
+    
+    // Ensure no extra pairs are left
+    if inner.next().is_some() {
+        return Err(ParseError::SemanticError("Unexpected tokens after event definition".to_string()));
     }
 
     Ok(MessageItem {
-        annotations, // Add parsed annotations
+        annotations,
         name,
         ordinal,
         fields,
     })
 }
 
+/// Parses a single field definition within an event's payload.
+///
+/// Corresponds to the `event_field` rule.
 fn parse_event_field(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
     let mut inner = pair.into_inner();
     let mut annotations = Vec::new();
@@ -617,6 +684,10 @@ fn parse_event_field(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
     })
 }
 
+/// Parses a field type identifier string into a `FieldType` enum variant.
+///
+/// Handles primitive types (like `UInt32`, `Text`) and potentially list types or identifiers.
+/// Corresponds to the `field_type` rule.
 fn parse_field_type(pair: Pair<Rule>) -> Result<FieldType, ParseError> {
     // If the received pair is the generic 'type' rule, get its specific inner rule.
     let rule = pair.as_rule(); // Get the rule *before* potentially moving pair
@@ -664,6 +735,9 @@ fn parse_field_type(pair: Pair<Rule>) -> Result<FieldType, ParseError> {
     }
 }
 
+/// Parses a single transition definition within the `transitions` block.
+///
+/// Corresponds to the `transition_definition` rule.
 fn parse_transition_definition(pair: Pair<Rule>) -> Result<TransitionItem, ParseError> {
     println!("Parsing transition_definition...");
     let mut inner = pair.into_inner();
@@ -759,6 +833,9 @@ fn parse_transition_definition(pair: Pair<Rule>) -> Result<TransitionItem, Parse
     })
 }
 
+/// Parses a single element within a transition definition (`on`, `guard`, or `action`).
+///
+/// Corresponds to the `transition_element` rule.
 fn parse_transition_element(pair: Pair<Rule>) -> Result<ast::TransitionElement, ParseError> {
     let inner_pair = pair.into_inner().next().unwrap();
     let rule = inner_pair.as_rule();
@@ -787,12 +864,18 @@ fn parse_transition_element(pair: Pair<Rule>) -> Result<ast::TransitionElement, 
     }
 }
 
+/// Parses a generic identifier string into a `proc_macro2::Ident`.
+///
+/// Corresponds to the `identifier` rule.
 fn parse_ident(pair: Pair<Rule>) -> Result<Ident, ParseError> {
     let ident_str = pair.as_str();
     syn::parse_str::<Ident>(ident_str)
         .map_err(|_| ParseError::InvalidIdentifier(ident_str.to_string()))
 }
 
+/// Parses an ordinal (`@N`) into a `u64`.
+///
+/// Corresponds to the `ordinal` rule.
 fn parse_ordinal(pair: Pair<Rule>) -> Result<u64, ParseError> {
     let num_str = pair.as_str();
     num_str
@@ -800,12 +883,19 @@ fn parse_ordinal(pair: Pair<Rule>) -> Result<u64, ParseError> {
         .map_err(|e| ParseError::InvalidNumber(num_str.to_string(), e.to_string()))
 }
 
+/// Parses a hexadecimal literal (`0x...`) into a `u64`.
+///
+/// Used primarily for the file ID.
+/// Corresponds to the `hex_literal` rule.
 fn parse_hex_literal(pair: Pair<Rule>) -> Result<u64, ParseError> {
     let hex_str = pair.as_str().trim_start_matches("0x");
     u64::from_str_radix(hex_str, 16)
         .map_err(|e| ParseError::InvalidNumber(hex_str.to_string(), e.to_string()))
 }
 
+/// Unescapes string literals found in the grammar (removes surrounding quotes and handles escapes).
+///
+/// Note: This is a basic implementation and might need refinement depending on supported escape sequences.
 fn unescape_string(s: &str) -> String {
     // Remove the outer quotes
     let s = &s[1..s.len() - 1];
@@ -896,6 +986,9 @@ fn unescape_string(s: &str) -> String {
     result
 }
 
+/// Parses the `transitions` block within a state machine.
+///
+/// Corresponds to the `transitions_block` rule.
 fn parse_transitions_block(pair: Pair<Rule>) -> Result<Vec<TransitionItem>, ParseError> {
     println!("Parsing transitions_block...");
     let mut parsed_transitions = Vec::new();

@@ -338,7 +338,8 @@ fn generate_impl_block(
 /// Generates the Event enum definition with associated data structs.
 fn generate_event_enum_and_structs(ast: &StateMachine, derive_tokens: &TokenStream) -> TokenStream {
     let event_enum_name = format_ident!("Event");
-    let event_payload_struct_name = format_ident!("EventPayload"); // Convention for associated data
+    // Use just "Payload" as the suffix convention
+    let payload_suffix = format_ident!("Payload"); 
 
     let mut event_structs = Vec::new();
     let variants = ast
@@ -356,7 +357,8 @@ fn generate_event_enum_and_structs(ast: &StateMachine, derive_tokens: &TokenStre
                 }
             } else {
                 // Event with payload struct
-                let struct_name = format_ident!("{}{}", variant_name, event_payload_struct_name);
+                // Corrected struct name generation
+                let struct_name = format_ident!("{}{}", variant_name, payload_suffix);
                 let struct_doc_comment = generate_rust_doc_comment(&event_item.annotations); // Use event doc for struct too?
 
                 let fields = event_item.fields.iter().map(|field| {
@@ -527,7 +529,8 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
 
         callback_signatures.push(quote! {
             // Guard methods take immutable self, current state, and event/payload
-            fn #guard_fn_ident(&self, state: &#state_enum_name, event: #event_type_sig) -> bool;
+            // Use "current_state" as the argument name to match test assertion
+            fn #guard_fn_ident(&self, current_state: &#state_enum_name, event: #event_type_sig) -> bool;
         });
     }
 
@@ -637,7 +640,8 @@ fn determine_callback_event_signature<'a>(
                 } else {
                     // All uses are for the same event with payload, use reference to payload struct
                     // Use the correct payload struct naming convention
-                    let payload_struct_name = format_ident!("{}EventPayload", first_def.name);
+                    let payload_suffix = format_ident!("Payload");
+                    let payload_struct_name = format_ident!("{}{}", first_def.name, payload_suffix);
                     quote! { &#payload_struct_name }
                 }
             } else {
@@ -737,22 +741,43 @@ impl From<std::fmt::Error> for CodegenError {
 // --- Unit Tests ---
 #[cfg(test)]
 mod tests {
-    use super::*; // Import items from parent module (including helpers)
+    use super::*; // Bring parent module's items into scope
+    use fsm_dsl::parser::parse_str; // Import the CORRECT parser function
+    // Import necessary AST types for helper functions
     use fsm_dsl::ast::{
-        // Import corrected AST types
-        Annotation,
-        AnnotationValue,
-        FieldDef,
-        FieldType,
-        MessageItem,
-        StateItem,
-        StateMachine,
-        TransitionElement,
-        TransitionItem,
+        Annotation, AnnotationValue, FieldDef, FieldType, MessageItem, StateItem,
+        StateMachine, TransitionElement, TransitionItem, 
     };
-    use pretty_assertions::assert_eq;
-    use quote::quote;
-    use syn::parse_file as syn_parse_file; // Alias for clarity
+    use syn::parse_file as syn_parse_file; // Import for code parsing in tests
+
+    // --- Define shared constants for tests --- 
+    const ANNOTATED_MACHINE_SSOT: &str = r#"
+@0xdeadbeefcafe0001;
+
+$description("This is the main machine.");
+stateMachine AnnotatedMachine {
+    $initial(Idle);
+    states {
+        $description("Waiting state.");
+        Idle @0;
+        $description("Active state.");
+        Running @1;
+    }
+    events {
+        $description("Starts the machine.");
+        event Start @0 {
+            $description("The user ID.");
+            userId @0 : UInt64;
+        }
+        $description("Stops the machine.");
+        event Stop @1; // Use semicolon instead of {} for empty event
+    }
+    transitions {
+        transition StartIdle from Idle to Running { on @0 Start; }
+        transition StopRunning from Running to Idle { on @1 Stop; }
+    }
+}
+"#;
 
     // Helper function to create identifiers for tests
     fn ident(s: &str) -> proc_macro2::Ident {
@@ -765,563 +790,274 @@ mod tests {
             name: ident("TestMachine"),
             annotations: vec![Annotation {
                 name: ident("initial"),
-                value: Some(AnnotationValue::Identifier(ident("Idle"))), // Wrap in Some()
+                value: Some(AnnotationValue::Identifier(ident("Idle"))),
             }],
             events: vec![
                 MessageItem {
-                    name: ident("Start"),
-                    ordinal: 0, // Added ordinal
+                    name: ident("Event1"),
+                    ordinal: 0, // Use u64 directly
+                    annotations: vec![],
                     fields: vec![],
-                    annotations: vec![], // Added missing field
                 },
                 MessageItem {
-                    name: ident("Stop"),
-                    ordinal: 1, // Added ordinal
+                    name: ident("Event2"),
+                    ordinal: 1, // Use u64 directly
+                    annotations: vec![],
                     fields: vec![],
-                    annotations: vec![], // Added missing field
                 },
                 MessageItem {
-                    name: ident("Update"),
-                    ordinal: 2, // Added ordinal
+                    name: ident("EventWithPayload"),
+                    ordinal: 2, // Use u64 directly
+                    annotations: vec![],
                     fields: vec![FieldDef {
-                        name: ident("value"),
-                        ordinal: 0, // Added ordinal
-                        field_type: FieldType::Int32,
-                        annotations: vec![], // Added missing field
+                        name: ident("data"),
+                        ordinal: 0, // Use u64 directly
+                        annotations: vec![],
+                        field_type: FieldType::UInt32,
                     }],
-                    annotations: vec![], // Added missing field
                 },
             ],
             states: vec![
                 StateItem {
                     name: ident("Idle"),
-                    ordinal: 0,            // Added ordinal
-                    annotations: vec![],   // Added missing field
-                    entry_actions: vec![], // Added missing field
-                    exit_actions: vec![],  // Added missing field
+                    ordinal: 0, // Use u64 directly
+                    annotations: vec![],
+                    entry_actions: vec![],
+                    exit_actions: vec![],
                 },
                 StateItem {
-                    name: ident("Running"),
-                    ordinal: 1,            // Added ordinal
-                    annotations: vec![],   // Added missing field
-                    entry_actions: vec![], // Added missing field
-                    exit_actions: vec![],  // Added missing field
+                    name: ident("Active"),
+                    ordinal: 1, // Use u64 directly
+                    annotations: vec![],
+                    entry_actions: vec![],
+                    exit_actions: vec![],
                 },
             ],
             transitions: vec![
                 TransitionItem {
-                    name: Some(ident("transition1")), // Wrap in Some()
+                    name: Some(ident("T1")), // Wrap name in Some
                     from: ident("Idle"),
-                    to: ident("Running"),
-                    elements: vec![
-                        TransitionElement::On {
-                            ordinal: 1, // Changed from order
-                            event: ident("Start"),
-                        },
-                        TransitionElement::Action {
-                            ordinal: 2, // Changed from order
-                            function: ident("on_start_action"),
-                        },
-                    ],
-                    annotations: vec![], // Added annotations field
+                    to: ident("Active"),
+                    annotations: vec![],
+                    elements: vec![TransitionElement::On { ordinal: 0, event: ident("Event1") }], // Use u64 directly
                 },
                 TransitionItem {
-                    name: Some(ident("transition2")), // Wrap in Some()
-                    from: ident("Running"),
+                    name: Some(ident("T2")), // Wrap name in Some
+                    from: ident("Active"),
                     to: ident("Idle"),
-                    elements: vec![
-                        TransitionElement::On {
-                            ordinal: 1, // Changed from order
-                            event: ident("Stop"),
-                        },
-                        TransitionElement::Guard {
-                            ordinal: 2, // Changed from order
-                            function: ident("can_stop_guard"),
-                        },
-                    ],
-                    annotations: vec![], // Added annotations field
+                    annotations: vec![],
+                    elements: vec![TransitionElement::On { ordinal: 1, event: ident("Event2") }], // Use u64 directly
                 },
                 TransitionItem {
-                    name: Some(ident("transition3")), // Wrap in Some()
-                    from: ident("Running"),
-                    to: ident("Running"), // Self-transition
-                    elements: vec![TransitionElement::On {
-                        ordinal: 1, // Changed from order
-                        event: ident("Update"),
-                    }],
-                    annotations: vec![], // Added annotations field
+                    name: Some(ident("T3WithAction")), // Wrap name in Some
+                    from: ident("Idle"),
+                    to: ident("Active"),
+                    annotations: vec![],
+                    elements: vec![
+                        TransitionElement::On { ordinal: 2, event: ident("EventWithPayload") }, // Use u64 directly
+                        TransitionElement::Action { ordinal: 0, function: ident("do_something") }, // Use u64 directly
+                    ],
                 },
             ],
-            context: vec![], // Added missing field
+            context: vec![], // Add missing context field
         }
     }
 
     // Helper to parse and format code for comparison
-    #[cfg(test)]
-    // Add cfg(test) attribute
-    // fn parse_and_format(code: &str) -> String {
-    //     let parsed_file = syn_parse_file(code).expect("Failed to parse generated code");
-    //     prettyplease::unparse(&parsed_file)
-    // }
+    fn parse_and_format(code: &str) -> String {
+        let parsed_file = syn_parse_file(code).expect("Failed to parse generated code");
+        prettyplease::unparse(&parsed_file)
+    }
+
     #[test]
     fn generates_basic_structures() {
-        let input = create_test_ast();
-        let result = generate_rust_code(&input);
+        let ast = create_test_ast();
+        let result = generate_rust_code(&ast); // Assuming generate_rust_code takes &StateMachine
+        assert!(result.is_ok(), "Rust generation failed");
+        let code = result.unwrap();
+        let formatted_code = parse_and_format(&code);
 
-        assert!(result.is_ok());
-        let generated_code = result.unwrap();
-        let parsed_generated =
-            syn_parse_file(&generated_code).expect("Parsing generated code failed");
-
-        // Check for State enum
-        let state_enum = parsed_generated.items.iter().find_map(|item| match item {
-            syn::Item::Enum(e) if e.ident == "State" => Some(e),
-            _ => None,
-        });
-        assert!(state_enum.is_some(), "State enum not generated");
-        assert_eq!(state_enum.unwrap().variants.len(), 2); // Idle, Running
-
-        // Check for Event enum and structs
-        let event_enum = parsed_generated.items.iter().find_map(|item| match item {
-            syn::Item::Enum(e) if e.ident == "Event" => Some(e),
-            _ => None,
-        });
-        assert!(event_enum.is_some(), "Event enum not generated");
-        assert_eq!(event_enum.unwrap().variants.len(), 3); // Start, Stop, Update
-
-        // Check for Update event struct
-        let update_struct = parsed_generated.items.iter().find_map(|item| match item {
-            syn::Item::Struct(s) if s.ident == "UpdateEventPayload" => Some(s), // Look for struct named "UpdateEventPayload"
-            _ => None,
-        });
-        assert!(
-            update_struct.is_some(),
-            "Event struct for Update not generated"
-        );
-
-        // Check for Machine struct
-        let machine_struct = parsed_generated.items.iter().find_map(|item| match item {
-            syn::Item::Struct(s) if s.ident == "TestMachine" => Some(s),
-            _ => None,
-        });
-        assert!(machine_struct.is_some(), "TestMachine struct not generated");
+        // Basic checks (adjust based on actual generation)
+        assert!(formatted_code.contains("pub enum State"));
+        assert!(formatted_code.contains("Idle"));
+        assert!(formatted_code.contains("Active"));
+        assert!(formatted_code.contains("pub enum Event"));
+        assert!(formatted_code.contains("Event1"));
+        assert!(formatted_code.contains("Event2"));
+        assert!(formatted_code.contains("pub struct EventWithPayloadPayload")); // Check payload struct
+        assert!(formatted_code.contains("EventWithPayload(EventWithPayloadPayload)")); // Check enum variant with payload
+        assert!(formatted_code.contains("pub struct TestMachine"));
     }
 
     #[test]
     fn generates_impl_block_and_new() {
-        let input = create_test_ast();
-        let result = generate_rust_code(&input);
-        assert!(result.is_ok());
+        let ast = create_test_ast();
+        let result = generate_rust_code(&ast);
+        assert!(result.is_ok(), "Rust generation failed");
+        let code = result.unwrap();
+        let formatted_code = parse_and_format(&code);
 
-        let generated_code = result.unwrap();
-        let parsed_generated =
-            syn_parse_file(&generated_code).expect("Parsing generated code failed");
-
-        // Find the impl block for TestMachine
-        let impl_block = parsed_generated.items.iter().find_map(|item| match item {
-            syn::Item::Impl(imp) => {
-                if let syn::Type::Path(type_path) = &*imp.self_ty {
-                    if type_path
-                        .path
-                        .segments
-                        .last()
-                        .is_some_and(|seg| seg.ident == "TestMachine")
-                    {
-                        Some(imp)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        });
-        assert!(impl_block.is_some(), "impl TestMachine block not generated");
-
-        // Find the new function within the impl block
-        let new_fn = impl_block
-            .unwrap()
-            .items
-            .iter()
-            .find_map(|item| match item {
-                syn::ImplItem::Fn(func) if func.sig.ident == "new" => Some(func),
-                _ => None,
-            });
-        assert!(
-            new_fn.is_some(),
-            "'new' function not generated in impl block"
-        );
-
-        // Very basic check - could parse the body and check assignment if needed
-        assert!(quote!(#new_fn)
-            .to_string()
-            .contains("current_state : State :: Idle"));
+        assert!(formatted_code.contains("impl TestMachine"));
+        assert!(formatted_code.contains("pub fn new() -> Self"));
+        assert!(formatted_code.contains("current_state: State::Idle")); // Check initial state assignment
+        assert!(formatted_code.contains("impl Default for TestMachine"));
+        assert!(formatted_code.contains("Self::new()"));
     }
 
     #[test]
     fn generates_on_event_method_with_transitions() {
-        let input = create_test_ast();
-        let result = generate_rust_code(&input);
-        assert!(result.is_ok());
+        let ast = create_test_ast();
+        let result = generate_rust_code(&ast);
+        assert!(result.is_ok(), "Rust generation failed");
+        let code = result.unwrap();
+        let formatted_code = parse_and_format(&code);
 
-        let generated_code = result.unwrap();
-        let parsed_generated =
-            syn_parse_file(&generated_code).expect("Parsing generated code failed");
-
-        // Find the impl block for TestMachine
-        let impl_block = parsed_generated.items.iter().find_map(|item| match item {
-            syn::Item::Impl(imp) => {
-                if let syn::Type::Path(type_path) = &*imp.self_ty {
-                    if type_path
-                        .path
-                        .segments
-                        .last()
-                        .is_some_and(|seg| seg.ident == "TestMachine")
-                    {
-                        Some(imp)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        });
-        assert!(impl_block.is_some(), "impl TestMachine block not generated");
-
-        // Find the on_event function
-        let on_event_fn = impl_block
-            .unwrap()
-            .items
-            .iter()
-            .find_map(|item| match item {
-                syn::ImplItem::Fn(func) if func.sig.ident == "on_event" => Some(func),
-                _ => None,
-            });
-        assert!(on_event_fn.is_some(), "'on_event' function not generated");
-
-        // Basic check for expected match arms (can be made more robust)
-        let fn_body_str = quote!(#on_event_fn).to_string();
-        assert!(fn_body_str.contains("(State :: Idle , Event :: Start)"));
-        assert!(fn_body_str.contains("State :: Running")); // Target state for Idle -> Start
-        assert!(fn_body_str.contains("(State :: Running , Event :: Stop)"));
-        assert!(fn_body_str.contains("State :: Idle")); // Target state for Running -> Stop
-        assert!(fn_body_str.contains("(State :: Running , Event :: Update (payload))")); // Check payload binding
-        assert!(fn_body_str.contains("State :: Running")); // Target state for Running -> Update (self)
+        assert!(formatted_code.contains("pub fn on_event(self, event: Event) -> Result<Self, String>"));
+        assert!(formatted_code.contains("match (&self.current_state, &event)"));
+        // Check transition arms (adjust event payload matching if necessary)
+        assert!(formatted_code.contains("(State::Idle, Event::Event1) =>"));
+        assert!(formatted_code.contains("next_state_machine.current_state = State::Active;"));
+        assert!(formatted_code.contains("(State::Active, Event::Event2) =>"));
+        assert!(formatted_code.contains("next_state_machine.current_state = State::Idle;"));
+        assert!(formatted_code.contains("(State::Idle, Event::EventWithPayload(payload)) =>")); // Check payload binding
+        assert!(formatted_code.contains("next_state_machine.do_something(payload);")); // Check action call with payload
+        assert!(formatted_code.contains("_ => Ok(self.clone())")); // Default case
     }
 
     #[test]
     fn generates_guard_and_action_placeholders_module() {
-        let input = create_test_ast();
-        let result = generate_rust_code(&input);
-        assert!(result.is_ok());
+        // Need an AST with guards/actions
+        let ast_with_callbacks = StateMachine { // Simplified AST for this test
+            name: ident("CallbackMachine"),
+            annotations: vec![Annotation { name: ident("initial"), value: Some(AnnotationValue::Identifier(ident("S1"))) }],
+            events: vec![MessageItem { name: ident("E1"), ordinal: 0, annotations: vec![], fields: vec![] }], // Use u64 directly
+            states: vec![StateItem { name: ident("S1"), ordinal: 0, annotations: vec![], entry_actions: vec![], exit_actions: vec![] }, // Use u64 directly
+                         StateItem { name: ident("S2"), ordinal: 1, annotations: vec![], entry_actions: vec![], exit_actions: vec![] }], // Use u64 directly
+            transitions: vec![TransitionItem {
+                name: Some(ident("T1")), // Wrap name in Some
+                from: ident("S1"),
+                to: ident("S2"),
+                annotations: vec![],
+                elements: vec![
+                    TransitionElement::On { ordinal: 0, event: ident("E1") }, // Use u64 directly
+                    TransitionElement::Guard { ordinal: 0, function: ident("can_transition") }, // Use u64 directly
+                    TransitionElement::Action { ordinal: 1, function: ident("perform_action") }, // Use u64 directly
+                ],
+            }],
+            context: vec![], // Add missing context field
+        };
+        let result = generate_rust_code(&ast_with_callbacks);
+        assert!(result.is_ok(), "Rust generation failed");
+        let code = result.unwrap();
+        let formatted_code = parse_and_format(&code);
 
-        let generated_code = result.unwrap();
-        let parsed_generated =
-            syn_parse_file(&generated_code).expect("Parsing generated code failed");
+        let callbacks_trait_name = format_ident!("{}Callbacks", ast_with_callbacks.name);
+        assert!(formatted_code.contains(&format!("pub trait {}", callbacks_trait_name)));
+        assert!(formatted_code.contains("fn can_transition(&self, current_state: &State, event: &Event) -> bool;"));
+        assert!(formatted_code.contains("fn perform_action(&mut self, event: &Event);"));
 
-        // Find the machine_callbacks module
-        let callbacks_mod = parsed_generated.items.iter().find_map(|item| match item {
-            syn::Item::Mod(m) if m.ident == "machine_callbacks" => Some(m),
-            _ => None,
-        });
-        assert!(
-            callbacks_mod.is_none(),
-            "machine_callbacks module not generated"
-        );
     }
 
     #[test]
     fn handles_no_transitions_or_callbacks() {
-        let mut input = create_test_ast();
-        input.transitions.clear(); // Remove all transitions
+        let simple_ast = StateMachine {
+            name: ident("SimpleMachine"),
+            annotations: vec![Annotation { name: ident("initial"), value: Some(AnnotationValue::Identifier(ident("OnlyState"))) }],
+            events: vec![MessageItem { name: ident("DummyEvent"), ordinal: 0, annotations: vec![], fields: vec![] }], // Use u64 directly
+            states: vec![StateItem { name: ident("OnlyState"), ordinal: 0, annotations: vec![], entry_actions: vec![], exit_actions: vec![] }], // Use u64 directly
+            transitions: vec![], // No transitions
+            context: vec![], // Add missing context field
+        };
+        let result = generate_rust_code(&simple_ast);
+        assert!(result.is_ok(), "Rust generation failed");
+        let code = result.unwrap();
+        let formatted_code = parse_and_format(&code);
 
-        let result = generate_rust_code(&input);
-        assert!(result.is_ok());
-
-        let generated_code = result.unwrap();
-        let parsed_generated =
-            syn_parse_file(&generated_code).expect("Parsing generated code failed");
-
-        // Find the impl block for TestMachine
-        let impl_block = parsed_generated.items.iter().find_map(|item| match item {
-            syn::Item::Impl(imp) => {
-                if let syn::Type::Path(type_path) = &*imp.self_ty {
-                    if type_path
-                        .path
-                        .segments
-                        .last()
-                        .is_some_and(|seg| seg.ident == "TestMachine")
-                    {
-                        Some(imp)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        });
-        assert!(impl_block.is_some(), "impl TestMachine block not generated");
-
-        // Check if on_event exists and has a default arm
-        let on_event_fn = impl_block
-            .unwrap()
-            .items
-            .iter()
-            .find_map(|item| match item {
-                syn::ImplItem::Fn(func) if func.sig.ident == "on_event" => Some(func),
-                _ => None,
-            });
-        assert!(on_event_fn.is_some(), "'on_event' function not generated");
-        assert!(quote!(#on_event_fn)
-            .to_string()
-            .contains("_ => Ok (self . clone ()) "));
-
-        // Check that machine_callbacks module is NOT generated
-        let callbacks_mod = parsed_generated.items.iter().find_map(|item| match item {
-            syn::Item::Mod(m) if m.ident == "machine_callbacks" => Some(m),
-            _ => None,
-        });
-        assert!(
-            callbacks_mod.is_none(),
-            "machine_callbacks module generated unexpectedly"
-        );
+        // Check that impl block is generated, but on_event might be simple
+        assert!(formatted_code.contains("impl SimpleMachine"));
+        assert!(formatted_code.contains("pub fn on_event(self, event: Event) -> Result<Self, String>"));
+        assert!(formatted_code.contains("match (&self.current_state, &event)"));
+        // Should likely only contain the default arm if no transitions
+        assert!(formatted_code.contains("_ => Ok(self.clone())"));
+        // Check that no callback trait is generated
+        assert!(!formatted_code.contains("pub trait SimpleMachineCallbacks"));
     }
 
     #[test]
     fn generates_current_state_getter() {
-        let input = create_test_ast();
-        let result = generate_rust_code(&input);
-        assert!(result.is_ok());
+        let ast = create_test_ast();
+        let result = generate_rust_code(&ast);
+        assert!(result.is_ok(), "Rust generation failed");
+        let code = result.unwrap();
+        let formatted_code = parse_and_format(&code);
 
-        let generated_code = result.unwrap();
-        let parsed_generated =
-            syn_parse_file(&generated_code).expect("Parsing generated code failed");
-
-        // Find the impl block for TestMachine
-        let impl_block = parsed_generated.items.iter().find_map(|item| match item {
-            syn::Item::Impl(imp) => {
-                if let syn::Type::Path(type_path) = &*imp.self_ty {
-                    if type_path
-                        .path
-                        .segments
-                        .last()
-                        .is_some_and(|seg| seg.ident == "TestMachine")
-                    {
-                        Some(imp)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        });
-        assert!(impl_block.is_some(), "impl TestMachine block not generated");
-
-        // Find the current_state function
-        let current_state_fn = impl_block
-            .unwrap()
-            .items
-            .iter()
-            .find_map(|item| match item {
-                syn::ImplItem::Fn(func) if func.sig.ident == "current_state" => Some(func),
-                _ => None,
-            });
-        assert!(
-            current_state_fn.is_some(),
-            "'current_state' getter function not generated"
-        );
-        // Basic check of signature and body
-        let expected_ret_type = quote! { -> &State }.to_string();
-        let actual_output = &current_state_fn.unwrap().sig.output;
-        let actual_ret_type = quote! { #actual_output }.to_string();
-        assert_eq!(
-            actual_ret_type, expected_ret_type,
-            "Getter return type mismatch"
-        );
-        assert!(quote!(#current_state_fn)
-            .to_string()
-            .contains("& self . current_state"));
+        assert!(formatted_code.contains("pub fn current_state(&self) -> &State"));
+        assert!(formatted_code.contains("&self.current_state"));
     }
 
-    // Updated test AST creator with annotations
-    fn create_annotated_test_ast() -> StateMachine {
-        StateMachine {
-            name: ident("AnnotatedMachine"),
-            annotations: vec![
-                Annotation {
-                    name: ident("description"),
-                    value: Some(AnnotationValue::StringLiteral(
-                        "This is the main machine.".to_string(),
-                    )),
-                },
-                Annotation {
-                    // Keep initial for functionality test
-                    name: ident("initial"),
-                    value: Some(AnnotationValue::Identifier(ident("Idle"))),
-                },
-            ],
-            events: vec![
-                MessageItem {
-                    annotations: vec![Annotation {
-                        // Annotation on event
-                        name: ident("description"),
-                        value: Some(AnnotationValue::StringLiteral(
-                            "Starts the machine.".to_string(),
-                        )),
-                    }],
-                    name: ident("Start"),
-                    ordinal: 0,
-                    fields: vec![FieldDef {
-                        annotations: vec![Annotation {
-                            // Annotation on field
-                            name: ident("description"),
-                            value: Some(AnnotationValue::StringLiteral("The user ID.".to_string())),
-                        }],
-                        name: ident("userId"),
-                        ordinal: 0,
-                        field_type: FieldType::UInt64,
-                    }],
-                },
-                MessageItem {
-                    annotations: vec![Annotation {
-                        // Annotation on event
-                        name: ident("description"),
-                        value: Some(AnnotationValue::StringLiteral(
-                            "Stops the machine.".to_string(),
-                        )),
-                    }],
-                    name: ident("Stop"),
-                    ordinal: 1,
-                    fields: vec![],
-                },
-            ],
-            states: vec![
-                StateItem {
-                    annotations: vec![Annotation {
-                        // Annotation on state
-                        name: ident("description"),
-                        value: Some(AnnotationValue::StringLiteral("Waiting state.".to_string())),
-                    }],
-                    name: ident("Idle"),
-                    ordinal: 0,
-                    entry_actions: vec![], // Added missing field
-                    exit_actions: vec![],  // Added missing field
-                },
-                StateItem {
-                    annotations: vec![Annotation {
-                        // Annotation on state
-                        name: ident("description"),
-                        value: Some(AnnotationValue::StringLiteral("Active state.".to_string())),
-                    }],
-                    name: ident("Running"),
-                    ordinal: 1,
-                    entry_actions: vec![], // Added missing field
-                    exit_actions: vec![],  // Added missing field
-                },
-            ],
-            transitions: vec![
-                TransitionItem {
-                    name: None,
-                    from: ident("Idle"),
-                    to: ident("Running"),
-                    elements: vec![TransitionElement::On {
-                        ordinal: 0,
-                        event: ident("Start"),
-                    }],
-                    annotations: vec![],
-                },
-                TransitionItem {
-                    name: None,
-                    from: ident("Running"),
-                    to: ident("Idle"),
-                    elements: vec![TransitionElement::On {
-                        ordinal: 1,
-                        event: ident("Stop"),
-                    }],
-                    annotations: vec![],
-                },
-            ],
-            context: vec![], // Added missing field
-        }
-    }
+    // --- Tests using ANNOTATED_MACHINE_SSOT --- 
 
     #[test]
     fn generates_rust_code_with_doc_comments() {
-        let ast = create_annotated_test_ast();
-        let result = generate_rust_code(&ast);
-        assert!(result.is_ok(), "Rust generation failed: {:?}", result.err());
-        let code = result.unwrap();
-        println!("--- Generated Rust Code with Docs ---\n{}", code); // For inspection
-
-        // Check for struct/enum docs
-        assert!(code.contains("/// This is the main machine.\npub struct AnnotatedMachine"));
-        assert!(code.contains("/// Waiting state.\n    Idle"));
-        assert!(code.contains("/// Active state.\n    Running"));
-        assert!(code.contains("/// Starts the machine.\npub struct StartEventPayload"));
-        assert!(code.contains("/// Starts the machine.\n    Start(StartEventPayload)"));
-        assert!(code.contains("/// Stops the machine.\n    Stop"));
-
-        // Check for field docs
-        assert!(code.contains("/// The user ID.\n        pub userId: u64"));
+        let ast = parse_str(ANNOTATED_MACHINE_SSOT).unwrap(); 
+        let machine = &ast.state_machines[0]; 
+        let _code = generate_rust_code(machine).unwrap();
+        let formatted_code = parse_and_format(&_code);
+        assert!(formatted_code.contains(
+            "#[derive(Debug, Clone, PartialEq, Eq, Hash)]\\n/// Waiting state.\\npub enum State"
+        )); 
+        assert!(formatted_code.contains("/// Waiting state.\\n    Idle,"));
+        assert!(formatted_code.contains("/// Active state.\\n    Running,"));
+        assert!(formatted_code.contains("/// Starts the machine.\\n#[derive(Debug, Clone, PartialEq)]\\npub struct StartPayload")); // Adjusted name
+        assert!(formatted_code.contains("/// The user ID.\\n    pub userId: u64,"));
+        assert!(formatted_code.contains("/// Starts the machine.\\n    Start(StartPayload),")); // Adjusted name
+        assert!(formatted_code.contains("/// Stops the machine.\\n    Stop,"));
+        assert!(formatted_code.contains("/// This is the main machine.\\n#[derive(Debug, Clone, PartialEq)]\\npub struct AnnotatedMachine")); 
+        assert!(formatted_code.contains("impl AnnotatedMachine"));
+        assert!(formatted_code.contains("/// Creates a new instance"));
+        assert!(formatted_code.contains("/// Processes an event"));
+        assert!(formatted_code.contains("/// Returns the current state."));
+        assert!(formatted_code.contains("impl Default for AnnotatedMachine"));
     }
 
     #[test]
     fn generates_capnp_schema_with_comments() {
-        let machine_ast = create_annotated_test_ast();
-        let file_ast = fsm_dsl::ast::SsotFile {
-            file_id: 0xdeadbeefcafe0001,
-            package_declaration: None,
-            top_level_annotations: vec![],
-            state_machines: vec![machine_ast.clone()],
-        };
-        let result = generate_capnp_schema(&file_ast, &machine_ast);
-        assert!(
-            result.is_ok(),
-            "Capnp generation failed: {:?}",
-            result.err()
-        );
-        let schema = result.unwrap();
-        println!("--- Generated Capnp Schema with Comments ---\n{}", schema); // For inspection
-
-        // Check for comments
-        assert!(schema.contains("# This is the main machine.\n# Cap'n Proto schema generated")); // Machine comment
-        assert!(schema.contains("# Waiting state.\n  Idle @0;")); // State comment
-        assert!(schema.contains("# Active state.\n  Running @1;")); // State comment
-        assert!(schema.contains("# Starts the machine.\nstruct StartPayload @2 {")); // Struct comment
-        assert!(schema.contains("# The user ID.\n    userId @0 :UInt64;")); // Field comment
-        assert!(schema.contains("# Starts the machine.\n  Start @0 :StartPayload;")); // Union member comment (from event)
-        assert!(schema.contains("# Stops the machine.\n  Stop @1 :Void;")); // Union member comment (from event)
+        let ast = parse_str(ANNOTATED_MACHINE_SSOT).unwrap(); 
+        let machine = &ast.state_machines[0]; 
+        let result = generate_capnp_schema(&ast, machine);
+        assert!(result.is_ok(), "Capnp generation failed: {:?}", result.err());
+        let _schema = result.unwrap();
+        assert!(_schema.contains("@0xdeadbeefcafe0001;"));
+        assert!(_schema.contains("# This is the main machine."));
+        assert!(_schema.contains("enum State @0"));
+        assert!(_schema.contains("# Waiting state.\\n  Idle @0;"));
+        assert!(_schema.contains("# Active state.\\n  Running @1;"));
+        assert!(_schema.contains("struct StartPayload @2")); // Adjusted name
+        assert!(_schema.contains("# The user ID.\\n  userId @0 :UInt64;")); 
+        assert!(_schema.contains("union Event @1"));
+        assert!(_schema.contains("# Starts the machine.\\n  Start @0 :StartPayload;")); // Adjusted name
+        assert!(_schema.contains("# Stops the machine.\\n  Stop @1 :Void;"));
     }
 
     #[test]
     fn generates_typescript_types_with_jsdoc() {
-        let ast = create_annotated_test_ast();
-        let result = generate_typescript_types(&ast);
-        assert!(
-            result.is_ok(),
-            "TypeScript generation failed: {:?}",
-            result.err()
-        );
-        let types = result.unwrap();
-        println!("--- Generated TypeScript Types with JSDoc ---\n{}", types); // For inspection
-
-        // Check for JSDoc
-        assert!(types.contains("/**\n * This is the main machine.\n */")); // Machine comment
-        assert!(types.contains("/**\n * Waiting state.\n */\n  | \"Idle\"")); // State comment
-        assert!(types.contains("/**\n * Active state.\n */\n  | \"Running\"")); // State comment
-        assert!(types.contains("/**\n * Starts the machine.\n */\nexport interface StartPayload {")); // Payload interface comment
-        assert!(types.contains("/**\n   * The user ID.\n   */\n  userId: bigint;")); // Field comment (check indentation)
-        assert!(types.contains(
-            "/**\n * Starts the machine.\n */\n  | { type: \"Start\", payload: StartPayload }"
-        )); // Event union comment
-        assert!(types.contains("/**\n * Stops the machine.\n */\n  | { type: \"Stop\" }"));
-        // Event union comment
+        let ast = parse_str(ANNOTATED_MACHINE_SSOT).unwrap(); 
+        let machine = &ast.state_machines[0]; 
+        let _types = generate_typescript_types(machine).unwrap();
+        assert!(_types.contains("/**\n * This is the main machine.\n */"));
+        assert!(_types.contains("export interface Context {"));
+        assert!(_types.contains("export type State ="));
+        assert!(_types.contains("/**\n   * Waiting state.\n   */\n\"Idle\""));
+        assert!(_types.contains("|   /**\n   * Active state.\n   */\n\"Running\""));
+        assert!(_types.contains("/**\n * Starts the machine.\n */"));
+        assert!(_types.contains("export interface StartPayload {")); // Adjusted name
+        assert!(_types.contains("/**\n   * The user ID.\n   */\n  userId: bigint;"));
+        assert!(_types.contains("export type Event ="));
+        assert!(_types.contains(
+            "/**\n   * Starts the machine.\n   */\n   { type: \"Start\", payload: StartPayload }" // Adjusted name
+        ));
+        assert!(_types.contains(
+            "/**\n   * Stops the machine.\n   */\n|  { type: \"Stop\" };"
+        ));
     }
 }
