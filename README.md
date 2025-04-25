@@ -93,6 +93,7 @@ The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not 
     *   Add syntax for defining distributed system components/services and their interactions (potentially referencing external `.ssot` or interface files).
     *   Support for multi-file/directory projects: Allow definitions to be split across multiple `.ssot` files, including discovery, integration, namespacing/imports, and conflict resolution.
     *   Support for directory-level configuration (e.g., via a `.ssotconfig` file).
+    *   Define explicit file mapping mechanisms: Allow users to control output filenames and potentially generate a manifest linking `.ssot` elements to specific generated files.
 *   **Expanding SSOT Scope (within DSL):** Defining more system aspects directly in `.ssot`.
     *   Integrate routing definition capabilities (e.g., mapping states/events to routes or defining navigation flows).
     *   Specify inter-service communication (e.g., RPC, messaging) linked to FSM events/actions, defaulting to Cap'n Proto.
@@ -128,6 +129,7 @@ The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not 
     *   Generate platform-specific configurations and deployment helpers (e.g., `fly.toml`, `vercel.json`, Supabase functions/config).
 *   **Developer Experience & Tooling:** Improving usability and integration.
     *   Improve error messages and diagnostics from the parser and code generator.
+    *   Generate source maps: Link generated code (Rust, TypeScript, etc.) back to the original `.ssot` definitions for easier debugging.
     *   Enhance automated tests, particularly for `build.rs` logic (e.g., via integration tests) and edge cases in generation.
     *   Implement the `#[state_machine(...)]` procedural macro approach as an alternative integration method for Rust projects.
     *   Improve tooling support for managing multi-file/directory `.ssot` projects.
