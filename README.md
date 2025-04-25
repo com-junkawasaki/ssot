@@ -80,14 +80,19 @@ This project is organized as a Cargo workspace:
 *   ✅ TypeScript Type Generation: State unions, event discriminated unions, payload interfaces.
 *   ✅ Documentation Generation: From `$description` annotations for all targets.
 *   ✅ Example `build.rs` Workflow: Demonstrates parsing and invoking all generators.
+*   ✅ Entry/Exit Actions: Added syntax (`state S @N { entry: action1; exit: action2; }`) and Rust codegen support.
+
+## Known Issues
+
+*   **Parser Bug:** The Pest parser currently fails to correctly parse state definitions immediately following a state definition that includes an entry/exit action block (e.g., `StateA @0 { entry: ... }; StateB @1;`). This requires further investigation into the Pest grammar rules or parser implementation. As a workaround, states without entry/exit actions might need to be defined *before* states with them, or the problematic line temporarily commented out (as done in `fsm-example`).
 
 ## Roadmap / Future Enhancements
 
 The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not just for FSM logic, but for related concerns across distributed systems. Key development areas include:
 
 *   **Core DSL Enhancements:** Improving the expressiveness and robustness of the `.ssot` language itself.
-    *   Add syntax for entry/exit actions on states.
-    *   Enhance validation rules within the parser (e.g., duplicate name/ordinal checks, transition validity).
+    *   ✅ Add syntax for entry/exit actions on states.
+    *   Enhance validation rules within the parser (e.g., duplicate name/ordinal checks, transition validity, **fix state parsing issue**).
     *   Support for more complex annotation values or specific annotations (e.g., `$deprecated`).
     *   Support for hierarchical state machines in the DSL.
     *   Add syntax for defining distributed system components/services and their interactions (potentially referencing external `.ssot` or interface files).

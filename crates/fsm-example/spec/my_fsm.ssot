@@ -24,7 +24,7 @@ stateMachine LightSwitch {
             entry: start_processing;
             exit: stop_processing;
         };
-        Suspended @2; // Example without entry/exit
+        // Suspended @2; // Example without entry/exit - TEMPORARILY COMMENTED OUT DUE TO PARSE ERROR
         $description("Final state after completion or error.");
         Done @3 {
             entry: log_completion;

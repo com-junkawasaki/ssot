@@ -318,35 +318,43 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
 
 fn parse_state_enum(pair: Pair<Rule>) -> Result<Vec<StateItem>, ParseError> {
     pair.into_inner()
-        .filter(|p| p.as_rule() == Rule::state_variant) // Ensure only state_variants are processed
+        // Revert filter to original state_variant rule
+        .filter(|p| p.as_rule() == Rule::state_variant)
         .map(parse_state_item)
         .collect()
 }
 
 fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
-    let inner = pair.into_inner();
+    let inner = pair.into_inner(); // Consumes the outer state_variant rule
     let mut annotations = Vec::new();
     let mut name: Option<Ident> = None;
     let mut ordinal: Option<u64> = None;
     let mut entry_actions: Vec<Ident> = Vec::new();
     let mut exit_actions: Vec<Ident> = Vec::new();
 
+    // Process elements *inside* state_variant
     for item_pair in inner {
         match item_pair.as_rule() {
-            Rule::annotation => annotations.push(parse_annotation(item_pair)?),
-            Rule::ordinal => ordinal = Some(parse_ordinal(item_pair)?),
+            Rule::optional_annotations => {
+                // Parse annotations within optional_annotations
+                for annotation_pair in item_pair.into_inner() {
+                    if annotation_pair.as_rule() == Rule::annotation {
+                        annotations.push(parse_annotation(annotation_pair)?);
+                    }
+                }
+            }
             Rule::identifier => name = Some(parse_ident(item_pair)?),
-            // Handle the new state_body rule
-            Rule::state_body => {
+            Rule::ordinal => ordinal = Some(parse_ordinal(item_pair)?),
+            // Handle the optional state_body_content
+            Rule::state_body_content => {
+                // This rule only exists if the body {} is present
                 for body_item_pair in item_pair.into_inner() {
                     match body_item_pair.as_rule() {
                         Rule::entry_action => {
-                            // Get the identifier inside entry_action
                             let ident = parse_ident(body_item_pair.into_inner().next().unwrap())?;
                             entry_actions.push(ident);
                         }
                         Rule::exit_action => {
-                            // Get the identifier inside exit_action
                             let ident = parse_ident(body_item_pair.into_inner().next().unwrap())?;
                             exit_actions.push(ident);
                         }
@@ -355,20 +363,19 @@ fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
                         _ => {
                             return Err(ParseError::UnexpectedRule {
                                 rule: body_item_pair.as_rule(),
-                                context: "state_body definition".to_string(),
+                                context: "state_body_content definition".to_string(),
                             });
                         }
                     }
                 }
             }
-            // Remove old rules if they existed
-            // Rule::state_entry_actions => entry_actions = parse_entry_exit_actions(item_pair)?,
-            // Rule::state_exit_actions => exit_actions = parse_entry_exit_actions(item_pair)?,
+            // Ignore whitespace/comments between elements
             Rule::WHITESPACE | Rule::COMMENT | Rule::optional_whitespace => { /* ignore */ }
+            // The semicolon is implicitly handled by the grammar moving past it
             _ => {
                 return Err(ParseError::UnexpectedRule {
                     rule: item_pair.as_rule(),
-                    context: "state_item definition".to_string(),
+                    context: "state_variant inner definition".to_string(),
                 });
             }
         }
