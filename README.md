@@ -199,6 +199,7 @@ A `.ssot` file defines one or more state machines. Here's a breakdown of the syn
 ## Known Issues
 
 *   (None currently identified. Previously failing documentation tests are now fixed.)
+*   **Parser Limitation:** The parser currently does not support `struct` definitions at the top level of a `.ssot` file. Structs intended for context or complex event payloads might need to be defined implicitly or handled through target-specific code generation until the DSL/parser supports this feature.
 
 ## Roadmap / Future Enhancements
 
@@ -212,6 +213,11 @@ The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not 
     *   Add syntax for defining distributed system components/services and their interactions (potentially referencing external `.ssot` or interface files).
     *   Support for multi-file/directory projects: Allow definitions to be split across multiple `.ssot` files, including discovery, integration, namespacing/imports, and conflict resolution.
     *   Support for directory-level configuration (e.g., via a `.ssotconfig` file).
+    *   **Inter-Machine Transitions:** Define syntax for type-safe transitions *between* different state machines defined within the same or separate `.ssot` files. This could involve:
+        *   Actions triggering events in another machine (e.g., `action @N trigger MachineB.EventY with payload;`).
+        *   Transitions directly targeting a state in another machine (potentially more complex).
+        *   Requires parser/codegen awareness of multiple machines and robust name resolution.
+    *   **Enterprise Architecture Modeling:** Extend the DSL to define EA concepts like layers, components, services, data flows, and their relationships, potentially linking them to FSMs.
 *   **Expanding SSOT Scope (within DSL):** Defining more system aspects directly in `.ssot`.
     *   Integrate routing definition capabilities (e.g., mapping states/events to routes or defining navigation flows).
     *   Specify inter-service communication (e.g., RPC, messaging) linked to FSM events/actions, defaulting to Cap'n Proto.
@@ -221,24 +227,29 @@ The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not 
         *   Authorization / Permissions (Specifying required roles/permissions for transitions/events).
         *   Test Scenario / BDD Definitions (Describing test cases/features based on FSM paths).
         *   Monitoring / Logging / Alerting Rules (Defining observability requirements per state/transition).
-        *   Configuration Management / Feature Flag Integration (Defining or linking configuration values).
+        *   **Configuration Management / Feature Flag Integration:** Define or link configuration values and feature flags directly to states, transitions, or specific DSL elements.
         *   Compliance / Audit Log Requirements (Specifying necessary audit trails).
         *   Formal Verification / Simulation Support (Adding annotations for model checking/simulation).
 *   **Core Code Generation Enhancements:** Refining the existing generators.
     *   Generate placeholder or skeleton functions for defined `guard` and `action` attributes **in Rust**.
     *   Improve generation for hierarchical state machines (dependent on DSL enhancement).
+    *   Generate necessary code (e.g., dispatcher functions, event bus integration, updated callbacks) to facilitate the defined **inter-machine transitions** while maintaining type safety.
     *   Generate Cap'n Proto interfaces (`.capnp`) for defined inter-service interactions.
     *   Generate Cap'n Proto client/server communication stubs (Rust, TypeScript, etc.).
 *   **Expanded Code Generation Targets & Formats:** Supporting more output types.
     *   Explore generating visualization outputs (e.g., Mermaid syntax, Graphviz DOT) from the AST.
     *   Generate advanced documentation (state tables, sequence diagrams, etc.).
+    *   Generate **Enterprise Architecture Models** (e.g., ArchiMate XML) based on EA definitions within `.ssot`.
     *   Integrate generation capabilities based on various standard formats:
         *   **Requirements:** ReqIF (`.xml`), Markdown/Asciidoc (`.md`, `.adoc`)
-        *   **Process/Architecture:** BPMN (`.bpmn`), ArchiMate (`.xml`)
+        *   **Process/Architecture:** BPMN (`.bpmn`)
         *   **System Modeling:** UML/SysML (XMI `.xmi`)
         *   **Data/Schema:** JSON Schema (`.json`), XSD (`.xsd`), Avro (`.avsc`), Protocol Buffers (`.proto`)
         *   **API/Interface:** OpenAPI (`.yaml`/`.json`), gRPC (`.proto`), GraphQL SDL (`.graphql`), AsyncAPI (`.yaml`/`.json`)
+        *   **Project Management Integration:** Generate configuration or integration code/scripts for project management tools (e.g., Jira, Asana, Linear API calls) based on states, events, and transitions defined in process-oriented FSMs (like the example `ProjectLifecycle.ssot`).
+        *   **Process Visualization:** Extend visualization generation (Mermaid, DOT, PlantUML) to specifically support visualizing development lifecycles or business processes defined in `.ssot`.
         *   **Database Schema:** Prisma Schema (`.prisma`), Drizzle ORM (`.ts`), Drizzle Kit Config (`drizzle.config.ts`), SQL (`.sql`), DBML (`.dbml`), Liquibase (`.xml`, `.yaml`, `.json`, `.sql`)
+    *   Generate **Configuration Management Artifacts** (e.g., feature flag definitions, environment variable schemas, infrastructure-as-code snippets) based on configuration links within `.ssot`.
 *   **Project-Specific Generation & Integration:** Tailoring output for specific frameworks and platforms.
     *   Generate Next.js routing configurations (e.g., `app/` directory structure, `route.ts` handlers based on FSM states/events).
     *   Generate database migration scripts (e.g., SQL `up`/`down`) based on diffs between `.ssot` file versions.

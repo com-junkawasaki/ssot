@@ -7,115 +7,134 @@ COMMENT    = _{ ("#" | "//") ~ (!("\n" | "\r") ~ ANY)* }
 // Revert optional_whitespace to simple silent rule
 optional_whitespace = _{ (WHITESPACE | COMMENT)* } // Restore SILENT
 
-// --- Top Level ---
-// parser.rs expects `ssot_file` as the top rule
-ssot_file = { SOI ~ optional_whitespace ~ file_id? ~ package_decl? ~ top_level_item* ~ optional_whitespace ~ EOI }
+// ====================================
+//  Top Level Structure
+// ====================================
 
-top_level_item = { annotation | state_machine }
+ssot_file = { SOI ~ file_id ~ package_decl? ~ (top_level_item | import_decl)* ~ EOI }
 
-// Unique File ID (parser.rs expects rule `file_id`)
-file_id = { "@" ~ hex_number ~ ";" ~ optional_whitespace }
-hex_number = @{ "0x" ~ ASCII_HEX_DIGIT+ }
+file_id = { "@" ~ hex_literal ~ ";" }
+hex_literal = @{ "0x" ~ ASCII_HEX_DIGIT+ }
 
-// Remove explicit syntax_annotation rule, handle as regular annotation if needed at top level
-// syntax_annotation = { annotation } 
+package_decl = { "package" ~ WHITESPACE ~ package_name ~ ";" }
+package_name = @{ ident ~ ("." ~ ident)* }
 
-// Package Declaration (parser.rs expects rule `package_decl`)
-package_decl = { "package" ~ identifier ~ ";" ~ optional_whitespace } // Simplified example
+import_decl = { "import" ~ WHITESPACE ~ package_name ~ ";" } // Added import declaration
 
-// --- State Machine Definition ---
-// parser.rs expects `state_machine`
-// Explicitly handle whitespace/comments before each item
-// state_machine = { "stateMachine" ~ identifier ~ "{" ~ optional_whitespace ~ (optional_whitespace ~ state_machine_item)* ~ optional_whitespace ~ "}" ~ optional_whitespace }
-// Revert to simpler structure
-state_machine = { "stateMachine" ~ identifier ~ "{" ~ optional_whitespace ~ state_machine_item* ~ optional_whitespace ~ "}" ~ optional_whitespace }
-state_machine_item = { annotation | state_enum | event_definitions | transitions_block }
+top_level_item = { annotation | state_machine | struct_def }
 
-// --- State Definitions ---
-// parser.rs expects `state_enum` containing `state_variant`
-// Allow optional whitespace *between* state variants
-state_enum = { "states" ~ "{" ~ optional_whitespace ~ (state_variant ~ optional_whitespace)* ~ optional_whitespace ~ "}" }
+// ====================================
+//  Annotations
+// ====================================
 
-// state_variant expects identifier @ ordinal, optional body, then MANDATORY semicolon
-state_variant = { optional_annotations ~ identifier ~ "@" ~ ordinal ~ state_body_content? ~ ";" ~ optional_whitespace }
-
-// state_body_content captures the optional {...} block
-state_body_content = { "{" ~ optional_whitespace ~ state_body_item* ~ optional_whitespace ~ "}" }
-
-state_body_item = { entry_action | exit_action }
-entry_action = { "entry" ~ ":" ~ identifier ~ ";" ~ optional_whitespace }
-exit_action  = { "exit" ~ ":" ~ identifier ~ ";" ~ optional_whitespace }
-
-// --- Event Definitions --- (Restored)
-// parser.rs expects `event_definitions` containing `event_struct`
-event_definitions = { "events" ~ "{" ~ optional_whitespace ~ event_struct* ~ optional_whitespace ~ "}" }
-
-// parser.rs expects `event_struct` containing `event_field`
-// Allow optional annotations before the event keyword
-// Modify event_struct to accept either a body {} or a semicolon ;
-event_struct = { optional_annotations ~ "event" ~ identifier ~ "@" ~ ordinal ~ (event_body | event_terminator) }
-
-// Define the two possible endings for an event definition
-event_body = { "{" ~ optional_whitespace ~ (event_field ~ optional_whitespace)* ~ optional_whitespace ~ "}" }
-event_terminator = { ";" ~ optional_whitespace }
-
-// parser.rs expects `event_field`
-// Allow optional annotations before the field definition
-event_field = { optional_annotations ~ identifier ~ "@" ~ ordinal ~ ":" ~ type ~ ";" ~ optional_whitespace }
-
-// --- Transition Definitions ---
-// Rule for the surrounding block
-// Corrected version allowing whitespace/comments *before* each transition:
-// transitions_block = { "transitions" ~ "{" ~ optional_whitespace ~ (optional_whitespace ~ transition_definition)* ~ optional_whitespace ~ "}" ~ optional_whitespace }
-transitions_block = { "transitions" ~ "{" ~ optional_whitespace ~ (optional_whitespace ~ transition_definition)* ~ optional_whitespace ~ "}" }
-
-// parser.rs expects `transition_definition` containing `transition_element`
-// Try adding explicit optional_whitespace within transition_definition
-// transition_definition = {
-//     optional_whitespace ~ "transition" ~ optional_whitespace ~
-//     identifier? ~ optional_whitespace ~
-//     "from" ~ optional_whitespace ~ identifier ~ optional_whitespace ~
-//     "to" ~ optional_whitespace ~ identifier ~ optional_whitespace ~
-//     "{" ~ optional_whitespace ~ transition_element* ~ optional_whitespace ~ "}" ~ optional_whitespace
-// }
-// Consume whitespace before closing brace
-transition_definition = {
-    optional_whitespace ~ "transition" ~ optional_whitespace ~
-    identifier? ~ optional_whitespace ~
-    "from" ~ optional_whitespace ~ identifier ~ optional_whitespace ~
-    "to" ~ optional_whitespace ~ identifier ~ optional_whitespace ~
-    "{" ~ optional_whitespace ~ transition_element* ~ optional_whitespace ~ "}"
-}
-transition_element = { on_clause | guard_clause | action_clause | annotation }
-
-on_clause = { "on" ~ optional_whitespace ~ "@" ~ optional_whitespace ~ ordinal ~ optional_whitespace ~ identifier ~ optional_whitespace ~ ";" ~ optional_whitespace }
-guard_clause = { "guard" ~ optional_whitespace ~ "@" ~ optional_whitespace ~ ordinal ~ optional_whitespace ~ identifier ~ optional_whitespace ~ ";" ~ optional_whitespace }
-action_clause = { "action" ~ optional_whitespace ~ "@" ~ optional_whitespace ~ ordinal ~ optional_whitespace ~ identifier ~ optional_whitespace ~ ";" ~ optional_whitespace }
-
-
-// --- Common Elements ---
-identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
-ordinal = @{ ASCII_DIGIT+ } // Simplified ordinal, parser expects u64
-integer    = @{ "-"? ~ ASCII_DIGIT+ }
-hex_literal = @{ "0x" ~ ASCII_HEX_DIGIT+ } // Used by parse_hex_literal indirectly via hex_number
-string_literal = @{ "\"" ~ inner_string* ~ "\"" }
-inner_string = { char_escape | (!("\"" | "\\") ~ ANY) }
-char_escape    = { "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | ("u" ~ ASCII_HEX_DIGIT{4})) }
-boolean_literal = @{ "true" | "false" }
-
-// Types (parser.rs expects `primitive_type`, `list_type`, `identifier` for types)
-type = { primitive_type | list_type | identifier }
-primitive_type = @{ "Void" | "Bool" | "Int8" | "Int16" | "Int32" | "Int64" | "UInt8" | "UInt16" | "UInt32" | "UInt64" | "Float32" | "Float64" | "Text" | "Data" }
-list_type = { "List" ~ "(" ~ type ~ ")" }
-
-// Annotations (parser.rs expects `annotation` containing `annotation_value`)
-annotations = { annotation+ }
-annotation = { "$" ~ identifier ~ annotation_value? ~ ";" ~ optional_whitespace }
-optional_annotations = { annotation* } // New rule for zero or more annotations
+annotation = { "$" ~ ident ~ annotation_value? ~ ";" }
 annotation_value = { "(" ~ annotation_value_inner? ~ ")" }
-annotation_value_inner = { identifier | literal_value | array_literal } // Grouping literals
-literal_value = { number_literal | string_literal | boolean_literal }
-number_literal = { integer } // parser expects i64, maps to this rule name
-array_literal = { "[" ~ (string_literal ~ (optional_whitespace ~ "," ~ optional_whitespace ~ string_literal)*)? ~ optional_whitespace ~ "]" } // parser expects Vec<String>
+annotation_value_inner = { array_literal | literal | ident }
 
-// Implicit SOI and EOI
+literal = { string_literal | number_literal | boolean_literal }
+
+string_literal = @{ "\"" ~ ( !("\\" | "\"") ~ ANY )* ~ "\"" }
+number_literal = @{ "-"? ~ ASCII_DIGIT+ }
+boolean_literal = @{ "true" | "false" }
+array_literal = { "[" ~ (string_literal ~ ("," ~ string_literal)*)? ~ "]" }
+
+// ====================================
+//  Identifiers and Qualified Identifiers
+// ====================================
+
+ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+
+// New: Represents either a simple ident or a qualified one like ns.ident
+qualified_ident = @{ ident ~ (".." ~ ident)? } // Simplified: Using ".." as separator to avoid grammar conflict with floats for now
+                                              // Ideally, we'd use "." but need careful grammar design.
+                                              // Or handle potential ambiguity in the parser logic.
+                                              // Let's try sticking with "." and see if Pest handles it.
+qualified_ident = @{ ident ~ ("." ~ ident)? } // Reverted to using "."
+
+// ====================================
+//  State Machine Definition
+// ====================================
+
+state_machine = { "stateMachine" ~ WHITESPACE ~ ident ~ "{" ~ WHITESPACE?
+    ~ machine_item* // Allow machine items directly
+    ~ WHITESPACE? ~ "}" }
+
+// Updated: Added use_decl
+machine_item = { annotation | states_block | events_block | transitions_block | context_block | use_decl }
+
+// Added use declaration inside machine scope
+use_decl = { "use" ~ WHITESPACE ~ qualified_ident ~ ";" } 
+
+// ====================================
+//  States Block
+// ====================================
+
+states_block = { "states" ~ WHITESPACE? ~ "{" ~ WHITESPACE? ~ state_item* ~ WHITESPACE? ~ "}" }
+state_item = { annotation* ~ ident ~ state_ordinal ~ state_body? ~ ";" }
+state_ordinal = { "@" ~ integer_literal }
+state_body = { "{" ~ WHITESPACE? ~ state_element* ~ WHITESPACE? ~ "}" }
+state_element = { entry_action | exit_action | annotation }
+entry_action = { "entry" ~ ":" ~ qualified_ident ~ ";" } // Changed to qualified_ident
+exit_action = { "exit" ~ ":" ~ qualified_ident ~ ";" }  // Changed to qualified_ident
+
+// ====================================
+//  Events Block
+// ====================================
+
+events_block = { "events" ~ WHITESPACE? ~ "{" ~ WHITESPACE? ~ event_item* ~ WHITESPACE? ~ "}" }
+// Updated: Added use_decl within events
+event_item = { event_struct | use_decl }
+
+event_struct = { annotation* ~ "event" ~ WHITESPACE ~ ident ~ event_ordinal ~ event_body? ~ ";" }
+event_ordinal = { "@" ~ integer_literal }
+event_body = { "{" ~ WHITESPACE? ~ event_field* ~ WHITESPACE? ~ "}" }
+event_field = { annotation* ~ ident ~ ":" ~ field_type ~ field_ordinal ~ ";" }
+field_ordinal = { "@" ~ integer_literal }
+
+field_type = { primitive_type | list_type | type_identifier }
+primitive_type = @{ "Void" | "Bool" | "Int8" | "Int16" | "Int32" | "Int64" | "UInt8" | "UInt16" | "UInt32" | "UInt64" | "Float32" | "Float64" | "Text" | "Data" }
+list_type = { "List" ~ "<" ~ field_type ~ ">" }
+type_identifier = { qualified_ident } // Changed to qualified_ident
+
+// ====================================
+//  Struct Definition (New)
+// ====================================
+
+struct_def = { annotation* ~ "struct" ~ WHITESPACE ~ ident ~ struct_body? ~ ";" }
+struct_body = { "{" ~ WHITESPACE? ~ struct_field* ~ WHITESPACE? ~ "}" }
+// Reuse event_field structure for struct fields
+struct_field = { event_field }
+
+// ====================================
+//  Transitions Block
+// ====================================
+
+transitions_block = { "transitions" ~ WHITESPACE? ~ "{" ~ WHITESPACE? ~ transition_item* ~ WHITESPACE? ~ "}" }
+transition_item = { annotation* ~ transition_header ~ transition_body ~ ";" }
+transition_header = { ("transition" ~ WHITESPACE ~ ident ~ WHITESPACE)? ~ "from" ~ WHITESPACE ~ ident ~ WHITESPACE ~ "to" ~ WHITESPACE ~ ident }
+transition_body = { "{" ~ WHITESPACE? ~ transition_element* ~ WHITESPACE? ~ "}" }
+transition_element = { on_trigger | guard_condition | action_effect | annotation }
+
+on_trigger = { "on" ~ transition_ordinal ~ qualified_ident ~ ";" }       // Changed to qualified_ident
+guard_condition = { "guard" ~ transition_ordinal ~ qualified_ident ~ ";" } // Changed to qualified_ident
+action_effect = { "action" ~ transition_ordinal ~ qualified_ident ~ ";" } // Changed to qualified_ident
+transition_ordinal = { WHITESPACE ~ "@" ~ integer_literal }
+
+// ====================================
+//  Context Block (Placeholder)
+// ====================================
+
+context_block = { "context" ~ WHITESPACE? ~ "{" ~ WHITESPACE? ~ context_field* ~ WHITESPACE? ~ "}" }
+context_field = { event_field } // Reuse event_field structure for now
+
+// ====================================
+//  Basic Tokens & Whitespace
+// ====================================
+
+integer_literal = @{ ASCII_DIGIT+ }
+
+// Define WHITESPACE and COMMENT to be skipped implicitly by Pest
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ line_comment | block_comment }
+line_comment = { "//" ~ (!"\n" ~ ANY)* }
+block_comment = { "/*" ~ ( block_comment | (!"*/" ~ ANY) )* ~ "*/" }

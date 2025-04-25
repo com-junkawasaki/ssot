@@ -1,0 +1,13 @@
+@0xcommon0events1; // Example ID
+package test.fsm.common; // Define a namespace for common elements
+
+events {
+    event Start @0 { task_id: Text @0; }
+    event Reset @1 {}
+    // Maybe add another common event later
+}
+
+// Could also define common data types here if needed
+// types {
+//    type TaskId = Text;
+// } 
