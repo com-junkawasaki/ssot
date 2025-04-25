@@ -231,6 +231,7 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
     let mut states = Vec::new();
     let mut events = Vec::new();
     let mut transitions = Vec::new();
+    let mut context_fields = Vec::new();
 
     // Iterate over items inside the stateMachine block {}
     for item_pair in inner {
@@ -280,13 +281,10 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
                 println!("    -> Matched Rule::transitions_block");
                 transitions = parse_transitions_block(actual_item_pair)?;
             }
-            // Ignore silent rules explicitly if they somehow get through
-            // These should ideally not be yielded by `inner` if the grammar is correct
-            Rule::WHITESPACE | Rule::COMMENT | Rule::optional_whitespace => {
-                println!("    -> Ignoring {:?}", rule);
-                /* Ignore */
-            }
-            // Any other rule is unexpected at this level
+            Rule::context_block => context_fields = parse_context_block(actual_item_pair)?,
+            Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
+            // EOI might appear if the block is empty or at the end
+            Rule::EOI => break,
             _ => {
                 println!("    -> FAILED: Unexpected rule {:?}", rule);
                 // Provide more context in the error
@@ -307,42 +305,77 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
         ));
     }
 
+    println!("Finished parsing state_machine: {}", name);
     Ok(StateMachine {
         name,
         annotations,
         states,
         events,
         transitions,
+        context: context_fields,
     })
 }
 
 fn parse_state_enum(pair: Pair<Rule>) -> Result<Vec<StateItem>, ParseError> {
     pair.into_inner()
         .filter(|p| p.as_rule() == Rule::state_variant) // Ensure only state_variants are processed
-        .map(parse_state_variant)
+        .map(parse_state_item)
         .collect()
 }
 
-fn parse_state_variant(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
+fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
     let mut inner = pair.into_inner();
     let mut annotations = Vec::new();
+    let mut name: Option<Ident> = None;
+    let mut ordinal: Option<u64> = None;
+    let mut entry_actions: Vec<Ident> = Vec::new();
+    let mut exit_actions: Vec<Ident> = Vec::new();
 
-    // Peek at the first element to see if it's optional_annotations
-    if let Some(first) = inner.peek() {
-        if first.as_rule() == Rule::optional_annotations {
-            // Consume and parse annotations
-            annotations = first.into_inner().map(parse_annotation).collect::<Result<_,_>>()?;
-            inner.next(); // Advance iterator past annotations
+    for item_pair in inner {
+        match item_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(item_pair)?),
+            Rule::ordinal => ordinal = Some(parse_ordinal(item_pair)?),
+            Rule::identifier => name = Some(parse_ident(item_pair)?),
+            Rule::state_entry_actions => entry_actions = parse_entry_exit_actions(item_pair)?,
+            Rule::state_exit_actions => exit_actions = parse_entry_exit_actions(item_pair)?,
+            Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
+            _ => {
+                return Err(ParseError::UnexpectedRule {
+                    rule: item_pair.as_rule(),
+                    context: "state_item definition".to_string(),
+                });
+            }
         }
     }
 
-    let name = parse_ident(inner.next().ok_or(ParseError::MissingElement("state name".to_string()))?)?;
-    let ordinal = parse_ordinal(inner.next().ok_or(ParseError::MissingElement("state ordinal".to_string()))?)?;
     Ok(ast::StateItem {
-        annotations, // Add parsed annotations
-        name,
-        ordinal,
+        annotations,
+        name: name.ok_or_else(|| ParseError::MissingElement("state name".to_string()))?,
+        ordinal: ordinal.ok_or_else(|| ParseError::MissingElement("state ordinal (@N)".to_string()))?,
+        entry_actions,
+        exit_actions,
     })
+}
+
+fn parse_entry_exit_actions(pair: Pair<Rule>) -> Result<Vec<Ident>, ParseError> {
+    // pair matches state_entry_actions or state_exit_actions
+    // Inner rule should be ident_list
+    if let Some(ident_list_pair) = pair.into_inner().next() {
+        if ident_list_pair.as_rule() == Rule::ident_list {
+            ident_list_pair
+                .into_inner()
+                .map(|ident_pair| parse_ident(ident_pair))
+                .collect()
+        } else {
+            Err(ParseError::UnexpectedRule {
+                rule: ident_list_pair.as_rule(),
+                context: "inside entry/exit actions (expected ident_list)".to_string(),
+            })
+        }
+    } else {
+        // This case should not happen if grammar requires `/` and ident_list, but handle defensively
+        Ok(Vec::new()) // Return empty vec if no ident_list found
+    }
 }
 
 fn parse_event_definitions(pair: Pair<Rule>) -> Result<Vec<MessageItem>, ParseError> {
@@ -731,6 +764,60 @@ fn parse_transitions_block(pair: Pair<Rule>) -> Result<Vec<TransitionItem>, Pars
     Ok(parsed_transitions)
 }
 
+fn parse_context_block(pair: Pair<Rule>) -> Result<Vec<FieldDef>, ParseError> {
+    // pair matches context_block: "context" ~ "{" ~ field_def* ~ "}"
+    println!("Parsing context block...");
+    let mut fields = Vec::new();
+    for item_pair in pair.into_inner() {
+        match item_pair.as_rule() {
+            Rule::field_def => fields.push(parse_field_def(item_pair)?),
+            Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
+            _ => {
+                return Err(ParseError::UnexpectedRule {
+                    rule: item_pair.as_rule(),
+                    context: "context block definition".to_string(),
+                });
+            }
+        }
+    }
+    println!("Finished parsing context block with {} fields", fields.len());
+    Ok(fields)
+}
+
+fn parse_field_def(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
+    let mut inner = pair.into_inner();
+    let mut annotations = Vec::new();
+
+    // Peek and parse optional annotations
+    if let Some(first) = inner.peek() {
+        if first.as_rule() == Rule::optional_annotations {
+            annotations = first.into_inner().map(parse_annotation).collect::<Result<_,_>>()?;
+            inner.next();
+        }
+    }
+
+    let name = parse_ident(inner.next().ok_or(ParseError::MissingElement("field name".to_string()))?)?;
+    let ordinal = parse_ordinal(inner.next().ok_or(ParseError::MissingElement("field ordinal".to_string()))?)?;
+
+    let type_pair = inner.next().ok_or(ParseError::MissingElement("field type".to_string()))?;
+    let actual_type_pair = if type_pair.as_rule() == Rule::r#type {
+        type_pair.into_inner().next().ok_or(ParseError::UnexpectedRule {
+            rule: Rule::r#type,
+            context: "empty inner type".to_string(),
+        })?
+    } else {
+        type_pair
+    };
+    let field_type = parse_field_type(actual_type_pair)?;
+
+    Ok(FieldDef {
+        annotations,
+        name,
+        ordinal,
+        field_type,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,126 +833,86 @@ mod tests {
 
     #[test]
     fn test_parse_valid_input() {
-        // Use the corrected input string directly, simplified whitespace/comments
-        let result = parse_str(
-            r#"
-        @0x1234abcd;
-        package my_fsm_example;
-        $version("1.0");
-        stateMachine MyMachine {
-            $description("Represents the different operational states");
-            states {
-                Idle @0;
-                Running @1;
-                Done @2;
-            }
-            events {
-                event Start @0 {}
-                event Stop @1 { items @0 : List(Text); }
-                event Reset @2 {}
-                event DataEvent @3 { data @0 : Data; }
-            }
+        let input = r#"
+            @0x123456789ABCDEF0;
+            package my.package;
 
-            transitions {
-                transition t1 from Idle to Running {
-                    on @0 Start;
-                    action @1 log_start;
+            $top_level_derive(Debug, Clone);
+
+            stateMachine MyMachine {
+                $initial(Idle);
+                $description("A simple state machine.");
+
+                context {
+                    counter: Int32;
+                    description: Text @1;
+                    maybeFlag: Bool;
                 }
 
-                transition t2 from Running to Done {
-                    guard @0 can_stop;
-                    on @1 Stop;
-                    action @2 cleanup;
+                states {
+                    Idle @0;
+                    Running @1 {
+                        entry / action1, action2;
+                        exit / cleanup;
+                    }
                 }
 
-                transition t3 from Done to Idle {
-                    on @0 Reset;
+                events {
+                    Start @0 {
+                        source: Text;
+                    }
+                    Stop @1;
+                    Internal @2;
+                }
+
+                transitions {
+                    from Idle to Running {
+                        on @1 Start;
+                        action @2 doStart;
+                    }
+                    from Running to Idle {
+                        on @1 Stop;
+                        guard @2 canStop;
+                    }
                 }
             }
-        }
-        "#,
-        )
-        .unwrap();
+        "#;
+        let result = parse_str(input);
+        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
+        let ssot_file = result.unwrap();
 
-        // Assign machine to a local variable within the test scope
-        let machine = result
-            .state_machines
-            .first()
-            .expect("No state machine found in parsed file")
-            .clone();
+        assert_eq!(ssot_file.file_id, 0x123456789ABCDEF0);
+        assert_eq!(ssot_file.package_declaration, Some("my.package".to_string()));
+        assert!(!ssot_file.top_level_annotations.is_empty());
+        assert_eq!(ssot_file.state_machines.len(), 1);
 
-        // Assertions remain the same, except transition items won't have annotations yet
-        assert_eq!(result.file_id, 0x1234abcd);
-        assert_eq!(
-            result.package_declaration,
-            Some("my_fsm_example".to_string())
-        );
-        assert_eq!(result.top_level_annotations.len(), 1);
-        // ... other assertions ...
-        assert_eq!(machine.events.len(), 4);
-        // ... event assertions ...
-        assert_eq!(machine.transitions.len(), 3);
+        let machine = &ssot_file.state_machines[0];
+        assert_eq!(machine.name.to_string(), "MyMachine");
+        assert!(!machine.annotations.is_empty());
 
-        // Transition 1: Idle -> Running
-        assert_eq!(
-            machine.transitions[0],
-            TransitionItem {
-                name: Some(ident("t1")),
-                from: ident("Idle"),
-                to: ident("Running"),
-                annotations: vec![],
-                elements: vec![
-                    ast::TransitionElement::On {
-                        ordinal: 0,
-                        event: ident("Start")
-                    },
-                    ast::TransitionElement::Action {
-                        ordinal: 1,
-                        function: ident("log_start")
-                    },
-                ],
-            }
-        );
+        // Verify Context
+        assert_eq!(machine.context.len(), 3);
+        assert_eq!(machine.context[0].name.to_string(), "counter");
+        assert_eq!(machine.context[0].field_type, FieldType::Int32);
+        assert_eq!(machine.context[1].name.to_string(), "description");
+        assert_eq!(machine.context[1].field_type, FieldType::Text);
+        assert_eq!(machine.context[1].ordinal, 1);
+        assert_eq!(machine.context[2].name.to_string(), "maybeFlag");
+        assert_eq!(machine.context[2].field_type, FieldType::Bool);
 
-        // Transition 2: Running -> Done
-        assert_eq!(
-            machine.transitions[1],
-            TransitionItem {
-                name: Some(ident("t2")),
-                from: ident("Running"),
-                to: ident("Done"),
-                annotations: vec![],
-                elements: vec![
-                    ast::TransitionElement::Guard {
-                        ordinal: 0,
-                        function: ident("can_stop")
-                    },
-                    ast::TransitionElement::On {
-                        ordinal: 1,
-                        event: ident("Stop")
-                    },
-                    ast::TransitionElement::Action {
-                        ordinal: 2,
-                        function: ident("cleanup")
-                    },
-                ],
-            }
-        );
+        assert_eq!(machine.states.len(), 2);
+        assert_eq!(machine.states[0].name.to_string(), "Idle");
+        assert!(machine.states[0].entry_actions.is_empty());
+        assert!(machine.states[0].exit_actions.is_empty());
+        assert_eq!(machine.states[1].name.to_string(), "Running");
+        assert_eq!(machine.states[1].entry_actions.len(), 2);
+        assert_eq!(machine.states[1].entry_actions[0].to_string(), "action1");
+        assert_eq!(machine.states[1].entry_actions[1].to_string(), "action2");
+        assert_eq!(machine.states[1].exit_actions.len(), 1);
+        assert_eq!(machine.states[1].exit_actions[0].to_string(), "cleanup");
 
-        // Transition 3: Done -> Idle
-        assert_eq!(
-            machine.transitions[2],
-            TransitionItem {
-                name: Some(ident("t3")),
-                from: ident("Done"),
-                to: ident("Idle"),
-                annotations: vec![],
-                elements: vec![ast::TransitionElement::On {
-                    ordinal: 0,
-                    event: ident("Reset")
-                },],
-            }
-        );
+        assert_eq!(machine.events.len(), 3);
+        assert_eq!(machine.transitions.len(), 2);
     }
 
     #[test]

@@ -14,6 +14,8 @@ use std::collections::HashSet;
 
 pub mod codegen_capnp; // Add new module
 pub mod codegen_ts;   // Add new module
+pub mod codegen_xstate; // Add new module for XState
+pub mod codegen_scxml;  // Add new module for SCXML
 
 // Helper to find annotation value by name
 fn find_annotation_value<'a>(
@@ -576,8 +578,8 @@ pub fn generate_capnp_schema(
     file_ast: &SsotFile, // Updated signature
     machine_ast: &StateMachine
 ) -> Result<String, CodegenError> {
-    // Call the internal implementation function
-    codegen_capnp::generate_capnp_schema_internal(file_ast, machine_ast) // Pass file_ast
+    // Use the internal function from the capnp module
+    codegen_capnp::generate_capnp_schema_internal(file_ast, machine_ast)
 }
 
 /// Generates TypeScript type definitions (.types.ts) from the FSM AST.
@@ -590,8 +592,32 @@ pub fn generate_capnp_schema(
 ///
 /// A `Result` containing the TypeScript type definition string or a `CodegenError`.
 pub fn generate_typescript_types(ast: &StateMachine) -> Result<String, CodegenError> {
-    // Call the internal implementation function
+    // Use the internal function from the ts module
     codegen_ts::generate_typescript_types_internal(ast)
+}
+
+/// Generates an XState machine definition string from the FSM AST.
+///
+/// # Arguments
+/// * `ast` - A reference to the `StateMachine` AST node.
+///
+/// # Returns
+/// A `Result` containing the generated XState machine definition (e.g., as a JS object literal string) or a `CodegenError`.
+pub fn generate_xstate_machine(ast: &StateMachine) -> Result<String, CodegenError> {
+    // Use the internal function from the xstate module
+    codegen_xstate::generate_xstate_machine_internal(ast)
+}
+
+/// Generates an SCXML document string from the FSM AST.
+///
+/// # Arguments
+/// * `ast` - A reference to the `StateMachine` AST node.
+///
+/// # Returns
+/// A `Result` containing the generated SCXML document as a `String` or a `CodegenError`.
+pub fn generate_scxml(ast: &StateMachine) -> Result<String, CodegenError> {
+    // Use the internal function from the scxml module
+    codegen_scxml::generate_scxml_internal(ast)
 }
 
 // Error type

@@ -66,6 +66,7 @@ pub struct StateMachine {
     pub states: Vec<StateItem>,
     pub events: Vec<MessageItem>, // Renamed from messages to events
     pub transitions: Vec<TransitionItem>,
+    pub context: Vec<FieldDef>, // Added: Context fields for the state machine
 }
 
 // --- States ---
@@ -76,6 +77,8 @@ pub struct StateItem {
     pub annotations: Vec<Annotation>, // Added annotations
     pub name: Ident,
     pub ordinal: u64,
+    pub entry_actions: Vec<Ident>, // Added: Actions to execute on entry
+    pub exit_actions: Vec<Ident>,  // Added: Actions to execute on exit
     // pub annotations: Vec<Annotation>, // Future: Annotations on states?
 }
 
