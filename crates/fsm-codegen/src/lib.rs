@@ -12,6 +12,7 @@ use fsm_dsl::ast::{
 use proc_macro2::{Ident as TokenIdent, TokenStream};
 use quote::{format_ident, quote};
 use std::collections::{HashSet, HashMap};
+use std::path::PathBuf;
 // Needed for parsing generated code before formatting // For collecting unique guard/action names
 
 pub mod codegen_capnp; // Add new module
@@ -750,6 +751,15 @@ pub enum CodegenError {
     FormatIoError(#[from] std::io::Error),
     #[error("Failed to format generated code: {0}")]
     FormatError(String),
+    #[error("Symbol not found: {symbol_name} in context: {context_description}")]
+    SymbolNotFound {
+        symbol_name: String,
+        context_description: String,
+    },
+    #[error("Package not found: {package_name}")]
+    PackageNotFound {
+        package_name: String,
+    },
     // Potential future errors: IO errors, etc.
 }
 
@@ -1407,41 +1417,100 @@ mod tests {
 // Placeholder for the new context struct/trait needed by codegen functions
 // This should mirror the structure built in build.rs
 pub struct ResolutionContext<'a> {
-    // Placeholder fields - replace with actual structure from build.rs
-    pub symbol_table: &'a HashMap<String, SymbolDefinition<'a>>,
-    // Add other necessary fields like package_map, files, etc.
+    // Now referencing the actual definition in the types module
+    pub symbol_table: &'a HashMap<String, types::SymbolDefinition<'a>>,
+    // Assuming build.rs provides these when calling codegen:
+    pub package_map: &'a HashMap<String, PathBuf>,
+    pub files: &'a HashMap<PathBuf, SsotFile>,
 }
 
 impl<'a> ResolutionContext<'a> {
-    // Placeholder method for resolving identifiers
-    // This needs to implement the logic from build.rs's resolve_identifier
-    fn resolve_identifier(
+    /// Resolves a QualifiedIdent to its fully qualified name (FQN).
+    /// This mirrors the logic from `build.rs` but operates within the codegen context.
+    ///
+    /// Arguments:
+    /// * `ident`: The identifier to resolve.
+    /// * `current_machine_prefix`: FQN prefix of the machine where `ident` is used (e.g., "pkg.Machine").
+    /// * `import_aliases`: Map of import alias -> full package name for the current file.
+    /// * `local_resolution_map`: Map of simple name -> FQN resolved from 'use' decls in the current machine.
+    /// * `context_description`: String describing where the identifier is used, for error messages.
+    pub fn resolve_identifier(
         &self,
         ident: &QualifiedIdent,
-        current_scope_fqn: &str, // e.g., machine FQN
+        current_machine_prefix: &str,
+        import_aliases: &HashMap<String, &'a String>,
+        local_resolution_map: &HashMap<String, String>,
         context_description: &str,
-    ) -> Result<String, CodegenError> { // Should return Result<ResolvedFqn, CodegenError>
-        // TODO: Implement the actual resolution logic here, similar to build.rs
-        // - Check local 'use' (needs access to local map - how to pass?) or machine scope
-        // - Check current package scope
-        // - Check global symbol table using constructed FQNs
-        // - Handle qualified vs simple identifiers
-        // - Use import aliases if qualified
+    ) -> Result<String, CodegenError> {
+        match ident {
+            QualifiedIdent::Simple(name) => {
+                let name_str = name.to_string();
+                println!("            -> Resolving simple: '{}' (Context: {})", name_str, context_description);
 
-        // Temporary placeholder implementation:
-        let name_str = match ident {
-            QualifiedIdent::Simple(id) => id.to_string(),
-            QualifiedIdent::Qualified { name, .. } => name.to_string(),
-        };
-        println!("[Codegen Placeholder] Resolving: {} in scope {}", name_str, current_scope_fqn);
-        // Just return the simple name as a placeholder FQN
-        Ok(name_str)
+                // 1. Check local 'use' map
+                if let Some(fqn) = local_resolution_map.get(&name_str) {
+                    println!("              -> Resolved via 'use' map to: {}", fqn);
+                    // Existence should have been checked when building the map
+                    return Ok(fqn.clone());
+                }
 
-        // Err(CodegenError::GenerationError(format!(
-        //     "Identifier resolution not yet implemented in codegen context for '{}' ({})",
-        //     ident,
-        //     context_description
-        // )))
+                // 2. Check if defined within the current machine (State, Event)
+                let potential_local_fqn = format!("{}.{}", current_machine_prefix, name_str);
+                if let Some(def) = self.symbol_table.get(&potential_local_fqn) {
+                    // Check if it's a State or Event (primary local definitions)
+                    if def.symbol_type == types::SymbolType::State || def.symbol_type == types::SymbolType::Event {
+                        println!("              -> Resolved as local machine symbol: {}", potential_local_fqn);
+                        return Ok(potential_local_fqn);
+                    }
+                     // How to handle local actions/guards? Their FQN in symbol table is derived differently.
+                     // For now, simple names won't resolve to local actions/guards this way.
+                }
+
+                // 3. Check if defined in the current package but outside the machine? (Future)
+
+                // 4. Not found
+                println!("              -> Failed to resolve simple ident '{}' locally or via 'use'.", name_str);
+                Err(CodegenError::SymbolNotFound {
+                    symbol_name: name_str,
+                    context_description: context_description.to_string(),
+                    // referencing_file: PathBuf::new(), // Path info is lost here
+                })
+            }
+            QualifiedIdent::Qualified { qualifier, name } => {
+                let qualifier_str = qualifier.to_string();
+                let name_str = name.to_string();
+                println!("            -> Resolving qualified: '{}.{}' (Context: {})", qualifier_str, name_str, context_description);
+
+                // Qualifier must resolve to a known package alias via imports
+                if let Some(full_package_name) = import_aliases.get(&qualifier_str) {
+                    let fqn = format!("{}.{}", full_package_name, name_str);
+                    println!("              -> Constructed FQN from alias: {}", fqn);
+
+                    // Check if this FQN exists in the global symbol table
+                    if self.symbol_table.contains_key(&fqn) {
+                        println!("              -> Found in symbol table.");
+                        return Ok(fqn);
+                    } else {
+                        // Maybe it refers to an action/guard within the target machine?
+                        // This requires iterating symbols or a more structured symbol table.
+                        // For now, assume qualified names only refer to globally unique top-level items.
+                        println!("              -> FQN '{}' not found in symbol table.", fqn);
+                        Err(CodegenError::SymbolNotFound {
+                            symbol_name: fqn,
+                            context_description: context_description.to_string(),
+                           // referencing_file: PathBuf::new(),
+                        })
+                    }
+                } else {
+                    // The qualifier used is not an alias defined by `import` in this file.
+                    println!("              -> Qualifier '{}' is not a known import alias.", qualifier_str);
+                    Err(CodegenError::PackageNotFound {
+                        package_name: qualifier_str, // The alias string treated as package name for error
+                       // importer_file: PathBuf::new(),
+                    })
+                }
+            }
+        }
     }
 }
 
