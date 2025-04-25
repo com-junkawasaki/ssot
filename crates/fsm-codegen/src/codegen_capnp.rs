@@ -1,7 +1,7 @@
 //! Cap'n Proto schema generation logic.
 
 use crate::CodegenError;
-use fsm_dsl::ast::{FieldType, Ident, StateMachine, SsotFile};
+use fsm_dsl::ast::{AnnotationValue, FieldType, Ident, StateMachine, SsotFile};
 
 // Function to map DSL FieldType to Cap'n Proto type string
 fn map_field_type_to_capnp_type(field_type: &FieldType) -> String {
@@ -30,20 +30,36 @@ fn map_field_type_to_capnp_type(field_type: &FieldType) -> String {
     }
 }
 
+// Helper function to generate Cap'n Proto comments from annotations
+fn generate_capnp_comment(annotations: &[fsm_dsl::ast::Annotation], indent: &str) -> String {
+    let mut comment_str = String::new();
+    // Use the find_annotation_value helper defined below
+    if let Some(AnnotationValue::StringLiteral(desc)) =
+        find_annotation_value(annotations, "description")
+    {
+        for line in desc.lines() {
+            comment_str.push_str(&format!("{}# {}\n", indent, line.trim()));
+        }
+    }
+    // Add other annotation processing here if needed
+    comment_str
+}
+
 // Updated internal generation function
 pub(crate) fn generate_capnp_schema_internal(
     file_ast: &SsotFile,
     machine_ast: &StateMachine,
 ) -> Result<String, CodegenError> {
     let mut capnp_code = String::new();
+    let mut struct_id_counter = 2u64; // Start struct IDs from @2
 
     // --- File ID ---
     capnp_code.push_str(&format!("@0x{:x};\n\n", file_ast.file_id));
 
     // --- File Header Comment ---
+    capnp_code.push_str(&generate_capnp_comment(&machine_ast.annotations, "")); // Add comment for the whole machine
     capnp_code.push_str(&format!(
-        "# Cap'n Proto schema generated from .ssot for {}
-",
+        "# Cap'n Proto schema generated from .ssot for {}\n",
         machine_ast.name
     ));
     // Add package declaration if present (using annotation for now)
@@ -58,6 +74,7 @@ pub(crate) fn generate_capnp_schema_internal(
     // --- State Enum ---
     capnp_code.push_str("enum State @0 {\n");
     for state in &machine_ast.states {
+        capnp_code.push_str(&generate_capnp_comment(&state.annotations, "  ")); // Add comment for state variant
         capnp_code.push_str(&format!("  {} @{};\n", state.name, state.ordinal));
     }
     capnp_code.push_str("}\n\n");
@@ -67,9 +84,12 @@ pub(crate) fn generate_capnp_schema_internal(
     for event in &machine_ast.events {
         if !event.fields.is_empty() {
             let struct_name = format!("{}Payload", event.name); // Use PascalCase? Cap'n Proto uses camelCase generally
-            event_payload_structs.push_str(&format!("struct {} @{} {{\n", struct_name, event.ordinal)); // Use event ordinal? Need unique IDs for structs.
+            event_payload_structs.push_str(&generate_capnp_comment(&event.annotations, "")); // Add comment for struct
+            event_payload_structs.push_str(&format!("struct {} @{} {{\n", struct_name, struct_id_counter));
+            struct_id_counter += 1; // Increment for the next struct
             for field in &event.fields {
                 let field_capnp_type = map_field_type_to_capnp_type(&field.field_type);
+                event_payload_structs.push_str(&generate_capnp_comment(&field.annotations, "  ")); // Add comment for field
                 event_payload_structs.push_str(&format!(
                     "  {} @{} :{};
 ",
@@ -89,6 +109,7 @@ pub(crate) fn generate_capnp_schema_internal(
     capnp_code.push_str("union Event @1 {\n"); // Assign next available ID
     for event in &machine_ast.events {
         let event_name_capnp = &event.name; // Use original name or convert case?
+        capnp_code.push_str(&generate_capnp_comment(&event.annotations, "  ")); // Use event annotations for union member
         if event.fields.is_empty() {
             capnp_code.push_str(&format!("  {} @{} :Void;\n", event_name_capnp, event.ordinal));
         } else {
@@ -101,7 +122,7 @@ pub(crate) fn generate_capnp_schema_internal(
             ));
         }
     }
-    capnp_code.push_str("}\n\n");
+    capnp_code.push_str("}\n"); // Remove trailing newline
 
     // --- Optional: StateMachine Definition Struct ---
     // Can add this later if needed

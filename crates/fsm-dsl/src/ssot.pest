@@ -32,26 +32,21 @@ state_machine_item = { annotation | state_enum | event_definitions | transitions
 
 // --- State Definitions ---
 // parser.rs expects `state_enum` containing `state_variant`
-// state_enum = { "states" ~ "{" ~ optional_whitespace ~ state_variant* ~ "}" ~ optional_whitespace }
 state_enum = { "states" ~ "{" ~ optional_whitespace ~ state_variant* ~ optional_whitespace ~ "}" }
-state_variant = { identifier ~ "@" ~ ordinal ~ ";" ~ optional_whitespace }
+// Allow optional annotations before the state definition
+state_variant = { optional_annotations ~ identifier ~ "@" ~ ordinal ~ ";" ~ optional_whitespace }
 
 // --- Event Definitions --- (Restored)
 // parser.rs expects `event_definitions` containing `event_struct`
-// Allow optional whitespace (incl. comments) before the closing brace
-// event_definitions = { "events" ~ "{" ~ optional_whitespace ~ (event_struct ~ optional_whitespace)* ~ optional_whitespace ~ "}" ~ optional_whitespace }
-// event_definitions = { "events" ~ "{" ~ optional_whitespace ~ (event_struct ~ optional_whitespace)* ~ optional_whitespace ~ "}" }
-// Remove optional_whitespace after event_struct in the loop
 event_definitions = { "events" ~ "{" ~ optional_whitespace ~ event_struct* ~ optional_whitespace ~ "}" }
 
 // parser.rs expects `event_struct` containing `event_field`
-// Revert to original whitespace handling
-// event_struct = { "event" ~ identifier ~ "@" ~ ordinal ~ "{" ~ optional_whitespace ~ (event_field ~ optional_whitespace)* ~ "}" ~ optional_whitespace }
-// Consume whitespace before closing brace
-event_struct = { "event" ~ identifier ~ "@" ~ ordinal ~ "{" ~ optional_whitespace ~ (event_field ~ optional_whitespace)* ~ optional_whitespace ~ "}" }
+// Allow optional annotations before the event keyword
+event_struct = { optional_annotations ~ "event" ~ identifier ~ "@" ~ ordinal ~ "{" ~ optional_whitespace ~ (event_field ~ optional_whitespace)* ~ optional_whitespace ~ "}" }
 
 // parser.rs expects `event_field`
-event_field = { identifier ~ "@" ~ ordinal ~ ":" ~ type ~ ";" ~ optional_whitespace }
+// Allow optional annotations before the field definition
+event_field = { optional_annotations ~ identifier ~ "@" ~ ordinal ~ ":" ~ type ~ ";" ~ optional_whitespace }
 
 // --- Transition Definitions ---
 // Rule for the surrounding block
@@ -101,6 +96,7 @@ list_type = { "List" ~ "(" ~ type ~ ")" }
 // Annotations (parser.rs expects `annotation` containing `annotation_value`)
 annotations = { annotation+ }
 annotation = { "$" ~ identifier ~ annotation_value? ~ ";" ~ optional_whitespace }
+optional_annotations = { annotation* } // New rule for zero or more annotations
 annotation_value = { "(" ~ annotation_value_inner? ~ ")" }
 annotation_value_inner = { identifier | literal_value | array_literal } // Grouping literals
 literal_value = { number_literal | string_literal | boolean_literal }

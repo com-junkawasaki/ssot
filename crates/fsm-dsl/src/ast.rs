@@ -72,6 +72,7 @@ pub struct StateMachine {
 /// Represents a state variant within the `enum State` block.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StateItem {
+    pub annotations: Vec<Annotation>, // Added annotations
     pub name: Ident,
     pub ordinal: u64,
     // pub annotations: Vec<Annotation>, // Future: Annotations on states?
@@ -82,6 +83,7 @@ pub struct StateItem {
 /// Represents an event struct defined within the `events` block.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MessageItem {
+    pub annotations: Vec<Annotation>, // Added annotations
     pub name: Ident,
     pub ordinal: u64,
     pub fields: Vec<FieldDef>,
@@ -91,6 +93,7 @@ pub struct MessageItem {
 /// Represents a field within an event struct.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldDef {
+    pub annotations: Vec<Annotation>, // Added annotations
     pub name: Ident,
     pub ordinal: u64,
     pub field_type: FieldType,

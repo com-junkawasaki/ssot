@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command; // To run rustfmt
 
-use fsm_codegen::generate_rust_code;
+use fsm_codegen::{generate_rust_code, generate_capnp_schema, generate_typescript_types};
 // Use the new parser function and AST types
 use fsm_dsl::ast::{Annotation, AnnotationValue, SsotFile};
 use fsm_dsl::parser::{parse_file, ParseError as DslParseError};
@@ -34,7 +34,7 @@ enum BuildError {
         #[source]
         source: fsm_codegen::CodegenError,
     },
-    #[error(r#"Missing '$rust_out(\"...")' annotation (top-level or per-machine) in {path:?}"#)]
+    #[error(r#"Missing '$rust_out("...")' annotation (top-level or per-machine) in {path:?}"#)]
     MissingRustOut { path: PathBuf },
 }
 
@@ -82,6 +82,11 @@ fn main() -> Result<(), BuildError> {
         // Determine the base output directory (can be overridden per machine)
         let top_level_rust_out =
             find_annotation_str_value(&ssot_file_ast.top_level_annotations, "rust_out");
+        // Look for top-level Cap'n Proto and TS output annotations
+        let top_level_capnp_out =
+            find_annotation_str_value(&ssot_file_ast.top_level_annotations, "capnp_out");
+        let top_level_ts_out =
+            find_annotation_str_value(&ssot_file_ast.top_level_annotations, "ts_out");
 
         // Process each state machine defined in the file
         for machine_ast in &ssot_file_ast.state_machines {
@@ -120,7 +125,7 @@ fn main() -> Result<(), BuildError> {
             // Store the stem for mod.rs generation
             if out_dir_path == crate_path.join("src/generated") {
                 // Only auto-gen mod.rs for standard path
-                generated_mod_files.push(machine_name_snake);
+                generated_mod_files.push(machine_name_snake.clone());
             }
 
             // Attempt to format the generated code using rustfmt
@@ -142,6 +147,79 @@ fn main() -> Result<(), BuildError> {
                          e
                      );
                 }
+            }
+
+            // --- Cap'n Proto Schema Generation (Optional) ---
+            let capnp_out_dir_str = find_annotation_str_value(&machine_ast.annotations, "capnp_out")
+                .or(top_level_capnp_out);
+
+            if let Some(capnp_out_dir_str) = capnp_out_dir_str {
+                let out_dir_path = crate_path.join(capnp_out_dir_str);
+                fs::create_dir_all(&out_dir_path).map_err(|e| io_err(&out_dir_path, e))?;
+                // Use original machine name for capnp file
+                let out_file_path = out_dir_path.join(format!("{}.capnp", machine_name_str));
+
+                println!(
+                    "Generating Cap'n Proto schema for '{}' to: {}",
+                    machine_name_str,
+                    out_file_path.display()
+                );
+
+                let generated_schema =
+                    generate_capnp_schema(&ssot_file_ast, machine_ast).map_err(|e| BuildError::Codegen {
+                        path: ssot_path.clone(),
+                        machine_name: machine_name_str.clone(),
+                        source: e,
+                    })?;
+
+                fs::write(&out_file_path, &generated_schema).map_err(|e| io_err(&out_file_path, e))?;
+                // No formatting needed for .capnp usually
+            }
+
+            // --- TypeScript Type Generation (Optional) ---
+            let ts_out_dir_str = find_annotation_str_value(&machine_ast.annotations, "ts_out")
+                .or(top_level_ts_out);
+
+            if let Some(ts_out_dir_str) = ts_out_dir_str {
+                let out_dir_path = crate_path.join(ts_out_dir_str);
+                fs::create_dir_all(&out_dir_path).map_err(|e| io_err(&out_dir_path, e))?;
+                // Use original machine name + .types.ts convention
+                let out_file_path = out_dir_path.join(format!("{}.types.ts", machine_name_str));
+
+                println!(
+                    "Generating TypeScript types for '{}' to: {}",
+                    machine_name_str,
+                    out_file_path.display()
+                );
+
+                let generated_types =
+                    generate_typescript_types(machine_ast).map_err(|e| BuildError::Codegen {
+                        path: ssot_path.clone(),
+                        machine_name: machine_name_str.clone(),
+                        source: e,
+                    })?;
+
+                fs::write(&out_file_path, &generated_types).map_err(|e| io_err(&out_file_path, e))?;
+
+                // Optional: Run Prettier or other TS formatter
+                 match Command::new("prettier").arg("--write").arg(&out_file_path).output() {
+                     Ok(output) => {
+                         if !output.status.success() {
+                             eprintln!(
+                                 "warning: Failed to format generated TypeScript {}: {}",
+                                 out_file_path.display(),
+                                 String::from_utf8_lossy(&output.stderr)
+                             );
+                         }
+                     }
+                     Err(e) => {
+                         eprintln!(
+                              "warning: Failed to run prettier for {}: {}. Ensure prettier is installed and in PATH.",
+                              out_file_path.display(),
+                              e
+                          );
+                     }
+                 }
             }
         }
     }

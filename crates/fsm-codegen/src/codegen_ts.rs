@@ -15,7 +15,7 @@ fn generate_jsdoc(annotations: &[fsm_dsl::ast::Annotation]) -> String {
         for line in desc.lines() {
             doc.push_str(&format!(" * {}\n", line.trim()));
         }
-        doc.push_str(" */\n");
+        doc.push_str(" */"); // Remove trailing newline from doc block itself
     }
     doc
 }
@@ -34,18 +34,17 @@ pub(crate) fn generate_typescript_types_internal(
     ts_code.push_str(&generate_jsdoc(&ast.annotations));
 
     // Generate State type (using union type)
-    ts_code.push_str(&generate_jsdoc(&[])); // Placeholder for potential state-level annotations
     ts_code.push_str("export type State =\n");
     let state_items: Vec<String> = ast
         .states
         .iter()
         .map(|s| {
-            // TODO: Add JSDoc for individual states if annotations are added to StateItem
-            // let doc = generate_jsdoc(&s.annotations);
-            format!("  | \"{}\"", s.name)
+            let doc = generate_jsdoc(&s.annotations); // Generate JSDoc for state variant
+            format!("{}{} | \"{}\"", "  ", doc, s.name) // Indent and add doc
         })
         .collect();
-    ts_code.push_str(&state_items.join("\n"));
+    // Adjust join logic for potentially multiline JSDoc
+    ts_code.push_str(&state_items.join("\n").trim_end_matches('|').trim_end()); // Remove trailing | and whitespace
     ts_code.push_str(";\n\n");
 
     // --- Generate Event Payloads (Interfaces) ---
@@ -55,17 +54,23 @@ pub(crate) fn generate_typescript_types_internal(
             let type_name = event.name.to_string().to_upper_camel_case();
             let payload_interface_name = format!("{}Payload", type_name);
 
-            // TODO: Add JSDoc for payload interfaces from event annotations
-            // event_payload_interfaces.push_str(&generate_jsdoc(&event.annotations));
+            // Add JSDoc for payload interfaces from event annotations
+            event_payload_interfaces.push_str(&generate_jsdoc(&event.annotations));
             event_payload_interfaces.push_str(&format!(
                 "export interface {} {{\n",
                 payload_interface_name
             ));
             for field in &event.fields {
-                // TODO: Add JSDoc for fields from field annotations
-                // event_payload_interfaces.push_str(&generate_jsdoc(&field.annotations));
+                // Add JSDoc for fields from field annotations
+                let field_doc = generate_jsdoc(&field.annotations);
                 let field_name = &field.name;
                 let field_ts_type = map_field_type_to_ts_type(&field.field_type);
+                // Indent doc comment correctly
+                let indented_doc = field_doc.lines().map(|l| format!("  {}", l)).collect::<Vec<_>>().join("\n");
+                 if !indented_doc.is_empty() {
+                     event_payload_interfaces.push_str(&indented_doc);
+                     event_payload_interfaces.push('\n');
+                 }
                 event_payload_interfaces.push_str(&format!("  {}: {};\n", field_name, field_ts_type));
             }
             event_payload_interfaces.push_str("}\n\n");
@@ -82,8 +87,14 @@ pub(crate) fn generate_typescript_types_internal(
 
     for event in &ast.events {
         let type_name = event.name.to_string().to_upper_camel_case();
-        // TODO: Add JSDoc for individual event types from annotations
-        // ts_code.push_str(&generate_jsdoc(&event.annotations));
+        // Add JSDoc for individual event types from annotations
+        let event_doc = generate_jsdoc(&event.annotations);
+        let indented_doc = event_doc.lines().map(|l| format!("  {}", l)).collect::<Vec<_>>().join("\n");
+        if !indented_doc.is_empty() {
+            ts_code.push_str(&indented_doc);
+            ts_code.push('\n');
+        }
+
         if event.fields.is_empty() {
             ts_code.push_str(&format!("  | {{ type: \"{}\" }}\n", type_name));
         } else {

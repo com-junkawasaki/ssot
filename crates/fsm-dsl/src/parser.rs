@@ -317,47 +317,76 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
 }
 
 fn parse_state_enum(pair: Pair<Rule>) -> Result<Vec<StateItem>, ParseError> {
-    pair.into_inner().map(parse_state_variant).collect()
+    pair.into_inner()
+        .filter(|p| p.as_rule() == Rule::state_variant) // Ensure only state_variants are processed
+        .map(parse_state_variant)
+        .collect()
 }
 
 fn parse_state_variant(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
     let mut inner = pair.into_inner();
-    let name = parse_ident(inner.next().unwrap())?;
-    let ordinal = parse_ordinal(inner.next().unwrap())?;
-    Ok(ast::StateItem { name, ordinal })
+    let mut annotations = Vec::new();
+
+    // Peek at the first element to see if it's optional_annotations
+    if let Some(first) = inner.peek() {
+        if first.as_rule() == Rule::optional_annotations {
+            // Consume and parse annotations
+            annotations = first.into_inner().map(parse_annotation).collect::<Result<_,_>>()?;
+            inner.next(); // Advance iterator past annotations
+        }
+    }
+
+    let name = parse_ident(inner.next().ok_or(ParseError::MissingElement("state name".to_string()))?)?;
+    let ordinal = parse_ordinal(inner.next().ok_or(ParseError::MissingElement("state ordinal".to_string()))?)?;
+    Ok(ast::StateItem {
+        annotations, // Add parsed annotations
+        name,
+        ordinal,
+    })
 }
 
 fn parse_event_definitions(pair: Pair<Rule>) -> Result<Vec<MessageItem>, ParseError> {
-    pair.into_inner().map(parse_event_struct).collect()
+    pair.into_inner()
+        .filter(|p| p.as_rule() == Rule::event_struct) // Ensure only event_structs are processed
+        .map(parse_event_struct)
+        .collect()
 }
 
 fn parse_event_struct(pair: Pair<Rule>) -> Result<MessageItem, ParseError> {
-    let mut inner = pair.into_inner(); // Rule: "event" ~ ident ~ "@" ~ ord ~ "{" ~ fields* ~ "}"
-    let name = parse_ident(inner.next().unwrap())?; // Consumes ident
-    let ordinal = parse_ordinal(inner.next().unwrap())?; // Consumes ordinal
+    let mut inner = pair.into_inner();
+    let mut annotations = Vec::new();
+
+    // Peek and parse optional annotations
+    if let Some(first) = inner.peek() {
+        if first.as_rule() == Rule::optional_annotations {
+            annotations = first.into_inner().map(parse_annotation).collect::<Result<_,_>>()?;
+            inner.next();
+        }
+    }
+
+    // Rule: "event" ~ ident ~ "@" ~ ord ~ "{" ~ fields* ~ "}"
+    let name = parse_ident(inner.next().ok_or(ParseError::MissingElement("event name".to_string()))?)?; // Consumes ident
+    let ordinal = parse_ordinal(inner.next().ok_or(ParseError::MissingElement("event ordinal".to_string()))?)?; // Consumes ordinal
 
     let mut fields = Vec::new();
-    // Iterate through the rest of the pairs within event_struct
-    // These should be the pairs *inside* the {}, matching `optional_whitespace ~ (event_field ~ optional_whitespace)*`
+    // Iterate through the rest: fields inside {}
     for inner_pair in inner {
         match inner_pair.as_rule() {
-            // Explicitly handle event_field
             Rule::event_field => {
                 fields.push(parse_event_field(inner_pair)?);
             }
-            // Explicitly ignore whitespace/comments if they are yielded by the iterator
-            Rule::WHITESPACE | Rule::COMMENT => { /* Ignore */ }
-            // Any other rule encountered inside {} is unexpected
+            Rule::WHITESPACE | Rule::COMMENT | Rule::optional_whitespace => { /* Ignore */ }
             _ => {
                 return Err(ParseError::UnexpectedRule {
                     rule: inner_pair.as_rule(),
-                    context: "inside event fields block {}".to_string(),
+                    context: "inside event struct block {}".to_string(),
                 });
             }
         }
     }
 
     Ok(MessageItem {
+        annotations, // Add parsed annotations
         name,
         ordinal,
         fields,
@@ -366,21 +395,32 @@ fn parse_event_struct(pair: Pair<Rule>) -> Result<MessageItem, ParseError> {
 
 fn parse_event_field(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
     let mut inner = pair.into_inner();
-    let name = parse_ident(inner.next().unwrap())?;
-    let ordinal = parse_ordinal(inner.next().unwrap())?;
+    let mut annotations = Vec::new();
 
-    // Get the next pair, which might be Rule::type or a specific type rule
-    let type_pair = inner.next().unwrap();
+    // Peek and parse optional annotations
+    if let Some(first) = inner.peek() {
+        if first.as_rule() == Rule::optional_annotations {
+            annotations = first.into_inner().map(parse_annotation).collect::<Result<_,_>>()?;
+            inner.next();
+        }
+    }
 
-    // If it's Rule::type, get its inner rule before calling parse_field_type
+    let name = parse_ident(inner.next().ok_or(ParseError::MissingElement("field name".to_string()))?)?;
+    let ordinal = parse_ordinal(inner.next().ok_or(ParseError::MissingElement("field ordinal".to_string()))?)?;
+
+    let type_pair = inner.next().ok_or(ParseError::MissingElement("field type".to_string()))?;
     let actual_type_pair = if type_pair.as_rule() == Rule::r#type {
-        type_pair.into_inner().next().unwrap()
+        type_pair.into_inner().next().ok_or(ParseError::UnexpectedRule {
+            rule: Rule::r#type,
+            context: "empty inner type".to_string(),
+        })?
     } else {
-        type_pair // Assume it's already the specific type rule
+        type_pair
     };
-
     let field_type = parse_field_type(actual_type_pair)?;
+
     Ok(FieldDef {
+        annotations, // Add parsed annotations
         name,
         ordinal,
         field_type,

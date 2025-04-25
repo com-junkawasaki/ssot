@@ -51,6 +51,23 @@ fn map_field_type_to_rust_type(field_type: &FieldType) -> TokenStream {
     }
 }
 
+// Helper function to generate Rust doc comments from annotations
+fn generate_rust_doc_comment(annotations: &[Annotation]) -> TokenStream {
+    let mut doc_stream = quote! {};
+    if let Some(AnnotationValue::StringLiteral(desc)) =
+        find_annotation_value(annotations, "description")
+    {
+        for line in desc.lines() {
+            let trimmed_line = line.trim();
+            doc_stream.extend(quote! {
+                #[doc = #trimmed_line]
+            });
+        }
+    }
+    // Add other annotation processing here if needed (e.g., #[deprecated])
+    doc_stream
+}
+
 /// Generates the aggregated Event enum.
 /// Assumes events are simple identifiers for now (no associated data structs yet).
 // This function is now superseded by generate_event_enum_and_structs, keep or remove?
@@ -275,20 +292,32 @@ fn generate_event_enum_and_structs(ast: &StateMachine, derive_tokens: &TokenStre
         .iter()
         .map(|event_item| {
             let variant_name = &event_item.name; // Use the Ident directly
+            let variant_doc_comment = generate_rust_doc_comment(&event_item.annotations);
+
             if event_item.fields.is_empty() {
                 // Event without payload
-                quote! { #variant_name }
+                quote! {
+                    #variant_doc_comment
+                    #variant_name
+                }
             } else {
                 // Event with payload struct
                 let struct_name = format_ident!("{}{}", variant_name, event_payload_struct_name);
+                let struct_doc_comment = generate_rust_doc_comment(&event_item.annotations); // Use event doc for struct too?
+
                 let fields = event_item.fields.iter().map(|field| {
                     let field_name = &field.name;
                     let field_type_ts = map_field_type_to_rust_type(&field.field_type);
-                    quote! { pub #field_name: #field_type_ts }
+                    let field_doc_comment = generate_rust_doc_comment(&field.annotations);
+                    quote! {
+                        #field_doc_comment
+                        pub #field_name: #field_type_ts
+                    }
                 });
 
                 // Generate the payload struct definition
                 event_structs.push(quote! {
+                    #struct_doc_comment
                     #derive_tokens // Derive traits for payload struct too
                     pub struct #struct_name {
                         #(#fields),*
@@ -296,16 +325,22 @@ fn generate_event_enum_and_structs(ast: &StateMachine, derive_tokens: &TokenStre
                 });
 
                 // Generate the enum variant with the payload struct
-                quote! { #variant_name(#struct_name) }
+                quote! {
+                    #variant_doc_comment
+                    #variant_name(#struct_name)
+                }
             }
         })
         .collect::<Vec<_>>(); // Collect variants
+
+    let event_enum_doc_comment = generate_rust_doc_comment(&[]); // TODO: Get annotations for the enum itself?
 
     quote! {
         // --- Event Payload Structs ---
         #(#event_structs)*
 
         // --- Event Enum ---
+        #event_enum_doc_comment
         #derive_tokens // Use the same derives as State and Machine
         pub enum #event_enum_name {
             #(#variants),*
@@ -328,27 +363,35 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
     let event_enum_name = format_ident!("Event"); // Consistent event enum name
     let callbacks_trait_name = format_ident!("{}Callbacks", ast.name); // e.g., LightSwitchCallbacks
 
-    // TODO: Implement derive annotation parsing if needed. For now, use defaults.
-    // let derive_list = ... parse annotations ...;
-    let _derive_tokens = quote! { #[derive(Debug, Clone, PartialEq)] }; // Common derives (Eq/Hash removed for floats potentially)
+    let _derive_tokens = quote! { #[derive(Debug, Clone, PartialEq)] };
 
     // State enum generation
-    let state_variants = ast.states.iter().map(|s| format_ident!("{}", s.name));
+    let state_variants = ast.states.iter().map(|s| {
+        let variant_name = format_ident!("{}", s.name);
+        let doc_comment = generate_rust_doc_comment(&s.annotations);
+        quote! {
+            #doc_comment
+            #variant_name
+        }
+    });
+    let state_enum_doc_comment = generate_rust_doc_comment(&[]); // TODO: Get annotations for the enum itself?
     let state_enum = quote! {
+        #state_enum_doc_comment
         // Add Eq, Hash back if no Float types are used in practice or handled
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         pub enum #state_enum_name {
             #(#state_variants),*
         }
-    };
+    }; // <-- Semicolon added here
 
     // Event enum and payload struct generation
-    // Use PartialEq only for event enum derive if payloads contain floats
     let event_derive_tokens = quote! { #[derive(Debug, Clone, PartialEq)] };
     let event_defs = generate_event_enum_and_structs(ast, &event_derive_tokens);
 
     // Machine struct definition
+    let machine_struct_doc_comment = generate_rust_doc_comment(&ast.annotations);
     let machine_struct = quote! {
+        #machine_struct_doc_comment
         // Use PartialEq only for machine struct if state or other fields contain floats
         #[derive(Debug, Clone, PartialEq)]
         pub struct #machine_struct_name {
@@ -432,9 +475,10 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
         });
     }
 
-    // Generate the trait definition if there are any callbacks
+    let callbacks_trait_doc_comment = generate_rust_doc_comment(&[]); // TODO: Use machine annotations?
     let callbacks_trait = if !guards.is_empty() || !actions.is_empty() {
         quote! {
+            #callbacks_trait_doc_comment
             /// Trait defining the required guard and action callbacks for the state machine.
             pub trait #callbacks_trait_name {
                 #(#callback_signatures)*
