@@ -108,6 +108,18 @@ pub enum FieldType {
 
 // --- File Structure ---
 
+// New: Represents a top-level struct definition
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructDef {
+    /// Annotations specific to this struct definition (e.g., `$description`).
+    pub annotations: Vec<Annotation>,
+    /// The name identifier of the struct (e.g., `TrafficLightContext`).
+    pub name: Ident,
+    /// The data fields contained within this struct.
+    pub fields: Vec<FieldDef>,
+    // Note: No top-level ordinal for now, unlike MessageItem
+}
+
 /// Represents a single import declaration at the top level of an .ssot file.
 /// e.g., `import my.package.name;`
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,6 +127,20 @@ pub struct ImportDeclaration {
     /// The full name of the package being imported (e.g., "my.package.name").
     /// Parsing needs to handle the dot-separated structure.
     pub package_name: String, // Using String to easily store dot-separated names
+    pub package_declaration: Option<String>,
+    /// Import declarations at the top level (e.g., `import other.package;`)
+    pub imports: Vec<ImportDeclaration>,
+    /// A list of all top-level items (state machines, structs, annotations) defined within the file.
+    pub items: Vec<TopLevelItem>,
+}
+
+// New: Enum to represent different kinds of top-level items
+#[derive(Debug, Clone, PartialEq)]
+pub enum TopLevelItem {
+    StateMachine(StateMachine),
+    StructDefinition(StructDef),
+    Annotation(Annotation),
+    // Add other potential top-level items here in the future (e.g., Enums)
 }
 
 /// Represents the root Abstract Syntax Tree (AST) node for a parsed `.ssot` file.
@@ -125,16 +151,8 @@ pub struct SsotFile {
     /// The unique Cap'n Proto schema file ID, specified at the top of the file (e.g., `@0x123456789abcdef0;`).
     /// Required for Cap'n Proto schema generation.
     pub file_id: u64,
-    /// An optional package declaration (e.g., `package com.example.fsm;`).
-    /// Primarily relevant for organizing generated code in some target languages.
-    pub package_declaration: Option<String>,
-    /// Import declarations at the top level (e.g., `import other.package;`)
-    pub imports: Vec<ImportDeclaration>,
-    /// Annotations defined at the top level of the file, before any `stateMachine` definitions.
-    /// These often provide global configuration for code generation (e.g., `$rust_out`).
-    pub top_level_annotations: Vec<Annotation>,
-    /// A list of all `stateMachine` blocks defined within the file.
-    pub state_machines: Vec<StateMachine>,
+    /// A list of all top-level items (state machines, structs, annotations) defined within the file.
+    pub items: Vec<TopLevelItem>,
 }
 
 // --- State Machine ---

@@ -21,7 +21,7 @@ package_name = @{ ident ~ ("." ~ ident)* }
 
 import_decl = { "import" ~ WHITESPACE ~ package_name ~ ";" } // Added import declaration
 
-top_level_item = { annotation | state_machine }
+top_level_item = { annotation | state_machine | struct_def }
 
 // ====================================
 //  Annotations
@@ -95,6 +95,15 @@ field_type = { primitive_type | list_type | type_identifier }
 primitive_type = @{ "Void" | "Bool" | "Int8" | "Int16" | "Int32" | "Int64" | "UInt8" | "UInt16" | "UInt32" | "UInt64" | "Float32" | "Float64" | "Text" | "Data" }
 list_type = { "List" ~ "<" ~ field_type ~ ">" }
 type_identifier = { qualified_ident } // Changed to qualified_ident
+
+// ====================================
+//  Struct Definition (New)
+// ====================================
+
+struct_def = { annotation* ~ "struct" ~ WHITESPACE ~ ident ~ struct_body? ~ ";" }
+struct_body = { "{" ~ WHITESPACE? ~ struct_field* ~ WHITESPACE? ~ "}" }
+// Reuse event_field structure for struct fields
+struct_field = { event_field }
 
 // ====================================
 //  Transitions Block
