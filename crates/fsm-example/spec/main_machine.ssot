@@ -1,0 +1,43 @@
+@0xmainmachine01; // Example ID
+package test.fsm.main; // Namespace for this machine
+
+import test.fsm.common; // <<-- New Import Syntax (Example)
+
+$rust_out("src/generated"); // Keep output dir config
+
+stateMachine TestMachine {
+    $initial(Idle);
+
+    states {
+        Idle @0;
+        Running @1;
+        Finished @2;
+    }
+
+    events {
+        // Import events from common package
+        use common.Start; // <<-- Using imported event
+        use common.Reset; // <<-- Using imported event
+
+        // Define machine-specific events
+        event Finish @1 { result: UInt64 @0; }
+    }
+
+    transitions {
+        transition t1 from Idle to Running {
+            // Use the imported Start event
+            on @0 common.Start; // <<-- Referencing imported event with namespace
+            action @1 start_processing;
+        }
+
+        transition t2 from Running to Finished {
+            on @1 Finish; // Local event
+            guard @1 check_result;
+        }
+
+        transition t3 from Finished to Idle {
+            // Use the imported Reset event
+            on @2 common.Reset; // <<-- Referencing imported event with namespace
+        }
+    }
+} 

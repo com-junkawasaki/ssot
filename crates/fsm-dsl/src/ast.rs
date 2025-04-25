@@ -3,6 +3,32 @@
 // Make the Ident import public
 pub use proc_macro2::Ident;
 
+// --- New: Qualified Identifier ---
+
+/// Represents an identifier, potentially qualified with a namespace/package alias.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum QualifiedIdent {
+    /// A simple, unqualified identifier (e.g., `MyEvent`).
+    Simple(Ident),
+    /// A qualified identifier (e.g., `common.MyEvent`).
+    Qualified {
+        /// The namespace or package alias (e.g., `common`).
+        qualifier: Ident,
+        /// The actual identifier name (e.g., `MyEvent`).
+        name: Ident,
+    },
+}
+
+// Implement Display for easier use in messages/debugging
+impl std::fmt::Display for QualifiedIdent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            QualifiedIdent::Simple(ident) => write!(f, "{}", ident),
+            QualifiedIdent::Qualified { qualifier, name } => write!(f, "{}.{}", qualifier, name),
+        }
+    }
+}
+
 // --- Annotations ---
 
 /// Represents an annotation attached to various elements in the `.ssot` file.
@@ -74,13 +100,22 @@ pub enum FieldType {
     /// A list containing elements of the specified inner type. Corresponds to `List(T)` in Cap'n Proto.
     /// (Note: DSL syntax for lists might still be under development).
     List(Box<FieldType>),
-    /// An identifier referencing a user-defined struct or enum defined elsewhere (potentially within the same `.ssot` file).
-    /// This requires resolution during the code generation phase to map to the actual type.
-    /// Corresponds to using struct/enum types in Cap'n Proto.
-    Identifier(Ident),
+    /// An identifier referencing a user-defined struct or enum defined elsewhere.
+    /// This could be simple or qualified (e.g., `MyStruct`, `common.OtherStruct`).
+    /// Requires resolution during code generation.
+    Identifier(QualifiedIdent),
 }
 
 // --- File Structure ---
+
+/// Represents a single import declaration at the top level of an .ssot file.
+/// e.g., `import my.package.name;`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportDeclaration {
+    /// The full name of the package being imported (e.g., "my.package.name").
+    /// Parsing needs to handle the dot-separated structure.
+    pub package_name: String, // Using String to easily store dot-separated names
+}
 
 /// Represents the root Abstract Syntax Tree (AST) node for a parsed `.ssot` file.
 ///
@@ -93,6 +128,8 @@ pub struct SsotFile {
     /// An optional package declaration (e.g., `package com.example.fsm;`).
     /// Primarily relevant for organizing generated code in some target languages.
     pub package_declaration: Option<String>,
+    /// Import declarations at the top level (e.g., `import other.package;`)
+    pub imports: Vec<ImportDeclaration>,
     /// Annotations defined at the top level of the file, before any `stateMachine` definitions.
     /// These often provide global configuration for code generation (e.g., `$rust_out`).
     pub top_level_annotations: Vec<Annotation>,
@@ -101,6 +138,15 @@ pub struct SsotFile {
 }
 
 // --- State Machine ---
+
+/// Represents a single `use` declaration within a scope (e.g., events block).
+/// e.g., `use common.MyEvent;`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UseDeclaration {
+    /// The identifier being brought into scope, potentially qualified.
+    /// e.g., `common.MyEvent` would be stored here. Resolution happens later.
+    pub target: QualifiedIdent,
+}
 
 /// Represents a single `stateMachine` definition, encapsulating its logic and structure.
 ///
@@ -112,6 +158,8 @@ pub struct StateMachine {
     /// Annotations specific to this state machine definition, such as `$description`, `$initial`,
     /// or overrides for output directories (e.g., `$rust_out`).
     pub annotations: Vec<Annotation>,
+    /// `use` declarations within the state machine scope (e.g., `use common.Type;`).
+    pub use_declarations: Vec<UseDeclaration>,
     /// The complete set of possible states defined for this machine within the `states { ... }` block.
     pub states: Vec<StateItem>,
     /// The complete set of events (messages) defined for this machine within the `events { ... }` block.
@@ -136,11 +184,11 @@ pub struct StateItem {
     /// Used for serialization and identification, especially in Cap'n Proto.
     pub ordinal: u64,
     /// A list of action identifiers to be executed upon entering this state.
-    /// Defined using `entry: actionName;` within the state definition.
-    pub entry_actions: Vec<Ident>,
+    /// Defined using `entry: actionName;` or `entry: ns.actionName;`.
+    pub entry_actions: Vec<QualifiedIdent>,
     /// A list of action identifiers to be executed upon exiting this state.
-    /// Defined using `exit: actionName;` within the state definition.
-    pub exit_actions: Vec<Ident>,
+    /// Defined using `exit: actionName;` or `exit: ns.actionName;`.
+    pub exit_actions: Vec<QualifiedIdent>,
 }
 
 // --- Events (Messages) ---
@@ -201,28 +249,28 @@ pub struct TransitionItem {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransitionElement {
     /// Specifies the event that triggers the transition.
-    /// Syntax: `on @Ordinal EventName;`
+    /// Syntax: `on @Ordinal EventName;` or `on @Ordinal ns.EventName;`
     On {
         /// The unique non-negative integer ordinal (`@N`) for this `on` declaration within the state machine.
         ordinal: u64,
-        /// The identifier of the triggering event (must match an event defined in the `events` block).
-        event: Ident,
+        /// The identifier of the triggering event (potentially qualified).
+        event: QualifiedIdent,
     },
     /// Specifies a condition (guard function) that must evaluate to true for the transition to be taken.
-    /// Syntax: `guard @Ordinal guardFunctionName;`
+    /// Syntax: `guard @Ordinal guardFunctionName;` or `guard @Ordinal ns.guardFunctionName;`
     Guard {
         /// The unique non-negative integer ordinal (`@N`) for this `guard` declaration within the state machine.
         ordinal: u64,
-        /// The identifier of the guard function. The actual function implementation is expected in the target code.
-        function: Ident,
+        /// The identifier of the guard function (potentially qualified).
+        function: QualifiedIdent,
     },
     /// Specifies an action (function) to be executed when the transition is taken.
-    /// Syntax: `action @Ordinal actionFunctionName;`
+    /// Syntax: `action @Ordinal actionFunctionName;` or `action @Ordinal ns.actionFunctionName;`
     Action {
         /// The unique non-negative integer ordinal (`@N`) for this `action` declaration within the state machine.
         ordinal: u64,
-        /// The identifier of the action function. The actual function implementation is expected in the target code.
-        function: Ident,
+        /// The identifier of the action function (potentially qualified).
+        function: QualifiedIdent,
     },
 }
 
