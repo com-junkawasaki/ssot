@@ -60,7 +60,7 @@ pub(crate) fn generate_typescript_types_internal(
         })
         .collect();
     // Adjust join logic for potentially multiline JSDoc
-    ts_code.push_str(&state_items.join("\n").trim_end_matches('|').trim_end()); // Remove trailing | and whitespace
+    ts_code.push_str(state_items.join("\n").trim_end_matches('|').trim_end()); // Remove trailing | and whitespace
     writeln!(ts_code, ";\n")?;
 
     // --- Generate Event Payloads (Interfaces) ---

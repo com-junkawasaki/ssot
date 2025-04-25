@@ -51,5 +51,8 @@ pub mod ast;
 pub mod parser;
 
 // Re-export key items for convenience
-pub use ast::{SsotFile, StateMachine, StateItem, MessageItem, FieldDef, TransitionItem, TransitionElement, Annotation, AnnotationValue, FieldType};
+pub use ast::{
+    Annotation, AnnotationValue, FieldDef, FieldType, MessageItem, SsotFile, StateItem,
+    StateMachine, TransitionElement, TransitionItem,
+};
 pub use parser::{parse_file, parse_str, ParseError};

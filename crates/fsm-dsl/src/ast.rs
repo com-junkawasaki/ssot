@@ -125,7 +125,7 @@ pub struct StateItem {
     /// A list of action identifiers to be executed when entering this state.
     pub entry_actions: Vec<Ident>, // Added: Actions to execute on entry
     /// A list of action identifiers to be executed when exiting this state.
-    pub exit_actions: Vec<Ident>,  // Added: Actions to execute on exit
+    pub exit_actions: Vec<Ident>, // Added: Actions to execute on exit
 }
 
 // --- Events (Messages) ---
@@ -175,7 +175,7 @@ pub struct TransitionItem {
     /// The components defining the transition's trigger, condition, and effect.
     pub elements: Vec<TransitionElement>, // on, guard, action
     /// Annotations specific to this transition, like `$id`.
-    pub annotations: Vec<Annotation>,     // e.g., $id(...)
+    pub annotations: Vec<Annotation>, // e.g., $id(...)
 }
 
 /// Represents the constituent parts of a transition definition (`on`, `guard`, `action`).
@@ -186,21 +186,21 @@ pub enum TransitionElement {
         /// The ordinal of the `on` element within the transition block.
         ordinal: u64,
         /// The identifier of the triggering event.
-        event: Ident
+        event: Ident,
     },
     /// Specifies a condition (guard function) that must be true for the transition to occur.
     Guard {
         /// The ordinal of the `guard` element within the transition block.
         ordinal: u64,
         /// The identifier of the guard function.
-        function: Ident
+        function: Ident,
     },
     /// Specifies an action (function) to be executed when the transition occurs.
     Action {
         /// The ordinal of the `action` element within the transition block.
         ordinal: u64,
         /// The identifier of the action function.
-        function: Ident
+        function: Ident,
     },
 }
 

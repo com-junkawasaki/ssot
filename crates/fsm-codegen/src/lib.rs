@@ -848,12 +848,12 @@ mod tests {
     }
 
     // Helper to parse and format code for comparison
-    #[cfg(test)] // Add cfg(test) attribute
-    fn parse_and_format(code: &str) -> String {
-        let parsed_file = syn_parse_file(code).expect("Failed to parse generated code");
-        prettyplease::unparse(&parsed_file)
-    }
-
+    #[cfg(test)]
+    // Add cfg(test) attribute
+    // fn parse_and_format(code: &str) -> String {
+    //     let parsed_file = syn_parse_file(code).expect("Failed to parse generated code");
+    //     prettyplease::unparse(&parsed_file)
+    // }
     #[test]
     fn generates_basic_structures() {
         let input = create_test_ast();

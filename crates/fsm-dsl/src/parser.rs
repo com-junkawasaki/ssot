@@ -1,5 +1,5 @@
 //! Provides the parser for the `.ssot` (Single Source of Truth) file format.
-//! 
+//!
 //! This module uses the `pest` parser generator library to parse `.ssot` files
 //! based on the grammar defined in `ssot.pest`. It converts the parsed input
 //! into an Abstract Syntax Tree (AST) defined in the `crate::ast` module.
@@ -426,26 +426,45 @@ fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
             // Handle the optional state_body_content
             Rule::state_body_content => {
                 // item_pair is state_body_content ({ ... })
-                for body_item_rule in item_pair.into_inner() { // Renamed for clarity
+                for body_item_rule in item_pair.into_inner() {
+                    // Renamed for clarity
                     match body_item_rule.as_rule() {
-                        Rule::state_body_item => { // Expect state_body_item here
+                        Rule::state_body_item => {
+                            // Expect state_body_item here
                             // Now look inside state_body_item for entry_action or exit_action
-                            let inner_action_pair = body_item_rule.into_inner().next().ok_or_else(|| {
-                                ParseError::UnexpectedRule { rule: Rule::state_body_item, context: "empty state_body_item?".to_string() }
-                            })?;
+                            let inner_action_pair =
+                                body_item_rule.into_inner().next().ok_or_else(|| {
+                                    ParseError::UnexpectedRule {
+                                        rule: Rule::state_body_item,
+                                        context: "empty state_body_item?".to_string(),
+                                    }
+                                })?;
                             match inner_action_pair.as_rule() {
                                 Rule::entry_action => {
-                                    let action_ident_pair = inner_action_pair.into_inner().find(|p| p.as_rule() == Rule::identifier)
-                                        .ok_or_else(|| ParseError::MissingElement("entry action identifier".to_string()))?;
+                                    let action_ident_pair = inner_action_pair
+                                        .into_inner()
+                                        .find(|p| p.as_rule() == Rule::identifier)
+                                        .ok_or_else(|| {
+                                            ParseError::MissingElement(
+                                                "entry action identifier".to_string(),
+                                            )
+                                        })?;
                                     entry_actions.push(parse_ident(action_ident_pair)?);
                                 }
                                 Rule::exit_action => {
-                                    let action_ident_pair = inner_action_pair.into_inner().find(|p| p.as_rule() == Rule::identifier)
-                                        .ok_or_else(|| ParseError::MissingElement("exit action identifier".to_string()))?;
+                                    let action_ident_pair = inner_action_pair
+                                        .into_inner()
+                                        .find(|p| p.as_rule() == Rule::identifier)
+                                        .ok_or_else(|| {
+                                            ParseError::MissingElement(
+                                                "exit action identifier".to_string(),
+                                            )
+                                        })?;
                                     exit_actions.push(parse_ident(action_ident_pair)?);
                                 }
-                                _ => { // Unexpected rule inside state_body_item
-                                     return Err(ParseError::UnexpectedRule {
+                                _ => {
+                                    // Unexpected rule inside state_body_item
+                                    return Err(ParseError::UnexpectedRule {
                                         rule: inner_action_pair.as_rule(),
                                         context: "inside state_body_item (expected entry_action or exit_action)".to_string(),
                                     });
@@ -453,12 +472,15 @@ fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
                             }
                         }
                         // Ignore whitespace/comments between state_body_items
-                        Rule::WHITESPACE | Rule::COMMENT | Rule::optional_whitespace => { /* Ignore */ }
+                        Rule::WHITESPACE | Rule::COMMENT | Rule::optional_whitespace => { /* Ignore */
+                        }
                         // Any other rule directly inside state_body_content is unexpected
                         _ => {
                             return Err(ParseError::UnexpectedRule {
                                 rule: body_item_rule.as_rule(),
-                                context: "inside state_body_content block {} (expected state_body_item)".to_string(),
+                                context:
+                                    "inside state_body_content block {} (expected state_body_item)"
+                                        .to_string(),
                             });
                         }
                     }
@@ -904,13 +926,13 @@ mod tests {
     use super::*;
 
     use pretty_assertions::assert_eq;
-    use proc_macro2::Ident;
-    use proc_macro2::Span;
+    
+    
 
     // Helper to create Ident for tests
-    fn ident(s: &str) -> Ident {
-        Ident::new(s, Span::call_site())
-    }
+    // fn ident(s: &str) -> Ident {
+    //     Ident::new(s, Span::call_site())
+    // }
 
     #[test]
     fn test_parse_valid_input() {

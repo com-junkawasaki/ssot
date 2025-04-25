@@ -69,7 +69,7 @@ pub(crate) fn generate_capnp_schema_internal(
     {
         capnp_code.push_str(&format!("# package: {}\n", pkg));
     }
-    capnp_code.push_str("\n");
+    capnp_code.push('\n');
 
     // --- State Enum ---
     capnp_code.push_str("enum State @0 {\n");
@@ -77,7 +77,7 @@ pub(crate) fn generate_capnp_schema_internal(
         capnp_code.push_str(&generate_capnp_comment(&state.annotations, "  ")); // Add comment for state variant
         capnp_code.push_str(&format!("  {} @{};\n", state.name, state.ordinal));
     }
-    capnp_code.push_str("}\n\n");
+    capnp_code.push('\n');
 
     // --- Event Payloads (Structs) ---
     let mut event_payload_structs = String::new();
@@ -124,7 +124,7 @@ pub(crate) fn generate_capnp_schema_internal(
             ));
         }
     }
-    capnp_code.push_str("}\n"); // Remove trailing newline
+    capnp_code.push('\n');
 
     // --- Optional: StateMachine Definition Struct ---
     // Can add this later if needed
