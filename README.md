@@ -199,6 +199,7 @@ A `.ssot` file defines one or more state machines. Here's a breakdown of the syn
 ## Known Issues
 
 *   (None currently identified. Previously failing documentation tests are now fixed.)
+*   **Parser Limitation:** The parser currently does not support `struct` definitions at the top level of a `.ssot` file. Structs intended for context or complex event payloads might need to be defined implicitly or handled through target-specific code generation until the DSL/parser supports this feature.
 
 ## Roadmap / Future Enhancements
 
