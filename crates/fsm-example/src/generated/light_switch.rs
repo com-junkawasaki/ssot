@@ -26,10 +26,10 @@ pub struct LightSwitch {
 }
 /// Trait defining the required guard, action, entry, and exit callbacks for the state machine.
 pub trait LightSwitchCallbacks {
-    fn deactivate_light(&mut self, event: &Event);
     fn activate_light(&mut self, event: &Event);
     fn activate_light_specific(&mut self, event: &TurnOnEventPayload);
     fn deactivate_light_specific(&mut self, event: &Event);
+    fn deactivate_light(&mut self, event: &Event);
 }
 impl LightSwitch {
     /// Creates a new instance of the state machine in its initial state.
