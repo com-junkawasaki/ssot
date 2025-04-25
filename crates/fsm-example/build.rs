@@ -48,7 +48,7 @@ fn io_err(path: impl Into<PathBuf>, source: std::io::Error) -> BuildError {
     }
 }
 
-fn find_annotation_str_value<'a>(annotations: &'a [Annotation], name: &str) -> Option<&'a str> {
+fn find_annotation_str_value<'a>(annotations: &'a [&'a Annotation], name: &str) -> Option<&'a str> {
     annotations
         .iter()
         .find(|a| a.name == name)

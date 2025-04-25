@@ -85,51 +85,33 @@ This project is organized as a Cargo workspace:
 
 The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not just for FSM logic, but for related concerns across distributed systems. Key development areas include:
 
-*   **Core DSL Enhancements:** Improving the expressiveness and robustness of the `.ssot` language itself.
-    *   Add syntax for entry/exit actions on states.
-    *   Enhance validation rules within the parser (e.g., duplicate name/ordinal checks, transition validity).
-    *   Support for more complex annotation values or specific annotations (e.g., `$deprecated`).
-    *   Support for hierarchical state machines in the DSL.
-    *   Add syntax for defining distributed system components/services and their interactions (potentially referencing external `.ssot` or interface files).
-    *   Support for multi-file/directory projects: Allow definitions to be split across multiple `.ssot` files, including discovery, integration, namespacing/imports, and conflict resolution.
-    *   Support for directory-level configuration (e.g., via a `.ssotconfig` file).
-    *   Define explicit file mapping mechanisms: Allow users to control output filenames and potentially generate a manifest linking `.ssot` elements to specific generated files.
-*   **Expanding SSOT Scope (within DSL):** Defining more system aspects directly in `.ssot`.
-    *   Integrate routing definition capabilities (e.g., mapping states/events to routes or defining navigation flows).
-    *   Specify inter-service communication (e.g., RPC, messaging) linked to FSM events/actions, defaulting to Cap'n Proto.
-    *   Define related concerns:
-        *   UI/UX Component Mapping (Linking states/events to UI elements/actions).
-        *   API Call / Event Integration (Defining external calls or internal events triggered by FSM).
-        *   Authorization / Permissions (Specifying required roles/permissions for transitions/events).
-        *   Test Scenario / BDD Definitions (Describing test cases/features based on FSM paths).
-        *   Monitoring / Logging / Alerting Rules (Defining observability requirements per state/transition).
-        *   Configuration Management / Feature Flag Integration (Defining or linking configuration values).
-        *   Compliance / Audit Log Requirements (Specifying necessary audit trails).
-        *   Formal Verification / Simulation Support (Adding annotations for model checking/simulation).
-*   **Core Code Generation Enhancements:** Refining the existing generators.
-    *   Generate placeholder or skeleton functions for defined `guard` and `action` attributes **in Rust**.
-    *   Improve generation for hierarchical state machines (dependent on DSL enhancement).
-    *   Generate Cap'n Proto interfaces (`.capnp`) for defined inter-service interactions.
-    *   Generate Cap'n Proto client/server communication stubs (Rust, TypeScript, etc.).
-*   **Expanded Code Generation Targets & Formats:** Supporting more output types.
-    *   Explore generating visualization outputs (e.g., Mermaid syntax, Graphviz DOT) from the AST.
-    *   Generate advanced documentation (state tables, sequence diagrams, etc.).
-    *   Integrate generation capabilities based on various standard formats:
-        *   **Requirements:** ReqIF (`.xml`), Markdown/Asciidoc (`.md`, `.adoc`)
-        *   **Process/Architecture:** BPMN (`.bpmn`), ArchiMate (`.xml`)
-        *   **System Modeling:** UML/SysML (XMI `.xmi`)
-        *   **Data/Schema:** JSON Schema (`.json`), XSD (`.xsd`), Avro (`.avsc`), Protocol Buffers (`.proto`)
-        *   **API/Interface:** OpenAPI (`.yaml`/`.json`), gRPC (`.proto`), GraphQL SDL (`.graphql`), AsyncAPI (`.yaml`/`.json`)
-        *   **Database Schema:** Prisma Schema (`.prisma`), Drizzle ORM (`.ts`), Drizzle Kit Config (`drizzle.config.ts`), SQL (`.sql`), DBML (`.dbml`), Liquibase (`.xml`, `.yaml`, `.json`, `.sql`)
-*   **Project-Specific Generation & Integration:** Tailoring output for specific frameworks and platforms.
-    *   Generate Next.js routing configurations (e.g., `app/` directory structure, `route.ts` handlers based on FSM states/events).
-    *   Generate database migration scripts (e.g., SQL `up`/`down`) based on diffs between `.ssot` file versions.
-    *   Implement project-specific code generation orchestration (e.g., specifying `nextjs` target generates relevant Rust, TS, routing, migration scripts, etc.).
-    *   Explore generating deployment/orchestration configuration hints (e.g., Docker Compose, Kubernetes manifests) based on the defined distributed system structure.
-    *   Generate platform-specific configurations and deployment helpers (e.g., `fly.toml`, `vercel.json`, Supabase functions/config).
-*   **Developer Experience & Tooling:** Improving usability and integration.
-    *   Improve error messages and diagnostics from the parser and code generator.
-    *   Generate source maps: Link generated code (Rust, TypeScript, etc.) back to the original `.ssot` definitions for easier debugging.
-    *   Enhance automated tests, particularly for `build.rs` logic (e.g., via integration tests) and edge cases in generation.
-    *   Implement the `#[state_machine(...)]` procedural macro approach as an alternative integration method for Rust projects.
-    *   Improve tooling support for managing multi-file/directory `.ssot` projects.
+*   **DSL Improvements:** Enhance the `.ssot` language expressiveness, validation, and structure.
+    *   Entry/exit actions, hierarchical states, advanced annotations (`$deprecated`).
+    *   Improved validation rules (duplicate checks, transition logic).
+    *   Support for multi-file/directory projects (imports, discovery, config).
+    *   Explicit output file mapping and manifest generation.
+
+*   **Expanded SSOT Scope:** Define more system aspects within the DSL.
+    *   Distributed system components/services definition.
+    *   Inter-service communication specification (RPC, messaging, default to Cap'n Proto).
+    *   Integration with related concerns: Routing, UI/UX mapping, API calls, authorization, testing (BDD), observability (logging/monitoring), configuration/feature flags, compliance/auditing, formal verification/simulation.
+
+*   **Code Generation Enhancements:** Refine existing generators and add new capabilities.
+    *   Generate skeleton `guard`/`action` functions (Rust).
+    *   Improved hierarchical state machine generation.
+    *   Generate Cap'n Proto interfaces and client/server stubs.
+
+*   **Expanded Target Formats & Integrations:** Support more output types and standard formats.
+    *   Visualizations (Mermaid, Graphviz DOT), advanced documentation (state tables, sequence diagrams).
+    *   Integration with standard formats: Requirements (ReqIF), Process/Architecture (BPMN, ArchiMate), System Modeling (UML/SysML), Data/Schema (JSON Schema, Protobuf, Avro, etc.), API/Interface (OpenAPI, gRPC, GraphQL, AsyncAPI), DB Schema (SQL, Prisma, Drizzle, Liquibase, etc.).
+
+*   **Project-Specific Generation:** Tailor output for specific frameworks and platforms.
+    *   Generate Next.js routing (`app/` router), database migrations (SQL diffs), platform configs (`fly.toml`, `vercel.json`), deployment hints (Docker, K8s).
+    *   Implement target-based orchestration (e.g., `nextjs` target triggers Rust, TS, routing, DB migration generation).
+
+*   **Developer Experience & Tooling:** Improve usability, diagnostics, and integration.
+    *   Better error messages and diagnostics.
+    *   Source map generation (linking generated code back to `.ssot`).
+    *   Enhanced automated testing (especially for `build.rs` and generation edge cases).
+    *   Alternative Rust integration via procedural macro (`#[state_machine(...)]`).
+    *   Improved tooling for multi-file/directory `.ssot` projects.

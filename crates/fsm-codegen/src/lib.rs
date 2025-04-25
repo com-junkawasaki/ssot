@@ -12,7 +12,6 @@ use fsm_dsl::ast::{
 use proc_macro2::{Ident as TokenIdent, TokenStream};
 use quote::{format_ident, quote};
 use std::collections::{HashSet, HashMap};
-use std::path::PathBuf;
 // Needed for parsing generated code before formatting // For collecting unique guard/action names
 
 pub mod codegen_capnp; // Add new module
@@ -20,9 +19,34 @@ pub mod codegen_scxml;
 pub mod codegen_ts; // Add new module
 pub mod codegen_xstate; // Add new module for XState // Add new module for SCXML
 
-// Re-export items needed by build.rs (adjust as needed)
-pub use crate::error::CodegenError;
-pub use crate::types::{SymbolDefinition, SymbolNodeRef, SymbolType}; // Expose resolution types
+// Define CodegenError locally
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum CodegenError {
+    #[error(
+        "Failed to parse generated code: {0}\n--- Generated Code ---
+{1}"
+    )]
+    SynParseError(syn::Error, String),
+    #[error("AST validation error: {0}")]
+    AstValidationError(String),
+    #[error("Code generation failed: {0}")]
+    GenerationError(String),
+    #[error("I/O error during code formatting: {0}")]
+    FormatIoError(#[from] std::io::Error),
+    #[error("Failed to format generated code: {0}")]
+    FormatError(String),
+    // Removed symbol/package related errors, handled by build script or parser
+    // Potential future errors: IO errors, etc.
+}
+
+// Centralized From implementation for std::fmt::Error
+impl From<std::fmt::Error> for CodegenError {
+    fn from(e: std::fmt::Error) -> Self {
+        CodegenError::GenerationError(e.to_string())
+    }
+}
 
 // Helper to find annotation value by name
 fn find_annotation_value<'a>(
@@ -38,8 +62,6 @@ fn find_annotation_value<'a>(
 // Helper to map DSL FieldType to Rust type string
 fn map_field_type_to_rust_type(
     field_type: &FieldType,
-    context: &ResolutionContext,
-    current_scope_fqn: &str,
 ) -> Result<TokenStream, CodegenError> {
     match field_type {
         FieldType::Void => Ok(quote! { () }),
@@ -57,34 +79,15 @@ fn map_field_type_to_rust_type(
         FieldType::Text => Ok(quote! { String }),
         FieldType::Data => Ok(quote! { Vec<u8> }),
         FieldType::List(inner) => {
-            let inner_rust_type = map_field_type_to_rust_type(inner, context, current_scope_fqn)?;
+            let inner_rust_type = map_field_type_to_rust_type(inner)?;
             Ok(quote! { Vec<#inner_rust_type> })
         }
         FieldType::Identifier(qident) => {
-            // Resolve the identifier using the context
-            // Assuming a helper function `resolve_fqn_to_rust_path` exists
-            // This function needs access to the full context (symbol table, etc.)
-            // and the current scope (e.g., machine FQN) for local resolution.
-            // For now, let's assume `context.resolve_identifier` handles this.
-
-            // Placeholder: Need to properly resolve qident to a Rust path.
-            // This might involve looking up the FQN in the symbol table and generating
-            // a path like `crate::generated::other_package::MyType`.
-            let resolved_fqn = context.resolve_identifier(
-                qident,
-                current_scope_fqn, // Provide scope context
-                "field type", // Description for error reporting
-            )?; // Assume resolve_identifier returns Result<String, CodegenError>
-
-            // Convert FQN string to a Rust TokenStream path
-            // This is a simplification; proper path generation might be more complex
-            // depending on module structure.
-            let path_parts = resolved_fqn.split('.').map(format_ident);
-            // Assuming generated types are relative to crate root or a known module
-            // Needs configuration (e.g., from $rust_out or config file)
-            // For now, assume top-level crate::generated::...
-            // TODO: Make the base path configurable
-            Ok(quote! { crate::generated::#(#path_parts)::* })
+            let type_ident = match qident {
+                QualifiedIdent::Simple(id) => quote! { #id },
+                QualifiedIdent::Qualified { qualifier, name } => quote! { #qualifier::#name },
+            };
+            Ok(type_ident)
         }
     }
 }
@@ -132,15 +135,12 @@ fn generate_event_enum(ast: &StateMachine, derive_tokens: &proc_macro2::TokenStr
 /// Generates the `impl` block for the state machine struct.
 fn generate_impl_block(
     ast: &StateMachine,
-    context: &ResolutionContext,
     callbacks_trait_name: &TokenIdent,
 ) -> Result<TokenStream, CodegenError> {
-    // Added trait name, guards, actions
     let machine_struct_name = format_ident!("{}", ast.name);
     let state_enum_name = format_ident!("State");
     let event_enum_name = format_ident!("Event");
 
-    // Find the initial state from the $initial annotation
     let initial_state_ident = find_annotation_value(&ast.annotations, "initial")
         .and_then(|value| match value {
             AnnotationValue::Identifier(ident) => Some(ident), // Expecting Identifier value
@@ -150,7 +150,6 @@ fn generate_impl_block(
             "Missing or invalid '$initial' annotation on stateMachine. Expected $initial(StateName);".to_string()
         ))?;
 
-    // Validate that the initial state identifier exists in the defined states
     if !ast.states.iter().any(|s| &s.name == initial_state_ident) {
         return Err(CodegenError::AstValidationError(format!(
             "Initial state '{}' defined in $initial annotation is not a declared state.",
@@ -159,7 +158,6 @@ fn generate_impl_block(
     }
     let initial_state_assignment = quote! { #state_enum_name::#initial_state_ident };
 
-    // Generate match arms for on_event
     let on_event_match_arms = ast
         .transitions
         .iter()
@@ -167,7 +165,6 @@ fn generate_impl_block(
             let from_state_ident = &transition.from;
             let to_state_ident = &transition.to;
 
-            // Find the 'On' element (should be exactly one per transition)
             let on_element = transition
                 .elements
                 .iter()
@@ -183,7 +180,6 @@ fn generate_impl_block(
                 })?;
             let event_variant_ident = on_element; // This is the Ident from the 'on' clause
 
-            // Check if the event definition exists and if it expects a payload
             let event_ast_item = ast
                 .events
                 .iter()
@@ -216,7 +212,6 @@ fn generate_impl_block(
                     (quote! { payload }, quote! { &#payload_struct_name })
                 };
 
-            // Find the optional 'Guard' element
             let guard_element = transition.elements.iter().find_map(|el| match el {
                 TransitionElement::Guard { function, .. } => Some(function),
                 _ => None,
@@ -238,7 +233,6 @@ fn generate_impl_block(
                 None => quote! {},
             };
 
-            // Find the optional 'Action' element
             let action_element = transition.elements.iter().find_map(|el| match el {
                 TransitionElement::Action { function, .. } => Some(function),
                 _ => None,
@@ -312,8 +306,6 @@ fn generate_impl_block(
         })
         .collect::<Result<Vec<_>, _>>()?; // Collect Results, propagating CodegenError
 
-    // Determine the trait bound for on_event
-    // Update trait bound condition to include entry/exit actions if not already covered
     let on_event_trait_bound = if ast
         .states
         .iter()
@@ -364,7 +356,6 @@ fn generate_impl_block(
 /// Generates the Event enum definition with associated data structs.
 fn generate_event_enum_and_structs(
     ast: &StateMachine,
-    context: &ResolutionContext,
     derive_tokens: &TokenStream,
 ) -> Result<TokenStream, CodegenError> {
     let event_enum_name = format_ident!("Event");
@@ -391,7 +382,7 @@ fn generate_event_enum_and_structs(
 
                 let fields = event_item.fields.iter().map(|field| {
                     let field_name = &field.name;
-                    let field_type_ts = map_field_type_to_rust_type(&field.field_type, context, &format!("{}", ast.name))?;
+                    let field_type_ts = map_field_type_to_rust_type(&field.field_type)?;
                     let field_doc_comment = generate_rust_doc_comment(&field.annotations);
                     quote! {
                         #field_doc_comment
@@ -441,16 +432,11 @@ fn generate_event_enum_and_structs(
 /// * `Result<String, CodegenError>` - Generated Rust code string, or an error.
 pub fn generate_rust_code(
     machine_ast: &StateMachine,
-    context: &ResolutionContext,
 ) -> Result<String, CodegenError> {
     let state_enum_name = format_ident!("State");
     let machine_struct_name = format_ident!("{}", machine_ast.name); // Use name from AST
     let event_enum_name = format_ident!("Event"); // Consistent event enum name
     let callbacks_trait_name = format_ident!("{}Callbacks", machine_ast.name); // e.g., LightSwitchCallbacks
-
-    // Extract annotations specific to this state machine from the `items` list if needed
-    // For now, we pass the StateMachine AST directly which already contains its annotations.
-    // let machine_annotations = /* logic to find annotations for this machine */;
 
     let _derive_tokens = quote! { #[derive(Debug, Clone, PartialEq)] };
 
@@ -475,7 +461,7 @@ pub fn generate_rust_code(
 
     // Event enum and payload struct generation
     let event_derive_tokens = quote! { #[derive(Debug, Clone, PartialEq)] };
-    let event_defs = generate_event_enum_and_structs(machine_ast, context, &event_derive_tokens)?;
+    let event_defs = generate_event_enum_and_structs(machine_ast, &event_derive_tokens)?;
 
     // Machine struct definition
     let machine_struct_doc_comment = generate_rust_doc_comment(&machine_ast.annotations);
@@ -491,36 +477,38 @@ pub fn generate_rust_code(
     };
 
     // --- Callback Trait Generation ---
-    // Collect unique guard, action, entry, and exit function Idents
-    let mut guards: HashSet<&TokenIdent> = HashSet::new();
-    let mut actions: HashSet<&TokenIdent> = HashSet::new();
-    let mut entry_actions: HashSet<&TokenIdent> = HashSet::new();
-    let mut exit_actions: HashSet<&TokenIdent> = HashSet::new();
+    // Collect unique guard, action, entry, and exit function QualifiedIdents
+    let mut guards: HashSet<&QualifiedIdent> = HashSet::new();
+    let mut actions: HashSet<&QualifiedIdent> = HashSet::new();
+    let mut entry_actions: HashSet<&QualifiedIdent> = HashSet::new();
+    let mut exit_actions: HashSet<&QualifiedIdent> = HashSet::new();
     let mut callback_signatures: Vec<TokenStream> = Vec::new();
 
-    // Store mapping from function name to its associated event AST item for signature generation
-    let mut callback_event_map: std::collections::HashMap<
-        &TokenIdent,
+    // Store mapping from function name (as simple string) to its associated event AST item for signature generation
+    let mut callback_event_map: HashMap<
+        String, // Use simple name string as key
         Vec<&fsm_dsl::ast::MessageItem>,
-    > = std::collections::HashMap::new();
+    > = HashMap::new();
 
     for transition in &machine_ast.transitions {
-        // Find the 'On' element to determine the event type for this transition's callbacks
         let on_element = transition.elements.iter().find_map(|el| match el {
             TransitionElement::On { event, .. } => Some(event),
             _ => None,
         });
         let event_ast_item =
-            on_element.and_then(|event_ident| machine_ast.events.iter().find(|e| &e.name == event_ident)); // This is Option<&MessageItem>
+            on_element.and_then(|event_qident| {
+                let event_name = get_simple_ident(event_qident);
+                 machine_ast.events.iter().find(|e| &e.name == event_name)
+             });
 
         for element in &transition.elements {
             match element {
                 TransitionElement::Guard { function, .. } => {
                     if guards.insert(function) {
-                        // If newly inserted
+                        // If newly inserted, map simple name to event def
                         if let Some(event_def) = event_ast_item {
                             callback_event_map
-                                .entry(function)
+                                .entry(get_simple_ident(function).to_string()) // Use simple name string
                                 .or_default()
                                 .push(event_def);
                         }
@@ -528,10 +516,10 @@ pub fn generate_rust_code(
                 }
                 TransitionElement::Action { function, .. } => {
                     if actions.insert(function) {
-                        // If newly inserted
+                        // If newly inserted, map simple name to event def
                         if let Some(event_def) = event_ast_item {
                             callback_event_map
-                                .entry(function)
+                                .entry(get_simple_ident(function).to_string()) // Use simple name string
                                 .or_default()
                                 .push(event_def);
                         }
@@ -553,9 +541,10 @@ pub fn generate_rust_code(
     }
 
     // Generate guard signatures
-    for guard_fn_ident in &guards {
+    for guard_fn_qident in &guards {
+        let guard_fn_ident = get_simple_ident(guard_fn_qident);
         // Find the most specific event type if possible, otherwise use generic &Event
-        let event_defs = callback_event_map.get(guard_fn_ident);
+        let event_defs = callback_event_map.get(&guard_fn_ident.to_string());
         let event_type_sig = determine_callback_event_signature(event_defs, &event_enum_name);
 
         callback_signatures.push(quote! {
@@ -565,9 +554,10 @@ pub fn generate_rust_code(
     }
 
     // Generate action signatures
-    for action_fn_ident in &actions {
+    for action_fn_qident in &actions {
+        let action_fn_ident = get_simple_ident(action_fn_qident);
         // Find the most specific event type if possible, otherwise use generic &Event
-        let event_defs = callback_event_map.get(action_fn_ident);
+        let event_defs = callback_event_map.get(&action_fn_ident.to_string());
         let event_type_sig = determine_callback_event_signature(event_defs, &event_enum_name);
 
         callback_signatures.push(quote! {
@@ -577,7 +567,8 @@ pub fn generate_rust_code(
     }
 
     // Generate entry action signatures
-    for entry_fn_ident in &entry_actions {
+    for entry_fn_qident in &entry_actions {
+        let entry_fn_ident = get_simple_ident(entry_fn_qident);
         // Entry actions triggered after state change, takes mutable self
         // TODO: Consider adding context/state reference if needed
         callback_signatures.push(quote! {
@@ -586,7 +577,8 @@ pub fn generate_rust_code(
     }
 
     // Generate exit action signatures
-    for exit_fn_ident in &exit_actions {
+    for exit_fn_qident in &exit_actions {
+        let exit_fn_ident = get_simple_ident(exit_fn_qident);
         // Exit actions triggered before state change, takes mutable self
         // TODO: Consider adding context/state reference if needed
         callback_signatures.push(quote! {
@@ -612,7 +604,7 @@ pub fn generate_rust_code(
     };
 
     // Impl block generation (pass calculated guards/actions)
-    let impl_block = generate_impl_block(machine_ast, context, &callbacks_trait_name)?;
+    let impl_block = generate_impl_block(machine_ast, &callbacks_trait_name)?;
 
     // Generate Default impl if a new() method exists (which it always should)
     let default_impl = quote! {
