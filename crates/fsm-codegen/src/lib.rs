@@ -1060,4 +1060,147 @@ mod tests {
         println!("--- Generated TypeScript Types (Placeholder) ---
 {}", types); // For inspection
     }
+
+    // Helper to create Ident for tests
+    fn ident(s: &str) -> proc_macro2::Ident {
+        proc_macro2::Ident::new(s, proc_macro2::Span::call_site())
+    }
+
+    // Updated test AST creator with annotations
+    fn create_annotated_test_ast() -> StateMachine {
+        StateMachine {
+            name: ident("AnnotatedMachine"),
+            annotations: vec![Annotation {
+                name: ident("description"),
+                value: Some(AnnotationValue::StringLiteral("This is the main machine.".to_string())),
+            }, Annotation { // Keep initial for functionality test
+                name: ident("initial"),
+                value: Some(AnnotationValue::Identifier(ident("Idle"))),
+            }],
+            events: vec![
+                MessageItem {
+                    annotations: vec![Annotation { // Annotation on event
+                        name: ident("description"),
+                        value: Some(AnnotationValue::StringLiteral("Starts the machine.".to_string())),
+                    }],
+                    name: ident("Start"),
+                    ordinal: 0,
+                    fields: vec![FieldDef {
+                        annotations: vec![Annotation { // Annotation on field
+                            name: ident("description"),
+                            value: Some(AnnotationValue::StringLiteral("The user ID.".to_string())),
+                        }],
+                        name: ident("userId"),
+                        ordinal: 0,
+                        field_type: FieldType::UInt64,
+                    }],
+                },
+                MessageItem {
+                     annotations: vec![Annotation { // Annotation on event
+                        name: ident("description"),
+                        value: Some(AnnotationValue::StringLiteral("Stops the machine.".to_string())),
+                    }],
+                    name: ident("Stop"),
+                    ordinal: 1,
+                    fields: vec![],
+                },
+            ],
+            states: vec![
+                StateItem {
+                    annotations: vec![Annotation { // Annotation on state
+                        name: ident("description"),
+                        value: Some(AnnotationValue::StringLiteral("Waiting state.".to_string())),
+                    }],
+                    name: ident("Idle"),
+                    ordinal: 0,
+                },
+                StateItem {
+                    annotations: vec![Annotation { // Annotation on state
+                        name: ident("description"),
+                        value: Some(AnnotationValue::StringLiteral("Active state.".to_string())),
+                    }],
+                    name: ident("Running"),
+                    ordinal: 1,
+                },
+            ],
+            transitions: vec![
+                TransitionItem {
+                    name: None,
+                    from: ident("Idle"),
+                    to: ident("Running"),
+                    elements: vec![TransitionElement::On { ordinal: 0, event: ident("Start") }],
+                    annotations: vec![],
+                },
+                TransitionItem {
+                    name: None,
+                    from: ident("Running"),
+                    to: ident("Idle"),
+                    elements: vec![TransitionElement::On { ordinal: 1, event: ident("Stop") }],
+                    annotations: vec![],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn generates_rust_code_with_doc_comments() {
+        let ast = create_annotated_test_ast();
+        let result = generate_rust_code(&ast);
+        assert!(result.is_ok(), "Rust generation failed: {:?}", result.err());
+        let code = result.unwrap();
+        println!("--- Generated Rust Code with Docs ---\n{}", code); // For inspection
+
+        // Check for struct/enum docs
+        assert!(code.contains("#[doc = \"This is the main machine.\"]\npub struct AnnotatedMachine"));
+        assert!(code.contains("#[doc = \"Waiting state.\"]\n    Idle,"));
+        assert!(code.contains("#[doc = \"Active state.\"]\n    Running,"));
+        assert!(code.contains("#[doc = \"Starts the machine.\"]\npub struct StartEventPayload"));
+        assert!(code.contains("#[doc = \"Starts the machine.\"]\n    Start(StartEventPayload),"));
+        assert!(code.contains("#[doc = \"Stops the machine.\"]\n    Stop,"));
+
+        // Check for field docs
+        assert!(code.contains("#[doc = \"The user ID.\"]\n        pub userId: u64"));
+    }
+
+    #[test]
+    fn generates_capnp_schema_with_comments() {
+        let machine_ast = create_annotated_test_ast();
+        let file_ast = fsm_dsl::ast::SsotFile {
+             file_id: 0xdeadbeefcafe0001,
+             package_declaration: None,
+             top_level_annotations: vec![],
+             state_machines: vec![machine_ast.clone()],
+        };
+        let result = generate_capnp_schema(&file_ast, &machine_ast);
+        assert!(result.is_ok(), "Capnp generation failed: {:?}", result.err());
+        let schema = result.unwrap();
+        println!("--- Generated Capnp Schema with Comments ---\n{}", schema); // For inspection
+
+        // Check for comments
+        assert!(schema.contains("# This is the main machine.\n# Cap'n Proto schema generated")); // Machine comment
+        assert!(schema.contains("# Waiting state.\n  Idle @0;"));        // State comment
+        assert!(schema.contains("# Active state.\n  Running @1;"));       // State comment
+        assert!(schema.contains("# Starts the machine.\nstruct StartPayload @2 {")); // Struct comment
+        assert!(schema.contains("# The user ID.\n    userId @0 :UInt64;")); // Field comment
+        assert!(schema.contains("# Starts the machine.\n  Start @0 :StartPayload;")); // Union member comment (from event)
+        assert!(schema.contains("# Stops the machine.\n  Stop @1 :Void;"));        // Union member comment (from event)
+    }
+
+    #[test]
+    fn generates_typescript_types_with_jsdoc() {
+        let ast = create_annotated_test_ast();
+        let result = generate_typescript_types(&ast);
+        assert!(result.is_ok(), "TypeScript generation failed: {:?}", result.err());
+        let types = result.unwrap();
+        println!("--- Generated TypeScript Types with JSDoc ---\n{}", types); // For inspection
+
+        // Check for JSDoc
+        assert!(types.contains("/**\n * This is the main machine.\n */")); // Machine comment
+        assert!(types.contains("/**\n * Waiting state.\n */\n  | \"Idle\"")); // State comment
+        assert!(types.contains("/**\n * Active state.\n */\n  | \"Running\"")); // State comment
+        assert!(types.contains("/**\n * Starts the machine.\n */\nexport interface StartPayload {")); // Payload interface comment
+        assert!(types.contains("/**\n   * The user ID.\n   */\n  userId: bigint;")); // Field comment (check indentation)
+        assert!(types.contains("/**\n * Starts the machine.\n */\n  | { type: \"Start\", payload: StartPayload }")); // Event union comment
+        assert!(types.contains("/**\n * Stops the machine.\n */\n  | { type: \"Stop\" }")); // Event union comment
+    }
 }

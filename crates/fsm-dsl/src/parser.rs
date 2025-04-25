@@ -958,6 +958,74 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_parse_annotations_on_items() {
+        let input = r#"
+        @0xcafe0001;
+        stateMachine AnnMachine {
+            states {
+                $description("Initial idle state.");
+                Idle @0;
+
+                $description("Machine is actively running.");
+                Running @1;
+            }
+            events {
+                $description("Event to start processing.");
+                event Start @0 {
+                    $description("User ID initiating the start.");
+                    userId @0 : UInt64;
+
+                    $description("Optional config string.");
+                    config @1 : Text;
+                }
+
+                $description("Event without payload.");
+                event Stop @1 {}
+            }
+            transitions {
+                transition from Idle to Running { on @0 Start; }
+            }
+        }
+        "#;
+        let result = parse_str(input);
+        assert!(result.is_ok(), "Parsing failed: {:?}", result.err());
+        let file_ast = result.unwrap();
+        let machine = &file_ast.state_machines[0];
+
+        // Check State annotations
+        let idle_state = machine.states.iter().find(|s| s.name == "Idle").unwrap();
+        assert_eq!(idle_state.annotations.len(), 1);
+        assert_eq!(idle_state.annotations[0].name, "description");
+        assert_eq!(idle_state.annotations[0].value, Some(AnnotationValue::StringLiteral("Initial idle state.".to_string())));
+
+        let running_state = machine.states.iter().find(|s| s.name == "Running").unwrap();
+        assert_eq!(running_state.annotations.len(), 1);
+        assert_eq!(running_state.annotations[0].name, "description");
+        assert_eq!(running_state.annotations[0].value, Some(AnnotationValue::StringLiteral("Machine is actively running.".to_string())));
+
+        // Check Event and Field annotations
+        let start_event = machine.events.iter().find(|e| e.name == "Start").unwrap();
+        assert_eq!(start_event.annotations.len(), 1);
+        assert_eq!(start_event.annotations[0].name, "description");
+        assert_eq!(start_event.annotations[0].value, Some(AnnotationValue::StringLiteral("Event to start processing.".to_string())));
+
+        let userid_field = start_event.fields.iter().find(|f| f.name == "userId").unwrap();
+        assert_eq!(userid_field.annotations.len(), 1);
+        assert_eq!(userid_field.annotations[0].name, "description");
+        assert_eq!(userid_field.annotations[0].value, Some(AnnotationValue::StringLiteral("User ID initiating the start.".to_string())));
+
+        let config_field = start_event.fields.iter().find(|f| f.name == "config").unwrap();
+        assert_eq!(config_field.annotations.len(), 1);
+        assert_eq!(config_field.annotations[0].name, "description");
+        assert_eq!(config_field.annotations[0].value, Some(AnnotationValue::StringLiteral("Optional config string.".to_string())));
+
+        let stop_event = machine.events.iter().find(|e| e.name == "Stop").unwrap();
+        assert_eq!(stop_event.annotations.len(), 1);
+        assert_eq!(stop_event.annotations[0].name, "description");
+        assert_eq!(stop_event.annotations[0].value, Some(AnnotationValue::StringLiteral("Event without payload.".to_string())));
+    }
+
     // #[test]
     // fn test_parse_from_file() {
     //     // Create a temporary directory
