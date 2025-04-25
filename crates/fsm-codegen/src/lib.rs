@@ -195,10 +195,7 @@ fn generate_event_enum(ast: &StateMachine, derive_tokens: &proc_macro2::TokenStr
 fn generate_impl_block(
     ast: &StateMachine,
     callbacks_trait_name: &proc_macro2::Ident,
-    guards: &HashSet<&proc_macro2::Ident>, // Pass calculated guards
-    actions: &HashSet<&proc_macro2::Ident>, // Pass calculated actions
 ) -> Result<TokenStream, CodegenError> {
-    // Added trait name, guards, actions
     let machine_struct_name = format_ident!("{}", ast.name);
     let state_enum_name = format_ident!("State");
     let event_enum_name = format_ident!("Event");
@@ -355,55 +352,51 @@ fn generate_impl_block(
         })
         .collect::<Result<Vec<_>, _>>()?; // Collect Results, propagating CodegenError
 
-    // Determine the trait bound for on_event
-    // Update trait bound condition to include entry/exit actions if not already covered
-    let on_event_trait_bound = if guards.is_empty()
-        && actions.is_empty()
-        && ast
-            .states
-            .iter()
-            .all(|s| s.entry_actions.is_empty() && s.exit_actions.is_empty())
-    {
-        quote! {} // No trait bound needed if no callbacks at all
-    } else {
-        quote! { where Self: #callbacks_trait_name }
+    // Generate the `on_event` method
+    let on_event_method = quote! {
+        /// Processes an event and attempts to transition the state machine.
+        /// Returns `true` if a transition occurred, `false` otherwise.
+        #[allow(unused_variables)] // event might be unused if no transitions use it directly
+        pub fn on_event(&mut self, event: Event) -> bool { // Take event by value
+            let current_state = self.current_state.clone(); // Clone current state for callbacks
+            match (&self.current_state, &event) { // Match against references
+                #(#on_event_match_arms)*
+                // Default case: No transition for this state/event combination
+                _ => false,
+            }
+        }
     };
 
-    Ok(quote! {
-        // No separate impl block for callbacks, integrated into the main impl
-
-        impl #machine_struct_name {
-            /// Creates a new instance of the state machine in its initial state.
-            pub fn new() -> Self {
-                Self {
-                    current_state: #initial_state_assignment,
-                     // Add initialization for other potential fields in the machine struct if needed
-                }
+    // Generate the `new` method
+    let callbacks_param = quote! { callbacks: C };
+    let new_method = quote! {
+        /// Creates a new instance of the state machine in its initial state.
+        pub fn new(#callbacks_param) -> Self {
+            Self {
+                current_state: #initial_state_assignment,
+                callbacks, // Store the provided callbacks implementation
             }
-
-            /// Processes an event and attempts to transition the state machine.
-            /// Requires `Self` to implement the `#callbacks_trait_name` trait if guards or actions are defined.
-            /// Returns the new state machine instance if successful (transition occurred, action ran).
-            /// Returns the *original* state machine instance `Ok(self)` if a guard prevents the transition.
-            /// Returns an `Err` for unhandled state/event combinations.
-             pub fn on_event(self, event: #event_enum_name) -> Result<Self, String> // Takes ownership
-             #on_event_trait_bound // Add trait bound here
-             {
-                 match (&self.current_state, &event) {
-                    #(#on_event_match_arms)*
-                    // Catch-all for unhandled state/event combinations
-                    // Test expects Ok(self.clone()) instead of Err
-                    // _ => Err(format!("Unhandled event {:?} in state {:?}", event, self.current_state)),
-                    _ => Ok(self.clone()), // Return Ok with cloned self for unhandled cases
-                }
-            }
-
-             /// Returns the current state.
-             pub fn current_state(&self) -> &#state_enum_name {
-                 &self.current_state
-             }
         }
-    })
+    };
+
+    // Generate the `current_state` getter method
+    let current_state_method = quote! {
+        /// Returns the current state.
+        pub fn current_state(&self) -> &#state_enum_name {
+            &self.current_state
+        }
+    };
+
+    // Generate the impl block
+    let impl_block = quote! {
+        impl<C: #callbacks_trait_name> #machine_struct_name<C> { // C requires the trait bound
+            #new_method
+            #on_event_method
+            #current_state_method
+        }
+    };
+
+    Ok(impl_block)
 }
 
 /// Generates the Event enum definition with associated data structs.
@@ -523,15 +516,15 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
         #machine_struct_doc_comment // Doc comment first
         #machine_struct_derive // Derive second
         // Use PartialEq only for machine struct if state or other fields contain floats
-        pub struct #machine_struct_name {
+        pub struct #machine_struct_name<C: #callbacks_trait_name> {
             // Make current_state public for inspection/assertion
             pub current_state: #state_enum_name,
             // Add other fields to the machine struct if needed (e.g., context data)
+            callbacks: C,
         }
     };
 
     // --- Callback Trait Generation ---
-    // Collect unique guard, action, entry, and exit function Idents
     let mut guards: HashSet<&proc_macro2::Ident> = HashSet::new();
     let mut actions: HashSet<&proc_macro2::Ident> = HashSet::new();
     let mut entry_actions: HashSet<&proc_macro2::Ident> = HashSet::new();
@@ -598,11 +591,16 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
         let event_defs = callback_event_map.get(guard_fn_ident);
         let event_type_sig = determine_callback_event_signature(event_defs, &event_enum_name);
 
-        callback_signatures.push(quote! {
-            // Guard methods take immutable self, current state, and event/payload
-            // Use "current_state" as the argument name to match test assertion
-            fn #guard_fn_ident(&self, current_state: &#state_enum_name, event: #event_type_sig) -> bool;
-        });
+        let guard_methods = quote! {
+            #[allow(unused_variables)]
+            /// Guard condition for transitions: #guard_fn_ident
+            fn #guard_fn_ident(&self, current_state: &State, event: #event_type_sig) -> bool {
+                eprintln!("[WARN] Guard '{}' not implemented, returning default false.", stringify!(#guard_fn_ident));
+                false // Default guard implementation
+            }
+        };
+
+        callback_signatures.push(guard_methods);
     }
 
     // Generate action signatures
@@ -611,10 +609,16 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
         let event_defs = callback_event_map.get(action_fn_ident);
         let event_type_sig = determine_callback_event_signature(event_defs, &event_enum_name);
 
-        callback_signatures.push(quote! {
-            // Action methods take mutable self and event/payload
-             fn #action_fn_ident(&mut self, event: #event_type_sig);
-        });
+        let action_methods = quote! {
+            #[allow(unused_variables)]
+            /// Action executed during transitions or on entry/exit: #action_fn_ident
+            fn #action_fn_ident(&mut self, current_state: &State, event: #event_type_sig, next_state: &State) {
+                eprintln!("[WARN] Action '{}' not implemented.", stringify!(#action_fn_ident));
+                // Default action implementation (no-op)
+            }
+        };
+
+        callback_signatures.push(action_methods);
     }
 
     // Generate entry action signatures
@@ -652,14 +656,14 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
         quote! {} // No trait if no callbacks
     };
 
-    // Impl block generation (pass calculated guards/actions)
-    let impl_block = generate_impl_block(ast, &callbacks_trait_name, &guards, &actions)?;
+    // Impl block generation (Pass only trait name)
+    let impl_block = generate_impl_block(ast, &callbacks_trait_name)?;
 
-    // Generate Default impl if a new() method exists (which it always should)
+    // Generate Default impl
     let default_impl = quote! {
-        impl Default for #machine_struct_name {
+        impl<C: #callbacks_trait_name + Default> Default for #machine_struct_name<C> {
             fn default() -> Self {
-                Self::new()
+                Self::new(C::default()) // Call new with default callbacks
             }
         }
     };
@@ -668,10 +672,10 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
     let combined_code = quote! {
         #state_enum
         #event_defs
+        #callbacks_trait
         #machine_struct
-        #callbacks_trait // Add the trait definition
         #impl_block
-        #default_impl // Add the default impl
+        #default_impl
     };
 
     // Format the generated code
@@ -999,14 +1003,16 @@ stateMachine AnnotatedMachine {
             formatted_code.contains("pub fn on_event(self, event: Event) -> Result<Self, String>")
         );
         assert!(formatted_code.contains("match (&self.current_state, &event)"));
-        // Check transition arms (adjust event payload matching if necessary)
-        assert!(formatted_code.contains("(State::Idle, Event::Event1) =>"));
-        assert!(formatted_code.contains("next_state_machine.current_state = State::Active;"));
-        assert!(formatted_code.contains("(State::Active, Event::Event2) =>"));
-        assert!(formatted_code.contains("next_state_machine.current_state = State::Idle;"));
-        assert!(formatted_code.contains("(State::Idle, Event::EventWithPayload(payload)) =>")); // Check payload binding
-        assert!(formatted_code.contains("next_state_machine.do_something(payload);")); // Check action call with payload
-        assert!(formatted_code.contains("_ => Ok(self.clone())")); // Default case
+        // Updated checks for bool return type and different structure
+        assert!(formatted_code.contains("(State::Idle, &Event::Event1) =>")); // Check matching reference
+        assert!(formatted_code.contains("self.current_state = State::Active;"));
+        assert!(formatted_code.contains("return true;"));
+        assert!(formatted_code.contains("(State::Active, &Event::Event2) =>"));
+        assert!(formatted_code.contains("self.current_state = State::Idle;"));
+        assert!(formatted_code.contains("(State::Idle, &Event::EventWithPayload { .. }) =>")); // Check payload matching
+        assert!(formatted_code
+            .contains("self.callbacks.do_something(&current_state, &event, &next_state);")); // Check action call
+        assert!(formatted_code.contains("_ => false")); // Default case
     }
 
     #[test]
@@ -1068,11 +1074,25 @@ stateMachine AnnotatedMachine {
         let code = result.unwrap();
         let formatted_code = parse_and_format(&code);
 
-        let callbacks_trait_name = format_ident!("{}Callbacks", ast_with_callbacks.name);
-        assert!(formatted_code.contains(&format!("pub trait {}", callbacks_trait_name)));
+        println!(
+            "-- CallbackMachine Code --\n{}\n-- End CallbackMachine Code --",
+            formatted_code
+        );
+
+        // Check trait definition
+        assert!(formatted_code.contains("pub trait CallbackMachineCallbacks"));
+        // Check guard with default impl
         assert!(formatted_code
-            .contains("fn can_transition(&self, current_state: &State, event: &Event) -> bool;"));
-        assert!(formatted_code.contains("fn perform_action(&mut self, event: &Event);"));
+            .contains("fn can_transition(&self, current_state: &State, event: &Event) -> bool {"));
+        assert!(
+            formatted_code.contains("eprintln!(\"[WARN] Guard 'can_transition' not implemented")
+        );
+        assert!(formatted_code.contains("false"));
+        // Check action with default impl
+        assert!(formatted_code.contains("fn perform_action(&mut self, current_state: &State, event: &Event, next_state: &State) {"));
+        assert!(
+            formatted_code.contains("eprintln!(\"[WARN] Action 'perform_action' not implemented")
+        );
     }
 
     #[test]
@@ -1106,12 +1126,11 @@ stateMachine AnnotatedMachine {
 
         // Check that impl block is generated, but on_event might be simple
         assert!(formatted_code.contains("impl SimpleMachine"));
-        assert!(
-            formatted_code.contains("pub fn on_event(self, event: Event) -> Result<Self, String>")
-        );
+        // Check on_event signature
+        assert!(formatted_code.contains("pub fn on_event(&mut self, event: Event) -> bool"));
         assert!(formatted_code.contains("match (&self.current_state, &event)"));
         // Should likely only contain the default arm if no transitions
-        assert!(formatted_code.contains("_ => Ok(self.clone())"));
+        assert!(formatted_code.contains("_ => false"));
         // Check that no callback trait is generated
         assert!(!formatted_code.contains("pub trait SimpleMachineCallbacks"));
     }
