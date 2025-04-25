@@ -5,11 +5,15 @@ use fsm_dsl::ast::{
     FieldType,
     StateMachine,
     TransitionElement,
+    SsotFile, // Import SsotFile to access file_id
 };
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::collections::HashSet;
 // Needed for parsing generated code before formatting // For collecting unique guard/action names
+
+pub mod codegen_capnp; // Add new module
+pub mod codegen_ts;   // Add new module
 
 // Helper to find annotation value by name
 fn find_annotation_value<'a>(
@@ -513,15 +517,52 @@ fn determine_callback_event_signature<'a>(
     }
 }
 
+/// Generates a Cap'n Proto schema (.capnp) from the FSM AST.
+///
+/// # Arguments
+///
+/// * `file_ast` - The parsed `SsotFile` structure (needed for file ID).
+/// * `machine_ast` - The specific `StateMachine` structure to generate the schema for.
+///
+/// # Returns
+///
+/// A `Result` containing the Cap'n Proto schema string or a `CodegenError`.
+pub fn generate_capnp_schema(
+    file_ast: &SsotFile, // Updated signature
+    machine_ast: &StateMachine
+) -> Result<String, CodegenError> {
+    // Call the internal implementation function
+    codegen_capnp::generate_capnp_schema_internal(file_ast, machine_ast) // Pass file_ast
+}
+
+/// Generates TypeScript type definitions (.types.ts) from the FSM AST.
+///
+/// # Arguments
+///
+/// * `ast` - The parsed `StateMachine` structure.
+///
+/// # Returns
+///
+/// A `Result` containing the TypeScript type definition string or a `CodegenError`.
+pub fn generate_typescript_types(ast: &StateMachine) -> Result<String, CodegenError> {
+    // Call the internal implementation function
+    codegen_ts::generate_typescript_types_internal(ast)
+}
+
 // Error type
 #[derive(Debug, thiserror::Error)]
 pub enum CodegenError {
-    #[error("Failed to parse generated code: {0}\\n--- Generated Code ---\\n{1}")]
-    SynParseError(syn::Error, String),
+    #[error("Failed to parse generated code: {0}\n--- Generated Code ---
+{1}")]
+    SynParseError(#[from] syn::Error, String), // Allow conversion from syn::Error
     #[error("AST validation error: {0}")]
     AstValidationError(String),
     #[error("Code generation failed: {0}")]
     GenerationError(String),
+    #[error("I/O error during code formatting: {0}")]
+    FormatIoError(#[from] std::io::Error), // Add IO Error variant for prettyplease potentially
+    #[error("Failed to format generated code: {0}")]
+    FormatError(String), // Error specifically from formatting
     // Potential future errors: IO errors, etc.
 }
 
@@ -936,9 +977,43 @@ mod tests {
             .contains("& self . current_state"));
     }
 
-    // Add more tests:
-    // - Error conditions (e.g., missing initial state, invalid event reference) -> Check CodegenError variants
-    // - More complex event payloads
-    // - Annotations on states/events/transitions (if generation logic uses them)
-    // - Different derive attributes
+    #[test]
+    fn generates_placeholder_capnp() {
+        let ast = create_test_ast(); // Reuse existing test AST setup
+        let file_ast = fsm_dsl::ast::SsotFile { // Create a dummy SsotFile for the test
+             file_id: 0x123456789ABCDEF0,
+             package_declaration: None,
+             top_level_annotations: vec![],
+             state_machines: vec![ast.clone()], // Assuming create_test_ast returns StateMachine
+        };
+        let result = crate::generate_capnp_schema(&file_ast, &ast); // Pass both args
+        assert!(result.is_ok(), "Cap'n Proto generation failed: {:?}", result.err());
+        let schema = result.unwrap();
+        // Basic check for placeholder content -> Updated checks
+        assert!(schema.contains("@0x123456789abcdef0")); // Check for file ID format
+        assert!(schema.contains("enum State @0 {"));
+        assert!(schema.contains("idle @0;")); // From create_test_ast
+        assert!(schema.contains("running @1;")); // From create_test_ast
+        assert!(schema.contains("struct StartPayload @0 {")); // Event with payload
+        assert!(schema.contains("userId @0 :UInt64;")); // Field in payload
+        assert!(schema.contains("union Event @1 {"));
+        assert!(schema.contains("start @0 :StartPayload;")); // Event with payload
+        assert!(schema.contains("stop @1 :Void;"));       // Event without payload
+        println!("--- Generated Cap'n Proto Schema ---
+{}", schema); // For inspection
+    }
+
+    #[test]
+    fn generates_placeholder_typescript() {
+        let ast = create_test_ast(); // Reuse existing test AST setup
+        let result = crate::generate_typescript_types(&ast);
+        assert!(result.is_ok(), "TypeScript generation failed: {:?}", result.err());
+        let types = result.unwrap();
+        // Basic check for placeholder content
+        assert!(types.contains("// Placeholder TypeScript types"));
+        assert!(types.contains("export type State"));
+        assert!(types.contains("export type Event"));
+        println!("--- Generated TypeScript Types (Placeholder) ---
+{}", types); // For inspection
+    }
 }

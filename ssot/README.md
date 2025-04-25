@@ -1,65 +1,38 @@
-# ssot README
+# SSOT Language Support
 
-This is the README for your extension "ssot". After writing up a brief description, we recommend including the following sections.
+Provides basic language support for the `.ssot` file format used for defining Finite State Machines (FSMs).
+
+The `.ssot` extension signifies the **Single Source of Truth** for the state machine specification. This extension aims to help developers working with `.ssot` files within Visual Studio Code.
+
+The primary goal of the underlying `.ssot` project is to enable developers to define state machine logic declaratively in a `.ssot` file and automatically generate necessary Rust boilerplate code, ensuring type safety and reducing manual implementation effort. (For more details on the `.ssot` project itself, please refer to the main project repository: [https://github.com/jun784/ssot](https://github.com/jun784/ssot))
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+*   **Syntax Highlighting:** Provides syntax highlighting for `.ssot` files based on the TextMate grammar defined in `syntaxes/ssot.tmLanguage.json`.
+*   **Basic Language Configuration:** Includes basic language features like bracket matching and comment definitions defined in `language-configuration.json`.
 
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+*(Note: This extension currently focuses on syntax highlighting. Future enhancements might include snippets, formatting, or deeper language integration.)*
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+There are no specific requirements or dependencies for installing this extension.
 
 ## Extension Settings
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+This extension does not currently contribute any specific VS Code settings.
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+There are no known issues at this time. Please report any bugs or unexpected behavior on the [GitHub repository issues page](https://github.com/jun784/ssot/issues).
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
+### 0.0.1
 
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
+*   Initial release.
+*   Provides syntax highlighting for `.ssot` files.
+*   Includes basic language configuration.
 
 ---
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
 
 **Enjoy!**
