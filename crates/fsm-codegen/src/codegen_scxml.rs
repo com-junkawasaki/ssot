@@ -48,24 +48,18 @@ fn map_field_type_to_scxml_initial_expr(field_type: &FieldType) -> String {
 
 // Helper function to generate XML comments from annotations
 fn generate_xml_comment(annotations: &[fsm_dsl::ast::Annotation], indent: &str) -> String {
-    let mut comment = String::new();
     if let Some(AnnotationValue::StringLiteral(desc)) =
         find_annotation_value(annotations, "description")
     {
-        // Simple comment formatting
-        write!(
-            comment,
-            "{}<!-- {} -->\n",
-            indent,
-            desc.lines()
-                .map(|l| l.trim())
-                .filter(|l| !l.is_empty())
-                .collect::<Vec<_>>()
-                .join(" ") // Join lines into a single comment line
-        )
-        .unwrap(); // Use unwrap for simplicity in helper
+        let comment_lines = desc
+            .lines()
+            .map(|line| format!("{}<!-- {} -->", indent, line.trim()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("{}\n", comment_lines)
+    } else {
+        String::new()
     }
-    comment
 }
 
 // Helper function to generate executable content for an action
@@ -196,7 +190,7 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
             write!(
                 output,
                 "{}",
-                generate_xml_comment(&field.annotations, indent.repeat(2).as_str())
+                generate_xml_comment(&field.annotations, &indent.repeat(2))
             )?;
             // Add expr attribute for initial value
             writeln!(
@@ -213,7 +207,7 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
         write!(
             output,
             "{}",
-            generate_xml_comment(&state.annotations, indent.as_str())
+            generate_xml_comment(&state.annotations, &indent)
         )?;
         writeln!(output, "{indent}<state id=\"{}\">", state.name)?;
 
@@ -226,9 +220,9 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
                 let action_content = generate_scxml_action_content(
                     action_ident,
                     &ast.context,
-                    indent.repeat(3).as_str(),
+                    &indent.repeat(3),
                 );
-                writeln!(output, "{}", action_content)?; // Write the generated <assign> or <log>
+                writeln!(output, "{}", action_content)?;
             }
             writeln!(output, "{indent}{indent}</onentry>")?;
         }
@@ -240,9 +234,9 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
                 let action_content = generate_scxml_action_content(
                     action_ident,
                     &ast.context,
-                    indent.repeat(3).as_str(),
+                    &indent.repeat(3),
                 );
-                writeln!(output, "{}", action_content)?; // Write the generated <assign> or <log>
+                writeln!(output, "{}", action_content)?;
             }
             writeln!(output, "{indent}{indent}</onexit>")?;
         }
@@ -262,12 +256,12 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
                     _ => None,
                 });
 
-                // Find Actions (executable content)
+                // Find Actions (executable content) - Keep as Ident references
                 let actions: Vec<_> = transition
                     .elements
                     .iter()
                     .filter_map(|el| match el {
-                        TransitionElement::Action { function, .. } => Some(function.to_string()),
+                        TransitionElement::Action { function, .. } => Some(function), // Keep the Ident reference
                         _ => None,
                     })
                     .collect();
@@ -275,7 +269,7 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
                 write!(
                     output,
                     "{}",
-                    generate_xml_comment(&transition.annotations, indent.repeat(2).as_str())
+                    generate_xml_comment(&transition.annotations, &indent.repeat(2))
                 )?;
                 write!(
                     output,
@@ -289,13 +283,13 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
                 writeln!(output, ">")?;
 
                 // Add actions as executable content within <script>
-                for action_name in actions {
+                for action_ident in actions { // Iterate over &Ident
                     let action_content = generate_scxml_action_content(
-                        &action_name,
+                        action_ident, // Pass &Ident directly
                         &ast.context,
-                        indent.repeat(3).as_str(),
+                        &indent.repeat(3),
                     );
-                    writeln!(output, "{}", action_content)?; // Write the generated <assign> or <log>
+                    writeln!(output, "{}", action_content)?;
                 }
 
                 writeln!(output, "{indent}{indent}</transition>")?;
@@ -309,11 +303,4 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
     writeln!(output, "</scxml>")?;
 
     Ok(output)
-}
-
-// Helper to handle potential Write errors, converting them to CodegenError
-impl From<std::fmt::Error> for CodegenError {
-    fn from(err: std::fmt::Error) -> Self {
-        CodegenError::GenerationError(format!("Failed to write to string: {}", err))
-    }
 }

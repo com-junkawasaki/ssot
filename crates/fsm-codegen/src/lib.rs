@@ -397,8 +397,6 @@ fn generate_event_enum_and_structs(ast: &StateMachine, derive_tokens: &TokenStre
 
 /// Generates Rust code from a StateMachine AST node (from parser).
 ///
-/// # Arguments
-///
 /// * `ast` - A parsed `StateMachine` from `fsm_dsl::parser`.
 ///
 /// # Returns
@@ -409,6 +407,10 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
     let machine_struct_name = format_ident!("{}", ast.name); // Use name from AST
     let event_enum_name = format_ident!("Event"); // Consistent event enum name
     let callbacks_trait_name = format_ident!("{}Callbacks", ast.name); // e.g., LightSwitchCallbacks
+
+    // Extract annotations specific to this state machine from the `items` list if needed
+    // For now, we pass the StateMachine AST directly which already contains its annotations.
+    // let machine_annotations = /* logic to find annotations for this machine */;
 
     let _derive_tokens = quote! { #[derive(Debug, Clone, PartialEq)] };
 
@@ -645,8 +647,6 @@ fn determine_callback_event_signature<'a>(
 
 /// Generates a Cap'n Proto schema (.capnp) from the FSM AST.
 ///
-/// # Arguments
-///
 /// * `file_ast` - The parsed `SsotFile` structure (needed for file ID).
 /// * `machine_ast` - The specific `StateMachine` structure to generate the schema for.
 ///
@@ -663,8 +663,6 @@ pub fn generate_capnp_schema(
 
 /// Generates TypeScript type definitions (.types.ts) from the FSM AST.
 ///
-/// # Arguments
-///
 /// * `ast` - The parsed `StateMachine` structure.
 ///
 /// # Returns
@@ -677,7 +675,6 @@ pub fn generate_typescript_types(ast: &StateMachine) -> Result<String, CodegenEr
 
 /// Generates an XState machine definition string from the FSM AST.
 ///
-/// # Arguments
 /// * `ast` - A reference to the `StateMachine` AST node.
 ///
 /// # Returns
@@ -689,7 +686,6 @@ pub fn generate_xstate_machine(ast: &StateMachine) -> Result<String, CodegenErro
 
 /// Generates an SCXML document string from the FSM AST.
 ///
-/// # Arguments
 /// * `ast` - A reference to the `StateMachine` AST node.
 ///
 /// # Returns
@@ -716,6 +712,13 @@ pub enum CodegenError {
     #[error("Failed to format generated code: {0}")]
     FormatError(String),
     // Potential future errors: IO errors, etc.
+}
+
+// Centralized From implementation for std::fmt::Error
+impl From<std::fmt::Error> for CodegenError {
+    fn from(e: std::fmt::Error) -> Self {
+        CodegenError::GenerationError(e.to_string())
+    }
 }
 
 // --- Unit Tests ---

@@ -18,7 +18,8 @@ proc-macro2 = "1.0"
 prettyplease = "0.2"
 
 thiserror = "1.0" # For error handling
-heck = "0.5.0"
+heck = "0.4" # For case conversions (snake_case, PascalCase)
+chrono = { version = "0.4", features = ["serde"] } # For timestamps in generated code (e.g., XState)
 
 [dev-dependencies]
 # Add dev dependencies if needed for tests later

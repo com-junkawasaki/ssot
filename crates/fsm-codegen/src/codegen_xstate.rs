@@ -333,12 +333,48 @@ pub(crate) fn generate_xstate_machine_internal(ast: &StateMachine) -> Result<Str
     // --- Close createMachine call ---
     writeln!(output, "}});")?;
 
+    // Format using prettier (optional, requires prettier installed and in PATH)
+    // format_with_prettier(&output)
+
     Ok(output)
 }
 
-// Helper to handle potential Write errors, converting them to CodegenError
-impl From<std::fmt::Error> for CodegenError {
-    fn from(err: std::fmt::Error) -> Self {
-        CodegenError::GenerationError(format!("Failed to write to string: {}", err))
+// Helper to map FieldType to TypeScript type string for event payloads
+fn map_field_type_to_ts_type(field_type: &fsm_dsl::ast::FieldType) -> String {
+    match field_type {
+        FieldType::Void => "void".to_string(), // Use void for Void
+        FieldType::Bool => "boolean".to_string(),
+        FieldType::Int8
+        | FieldType::Int16
+        | FieldType::Int32
+        | FieldType::Int64 // Represent all integers as number
+        | FieldType::UInt8
+        | FieldType::UInt16
+        | FieldType::UInt32
+        | FieldType::UInt64
+        | FieldType::Float32
+        | FieldType::Float64 => "number".to_string(),
+        FieldType::Text => "string".to_string(),
+        FieldType::Data => "Uint8Array".to_string(), // Represent Data as Uint8Array
+        FieldType::List(inner) => {
+            format!("{}[]", map_field_type_to_ts_type(inner))
+        }
+        FieldType::Identifier(ident) => ident.to_string(), // Assume identifier is a valid TS type/interface
     }
+}
+
+fn format_event_payload_type(payload_fields: &[FieldDef]) -> String {
+    if payload_fields.is_empty() {
+        return "never".to_string(); // Or maybe 'void'? 'never' indicates no payload property.
+    }
+    let fields_str = payload_fields
+        .iter()
+        .map(|field| {
+            let ts_type = map_field_type_to_ts_type(&field.field_type);
+            // Optional: Add JSDoc based on field annotations here if needed
+            format!("  {}: {};", field.name, ts_type)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("{{\n{}\n}}", fields_str)
 }

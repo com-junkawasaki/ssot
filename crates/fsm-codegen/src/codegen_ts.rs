@@ -169,10 +169,3 @@ fn map_field_type_to_ts_type(field_type: &FieldType) -> String {
         FieldType::Identifier(ident) => ident.to_string(), // Assume identifier maps directly to a TS type
     }
 }
-
-// Helper to handle potential Write errors, converting them to CodegenError
-impl From<std::fmt::Error> for CodegenError {
-    fn from(err: std::fmt::Error) -> Self {
-        CodegenError::GenerationError(format!("Failed to write to string: {}", err))
-    }
-}
