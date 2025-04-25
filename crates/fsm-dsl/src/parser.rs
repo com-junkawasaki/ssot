@@ -155,71 +155,68 @@ fn parse_annotation(pair: Pair<Rule>) -> Result<Annotation, ParseError> {
 fn parse_annotation_value(pair: Pair<Rule>) -> Result<AnnotationValue, ParseError> {
     // pair matches annotation_value rule: "(" ~ annotation_value_inner? ~ ")"
     if let Some(annotation_value_inner_pair) = pair.into_inner().next() {
-        if annotation_value_inner_pair.as_rule() == Rule::annotation_value_inner {
-            if let Some(actual_content_pair) = annotation_value_inner_pair.into_inner().next() {
-                match actual_content_pair.as_rule() {
-                    Rule::ident => Ok(AnnotationValue::Identifier(parse_ident(
-                        actual_content_pair,
-                    )?)),
-                    Rule::array_literal => {
-                        let strings = actual_content_pair
-                            .into_inner()
-                            .map(|p| unescape_string(p.as_str()))
-                            .collect();
-                        Ok(AnnotationValue::ArrayLiteral(strings))
-                    }
-                    Rule::literal => {
-                        if let Some(specific_literal_pair) = actual_content_pair.into_inner().next()
-                        {
-                            match specific_literal_pair.as_rule() {
-                                Rule::string_literal => Ok(AnnotationValue::StringLiteral(
-                                    unescape_string(specific_literal_pair.as_str()),
-                                )),
-                                Rule::boolean_literal => Ok(AnnotationValue::BooleanLiteral(
-                                    specific_literal_pair.as_str() == "true",
-                                )),
-                                Rule::number_literal => {
-                                    let num_str = specific_literal_pair.as_str();
-                                    let num = num_str.parse::<i64>().map_err(|e| {
-                                        ParseError::InvalidNumber(
-                                            num_str.to_string(),
-                                            e.to_string(),
-                                        )
-                                    })?;
-                                    Ok(AnnotationValue::NumberLiteral(num))
-                                }
-                                _ => Err(ParseError::UnexpectedRule {
-                                    rule: specific_literal_pair.as_rule(),
-                                    context: "specific literal value inside literal".to_string(),
-                                }),
-                            }
-                        } else {
-                            Err(ParseError::MissingElement(
-                                "specific literal content inside literal rule".to_string(),
-                            ))
-                        }
-                    }
-                    _ => Err(ParseError::UnexpectedRule {
-                        rule: actual_content_pair.as_rule(),
-                        context: "annotation value content (expected ident, array, or literal)"
-                            .to_string(),
-                    }),
-                }
-            } else {
-                Err(ParseError::MissingElement(
-                    "actual annotation value content".to_string(),
-                ))
+        // Check the rule of the content INSIDE the parentheses
+        let actual_content_pair = annotation_value_inner_pair;
+        match actual_content_pair.as_rule() {
+            Rule::ident => Ok(AnnotationValue::Identifier(parse_ident(
+                actual_content_pair,
+            )?)),
+            Rule::array_literal => {
+                let strings = actual_content_pair
+                    .into_inner()
+                    .map(|p| unescape_string(p.as_str()))
+                    .collect();
+                Ok(AnnotationValue::ArrayLiteral(strings))
             }
-        } else {
-            Err(ParseError::UnexpectedRule {
-                rule: annotation_value_inner_pair.as_rule(),
-                context: "expected annotation_value_inner".to_string(),
-            })
+            Rule::literal => {
+                if let Some(specific_literal_pair) = actual_content_pair.into_inner().next() {
+                    match specific_literal_pair.as_rule() {
+                        Rule::string_literal => Ok(AnnotationValue::StringLiteral(
+                            unescape_string(specific_literal_pair.as_str()),
+                        )),
+                        Rule::boolean_literal => Ok(AnnotationValue::BooleanLiteral(
+                            specific_literal_pair.as_str() == "true",
+                        )),
+                        Rule::number_literal => {
+                            let num_str = specific_literal_pair.as_str();
+                            let num = num_str.parse::<i64>().map_err(|e| {
+                                ParseError::InvalidNumber(num_str.to_string(), e.to_string())
+                            })?;
+                            Ok(AnnotationValue::NumberLiteral(num))
+                        }
+                        _ => Err(ParseError::UnexpectedRule {
+                            rule: specific_literal_pair.as_rule(),
+                            context: "specific literal value inside literal".to_string(),
+                        }),
+                    }
+                } else {
+                    Err(ParseError::MissingElement(
+                        "specific literal content inside literal rule".to_string(),
+                    ))
+                }
+            }
+            Rule::ident_list => {
+                // Handle the new ident_list rule
+                let idents = actual_content_pair
+                    .into_inner() // Gets the idents inside the list
+                    .map(parse_ident) // Parse each ident
+                    .collect::<Result<Vec<Ident>, _>>()?; // Collect results
+                Ok(AnnotationValue::IdentifierList(idents))
+            }
+            _ => Err(ParseError::UnexpectedRule {
+                rule: actual_content_pair.as_rule(),
+                context: "annotation value content (expected ident, array, literal, or ident_list)"
+                    .to_string(),
+            }),
         }
     } else {
+        // No content inside parentheses - this might be valid for some annotations?
+        // For now, let's assume it's an error or needs specific handling if needed.
+        // If annotations like `@foo()` without value are allowed, return None or a specific variant.
         Err(ParseError::MissingElement(
             "annotation value content (parentheses cannot be empty)".to_string(),
         ))
+        // Or potentially: Ok(AnnotationValue::Empty) if you add such a variant to the enum
     }
 }
 
@@ -809,6 +806,25 @@ mod tests {
             ssot_file.package_declaration,
             Some("my.package".to_string())
         );
+
+        // Find the $top_level_derive annotation and check its value
+        let derive_annotation = ssot_file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                TopLevelItem::Annotation(ann) if ann.name == "top_level_derive" => Some(ann),
+                _ => None,
+            })
+            .expect("Expected $top_level_derive annotation");
+
+        assert_eq!(
+            derive_annotation.value,
+            Some(AnnotationValue::IdentifierList(vec![
+                ident("Debug"),
+                ident("Clone")
+            ]))
+        );
+
         let top_level_annotations_count = ssot_file
             .items
             .iter()

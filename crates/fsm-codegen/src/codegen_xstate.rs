@@ -1,6 +1,6 @@
 //! XState machine definition generation logic.
 
-use crate::{find_annotation_value, CodegenError};
+use crate::{find_annotation_value, get_simple_ident, CodegenError};
 use fsm_dsl::ast::{AnnotationValue, FieldDef, FieldType, StateMachine, TransitionElement};
 use heck::ToUpperCamelCase; // For event type casing if needed
 use std::fmt::Write; // For efficient string building
@@ -229,11 +229,12 @@ pub(crate) fn generate_xstate_machine_internal(ast: &StateMachine) -> Result<Str
                 TransitionElement::On { event, .. } => Some(event),
                 _ => None,
             });
-            if let (Some(g), Some(e)) = (guard_fn, event_name) {
+            if let (Some(g), Some(e_qident)) = (guard_fn, event_name) {
                 let event_has_payload = ast
                     .events
                     .iter()
-                    .any(|evt| &evt.name == e && !evt.fields.is_empty());
+                    // Compare simple names
+                    .any(|evt| &evt.name == get_simple_ident(e_qident) && !evt.fields.is_empty());
                 Some((g.to_string(), event_has_payload))
             } else {
                 None
@@ -257,14 +258,15 @@ pub(crate) fn generate_xstate_machine_internal(ast: &StateMachine) -> Result<Str
             TransitionElement::Action { function, .. } => Some(function),
             _ => None,
         }) {
-            if let Some(event_name) = transition.elements.iter().find_map(|el| match el {
+            if let Some(event_name_qident) = transition.elements.iter().find_map(|el| match el {
                 TransitionElement::On { event, .. } => Some(event),
                 _ => None,
             }) {
                 let event_has_payload = ast
                     .events
                     .iter()
-                    .any(|evt| &evt.name == event_name && !evt.fields.is_empty());
+                    // Compare simple names
+                    .any(|evt| &evt.name == get_simple_ident(event_name_qident) && !evt.fields.is_empty());
                 // If the action is already present, update payload flag only if true
                 all_actions
                     .entry(action_fn.to_string())
@@ -378,3 +380,13 @@ fn format_event_payload_type(payload_fields: &[FieldDef]) -> String {
         .join("\n");
     format!("{{\n{}\n}}", fields_str)
 }
+
+// Removed helper: Moved to lib.rs
+/*
+fn get_simple_ident(qident: &fsm_dsl::ast::QualifiedIdent) -> &fsm_dsl::ast::Ident {
+    match qident {
+        fsm_dsl::ast::QualifiedIdent::Simple(id) => id,
+        fsm_dsl::ast::QualifiedIdent::Qualified { name, .. } => name,
+    }
+}
+*/

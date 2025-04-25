@@ -1,6 +1,7 @@
 //! SCXML document generation logic.
 
 use crate::{find_annotation_value, CodegenError};
+use crate::get_simple_ident;
 use fsm_dsl::ast::{AnnotationValue, FieldDef, FieldType, StateMachine, TransitionElement};
 use std::fmt::Write;
 

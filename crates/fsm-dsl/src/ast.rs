@@ -59,6 +59,8 @@ pub enum AnnotationValue {
     /// An array of string literals, enclosed in square brackets (e.g., `["derive1", "derive2"]`).
     /// Typically used for annotations like `$derive`.
     ArrayLiteral(Vec<String>),
+    /// A comma-separated list of identifiers (e.g., `Debug, Clone`).
+    IdentifierList(Vec<Ident>),
 }
 
 // --- Types for Payloads and Values ---
@@ -114,8 +116,8 @@ pub struct FieldDef {
     /// The name identifier of the field (e.g., `brightness`).
     pub name: Ident,
     /// The unique non-negative integer (`@N`) associated with the field within its containing struct/event.
-    /// Used for serialization and identification.
-    pub ordinal: u64,
+    /// Used for serialization and identification. Now Optional.
+    pub ordinal: Option<u64>,
     /// The data type of the field (e.g., `UInt8`, `Text`).
     pub field_type: FieldType,
 }
@@ -134,7 +136,7 @@ pub struct ImportDeclaration {
 /// Represents a top-level struct definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDef {
-    /// Annotations specific to this struct definition (e.g., `$description`).
+    /// An annotations specific to this struct definition (e.g., `$description`).
     pub annotations: Vec<Annotation>,
     /// The name identifier of the struct (e.g., `TrafficLightContext`).
     pub name: Ident,

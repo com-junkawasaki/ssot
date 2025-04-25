@@ -12,6 +12,7 @@ use fsm_dsl::ast::{
 use proc_macro2::{Ident as TokenIdent, TokenStream};
 use quote::{format_ident, quote};
 use std::collections::{HashSet, HashMap};
+use std::path::PathBuf; // Add missing import
 // Needed for parsing generated code before formatting // For collecting unique guard/action names
 
 pub mod codegen_capnp; // Add new module
@@ -110,7 +111,7 @@ fn generate_rust_doc_comment(annotations: &[Annotation]) -> TokenStream {
 }
 
 // Helper to get the simple Ident from a QualifiedIdent
-fn get_simple_ident(qident: &QualifiedIdent) -> &TokenIdent {
+pub(crate) fn get_simple_ident(qident: &QualifiedIdent) -> &TokenIdent {
     match qident {
         QualifiedIdent::Simple(id) => id,
         QualifiedIdent::Qualified { name, .. } => name,
@@ -186,7 +187,8 @@ fn generate_impl_block(
                         from_state_ident, to_state_ident
                     ))
                 })?;
-            let event_variant_ident = on_element; // This is the Ident from the 'on' clause
+            let event_qident = on_element; // This is &QualifiedIdent
+            let event_variant_ident = get_simple_ident(event_qident);
 
             let event_ast_item = ast
                 .events
@@ -200,23 +202,19 @@ fn generate_impl_block(
                 })?;
 
             let event_pattern = if event_ast_item.fields.is_empty() {
-                quote! { #event_enum_name::#event_variant_ident }
+                quote! { #event_enum_name::#event_variant_ident } // event_variant_ident is already &Ident
             } else {
-                let _payload_struct_name = format_ident!("{}", event_ast_item.name); // Prefix with underscore
-                                                                                     // Bind payload if fields exist, using the specific payload struct type
-                quote! { #event_enum_name::#event_variant_ident(payload) }
-                // Ensure the event enum generation uses the payload struct:
-                // Example: Event::MyEvent(MyEventPayload)
+                let payload_struct_name = format_ident!("{}", event_variant_ident); // Use simple ident
+                quote! { #event_enum_name::#event_variant_ident(payload) } // Use simple ident
             };
             // Reference to the event or its payload for callbacks
-            // Adjust to pass the correct type reference based on payload existence
             let (event_ref_or_payload, _event_type_for_callback) =
                 if event_ast_item.fields.is_empty() {
                     // If no payload, pass reference to the whole event enum variant
                     (quote! { event }, quote! { &#event_enum_name})
                 } else {
                     // If payload exists, pass reference to the bound payload struct
-                    let payload_struct_name = format_ident!("{}", event_ast_item.name); // Use event name for payload struct
+                    let payload_struct_name = format_ident!("{}", event_variant_ident); // Use simple ident
                     (quote! { payload }, quote! { &#payload_struct_name })
                 };
 
@@ -225,15 +223,10 @@ fn generate_impl_block(
                 _ => None,
             });
             let guard_check = match guard_element {
-                Some(guard_fn_ident) => {
-                    // guard_fn_ident is &Ident
-                    // Call the trait method on self
+                Some(guard_fn_qident) => {
+                    let guard_fn_ident = get_simple_ident(guard_fn_qident);
                     quote! {
-                        // Pass current state ref and appropriate event/payload ref
-                        // Note: event_ref_or_payload is already a reference for payload case (`payload` is &PayloadStruct)
-                        // For non-payload case, it's `event`, so we need `&event`
                         if !self.#guard_fn_ident(&self.current_state, &#event_ref_or_payload) {
-                            // Return Ok(self) because on_event takes ownership and we didn't transition
                             return Ok(self); // Guard failed
                         }
                     }
@@ -246,15 +239,13 @@ fn generate_impl_block(
                 _ => None,
             });
             let action_call = match action_element {
-                Some(action_fn_ident) => {
-                    // action_fn_ident is &Ident
-                    // Determine argument to pass based on payload presence
+                Some(action_fn_qident) => {
+                    let action_fn_ident = get_simple_ident(action_fn_qident);
                     let action_arg = if event_ast_item.fields.is_empty() {
                         quote! { &event }
                     } else {
                         quote! { payload } // 'payload' is already the reference from the match arm pattern
                     };
-                    // Call the trait method on the mutable next state machine instance
                     quote! {
                         next_state_machine.#action_fn_ident(#action_arg);
                     }
@@ -364,7 +355,6 @@ fn generate_impl_block(
 /// Generates the Event enum definition with associated data structs.
 fn generate_event_enum_and_structs(
     ast: &StateMachine,
-    context: &ResolutionContext, // Context is already passed
     derive_tokens: &TokenStream,
 ) -> Result<TokenStream, CodegenError> { // Return Result
     let event_enum_name = format_ident!("Event");
@@ -390,30 +380,18 @@ fn generate_event_enum_and_structs(
                 let struct_name = format_ident!("{}Payload", variant_name); // Convention: EventNamePayload
                 let struct_doc_comment = generate_rust_doc_comment(&event_item.annotations); // Use event doc for struct
 
-                // Use machine FQN prefix as scope for resolving field types inside event structs
-                // TODO: Revisit this if events can be defined outside machines
-                let machine_fqn_prefix = format!(
-                    "{}.{}",
-                    context.get_package_for_machine(&ast.name).unwrap_or(""), // Helper needed
-                    ast.name
-                );
-
                 // Generate fields, resolving types using the context
                 let fields_results: Result<Vec<TokenStream>, CodegenError> = event_item
                     .fields
                     .iter()
                     .map(|field| {
                         let field_name = &field.name;
-                        // Resolve field type using context and machine scope
-                        let field_type_ts = map_field_type_to_rust_type(
-                            &field.field_type,
-                            context,
-                            &machine_fqn_prefix, // Pass machine FQN as scope
-                        )?;
+                        // Use updated map_field_type_to_rust_type without context
+                        let field_type_tokens = map_field_type_to_rust_type(&field.field_type)?;
                         let field_doc_comment = generate_rust_doc_comment(&field.annotations);
                         Ok(quote! {
                             #field_doc_comment
-                            pub #field_name: #field_type_ts
+                            pub #field_name: #field_type_tokens
                         })
                     })
                     .collect(); // Collect results for fields
@@ -493,7 +471,7 @@ pub fn generate_rust_code(
 
     // Event enum and payload struct generation
     let event_derive_tokens = quote! { #[derive(Debug, Clone, PartialEq)] };
-    let event_defs = generate_event_enum_and_structs(machine_ast, &ResolutionContext { symbol_table: &HashMap::new() }, &event_derive_tokens)?;
+    let event_defs = generate_event_enum_and_structs(machine_ast, &event_derive_tokens)?;
 
     // Machine struct definition
     let machine_struct_doc_comment = generate_rust_doc_comment(&machine_ast.annotations);
@@ -523,11 +501,13 @@ pub fn generate_rust_code(
     > = HashMap::new();
 
     for transition in &machine_ast.transitions {
+        // Find the 'On' element to determine the event type for this transition's callbacks
         let on_element = transition.elements.iter().find_map(|el| match el {
             TransitionElement::On { event, .. } => Some(event),
             _ => None,
         });
-        let event_ast_item =
+         // Get the simple name of the event for lookup
+         let event_ast_item =
             on_element.and_then(|event_qident| {
                 let event_name = get_simple_ident(event_qident);
                  machine_ast.events.iter().find(|e| &e.name == event_name)
@@ -564,11 +544,11 @@ pub fn generate_rust_code(
 
     // Collect entry/exit actions from states
     for state in &machine_ast.states {
-        for entry_fn_ident in &state.entry_actions {
-            entry_actions.insert(entry_fn_ident);
+        for entry_fn_qident in &state.entry_actions {
+            entry_actions.insert(entry_fn_qident);
         }
-        for exit_fn_ident in &state.exit_actions {
-            exit_actions.insert(exit_fn_ident);
+        for exit_fn_qident in &state.exit_actions {
+            exit_actions.insert(exit_fn_qident);
         }
     }
 
@@ -576,11 +556,11 @@ pub fn generate_rust_code(
     for guard_fn_qident in &guards {
         let guard_fn_ident = get_simple_ident(guard_fn_qident);
         // Find the most specific event type if possible, otherwise use generic &Event
-        let event_defs = callback_event_map.get(&guard_fn_ident.to_string());
+        let event_defs = callback_event_map.get(&guard_fn_ident.to_string()); // Lookup by simple name string
         let event_type_sig = determine_callback_event_signature(event_defs, &event_enum_name);
 
         callback_signatures.push(quote! {
-            // Guard methods take immutable self, current state, and event/payload
+            // Use simple ident for trait method name
             fn #guard_fn_ident(&self, state: &#state_enum_name, event: #event_type_sig) -> bool;
         });
     }
@@ -589,31 +569,29 @@ pub fn generate_rust_code(
     for action_fn_qident in &actions {
         let action_fn_ident = get_simple_ident(action_fn_qident);
         // Find the most specific event type if possible, otherwise use generic &Event
-        let event_defs = callback_event_map.get(&action_fn_ident.to_string());
+        let event_defs = callback_event_map.get(&action_fn_ident.to_string()); // Lookup by simple name string
         let event_type_sig = determine_callback_event_signature(event_defs, &event_enum_name);
 
         callback_signatures.push(quote! {
-            // Action methods take mutable self and event/payload
+            // Use simple ident for trait method name
              fn #action_fn_ident(&mut self, event: #event_type_sig);
         });
     }
 
     // Generate entry action signatures
     for entry_fn_qident in &entry_actions {
-        let entry_fn_ident = get_simple_ident(entry_fn_qident);
-        // Entry actions triggered after state change, takes mutable self
-        // TODO: Consider adding context/state reference if needed
+         let entry_fn_ident = get_simple_ident(entry_fn_qident);
         callback_signatures.push(quote! {
+            // Use simple ident for trait method name
             fn #entry_fn_ident(&mut self);
         });
     }
 
     // Generate exit action signatures
     for exit_fn_qident in &exit_actions {
-        let exit_fn_ident = get_simple_ident(exit_fn_qident);
-        // Exit actions triggered before state change, takes mutable self
-        // TODO: Consider adding context/state reference if needed
+         let exit_fn_ident = get_simple_ident(exit_fn_qident);
         callback_signatures.push(quote! {
+            // Use simple ident for trait method name
             fn #exit_fn_ident(&mut self);
         });
     }
@@ -775,7 +753,7 @@ pub enum CodegenError {
     FormatIoError(#[from] std::io::Error),
     #[error("Failed to format generated code: {0}")]
     FormatError(String),
-    // Removed SymbolNotFound and PackageNotFound variants
+    // Removed symbol/package related errors
 }
 
 // Centralized From implementation for std::fmt::Error
@@ -912,7 +890,7 @@ mod tests {
     #[test]
     fn generates_basic_structures() {
         let input = create_test_ast();
-        let result = generate_rust_code(&input, &ResolutionContext { symbol_table: &HashMap::new() });
+        let result = generate_rust_code(&input);
 
         assert!(result.is_ok());
         let generated_code = result.unwrap();
@@ -956,7 +934,7 @@ mod tests {
     #[test]
     fn generates_impl_block_and_new() {
         let input = create_test_ast();
-        let result = generate_rust_code(&input, &ResolutionContext { symbol_table: &HashMap::new() });
+        let result = generate_rust_code(&input);
         assert!(result.is_ok());
 
         let generated_code = result.unwrap();
@@ -1008,7 +986,7 @@ mod tests {
     #[test]
     fn generates_on_event_method_with_transitions() {
         let input = create_test_ast();
-        let result = generate_rust_code(&input, &ResolutionContext { symbol_table: &HashMap::new() });
+        let result = generate_rust_code(&input);
         assert!(result.is_ok());
 
         let generated_code = result.unwrap();
@@ -1061,7 +1039,7 @@ mod tests {
     #[test]
     fn generates_guard_and_action_placeholders_module() {
         let input = create_test_ast();
-        let result = generate_rust_code(&input, &ResolutionContext { symbol_table: &HashMap::new() });
+        let result = generate_rust_code(&input);
         assert!(result.is_ok());
 
         let generated_code = result.unwrap();
@@ -1084,7 +1062,7 @@ mod tests {
         let mut input = create_test_ast();
         input.transitions.clear(); // Remove all transitions
 
-        let result = generate_rust_code(&input, &ResolutionContext { symbol_table: &HashMap::new() });
+        let result = generate_rust_code(&input);
         assert!(result.is_ok());
 
         let generated_code = result.unwrap();
@@ -1141,7 +1119,7 @@ mod tests {
     #[test]
     fn generates_current_state_getter() {
         let input = create_test_ast();
-        let result = generate_rust_code(&input, &ResolutionContext { symbol_table: &HashMap::new() });
+        let result = generate_rust_code(&input);
         assert!(result.is_ok());
 
         let generated_code = result.unwrap();
@@ -1356,7 +1334,7 @@ mod tests {
     #[test]
     fn generates_rust_code_with_doc_comments() {
         let ast = create_annotated_test_ast();
-        let result = generate_rust_code(&ast, &ResolutionContext { symbol_table: &HashMap::new() });
+        let result = generate_rust_code(&ast);
         assert!(result.is_ok(), "Rust generation failed: {:?}", result.err());
         let code = result.unwrap();
         println!("--- Generated Rust Code with Docs ---\n{}", code); // For inspection

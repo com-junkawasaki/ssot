@@ -1,27 +1,26 @@
 // ssot.pest - Grammar for SSOT FSM definition
 
 // Basic whitespace and comments (Silent rules)
-WHITESPACE = _{ (" " | "\t" | "\n" | "\r")+ }
-// Allow both # and // style comments
+WHITESPACE = _{ (" " | "\t" | "\n" | "\r")+ } // Make WHITESPACE silent
 COMMENT    = _{ ("#" | "//") ~ (!("\n" | "\r") ~ ANY)* }
-// Revert optional_whitespace to simple silent rule
-optional_whitespace = _{ (WHITESPACE | COMMENT)* } // Restore SILENT
+// Revert optional_whitespace to simple silent rule (likely not needed if WHITESPACE is silent)
+optional_whitespace = _{ (WHITESPACE | COMMENT)* }
 
 // ====================================
 //  Top Level Structure
 // ====================================
 
 // parser.rs expects `ssot_file` as the top rule
-// Separate imports from other top level items
+// Revert to simpler rule, relying on silent WHITESPACE
 ssot_file = { SOI ~ file_id ~ package_decl? ~ import_decl* ~ top_level_item* ~ EOI }
 
 file_id = { "@" ~ hex_literal ~ ";" }
 hex_literal = @{ "0x" ~ ASCII_HEX_DIGIT+ }
 
-package_decl = { "package" ~ WHITESPACE ~ package_name ~ ";" }
+package_decl = { "package" ~ package_name ~ ";" }
 package_name = @{ ident ~ ("." ~ ident)* }
 
-import_decl = { "import" ~ WHITESPACE ~ package_name ~ ";" } // Added import declaration
+import_decl = { "import" ~ package_name ~ ";" }
 
 // Updated: Added struct_def
 top_level_item = { annotation | state_machine | struct_def }
@@ -32,7 +31,7 @@ top_level_item = { annotation | state_machine | struct_def }
 
 annotation = { "$" ~ ident ~ annotation_value? ~ ";" }
 annotation_value = { "(" ~ annotation_value_inner? ~ ")" }
-annotation_value_inner = { array_literal | literal | ident }
+annotation_value_inner = { array_literal | literal | ident_list | ident }
 
 literal = { string_literal | number_literal | boolean_literal }
 
@@ -40,6 +39,7 @@ string_literal = @{ "\"" ~ ( !("\\" | "\"") ~ ANY )* ~ "\"" }
 number_literal = @{ "-"? ~ ASCII_DIGIT+ } // Corresponds to ast::AnnotationValue::NumberLiteral
 boolean_literal = @{ "true" | "false" }
 array_literal = { "[" ~ (string_literal ~ ("," ~ string_literal)*)? ~ "]" }
+ident_list = { ident ~ ("," ~ ident)* }
 
 // ====================================
 //  Identifiers and Qualified Identifiers
@@ -54,7 +54,7 @@ qualified_ident = @{ ident ~ ("." ~ ident)? }
 //  State Machine Definition
 // ====================================
 
-state_machine = { "stateMachine" ~ WHITESPACE ~ ident ~ "{" ~ WHITESPACE?
+state_machine = { "stateMachine" ~ ident ~ "{" ~ WHITESPACE?
     ~ machine_item* // Allow machine items directly
     ~ WHITESPACE? ~ "}" }
 
@@ -80,14 +80,14 @@ exit_action = { "exit" ~ ":" ~ qualified_ident ~ ";" }  // Use qualified_ident
 //  Events Block
 // ====================================
 
-events_block = { "events" ~ WHITESPACE? ~ "{" ~ WHITESPACE? ~ event_item* ~ WHITESPACE? ~ "}" }
-// Updated: Allow use_decl within events block
-event_item = { event_struct | use_decl }
+events_block = { "events" ~ "{" ~ event_item* ~ "}" }
+// Updated: Allow use_decl and annotations within events block
+event_item = { annotation | event_struct | use_decl }
 
-event_struct = { annotation* ~ "event" ~ WHITESPACE ~ ident ~ event_ordinal ~ event_body? ~ ";" }
+event_struct = { annotation* ~ "event" ~ ident ~ event_ordinal ~ event_body? ~ ";" }
 event_ordinal = { "@" ~ integer_literal }
-event_body = { "{" ~ WHITESPACE? ~ event_field* ~ WHITESPACE? ~ "}" }
-event_field = { annotation* ~ ident ~ ":" ~ field_type ~ field_ordinal ~ ";" }
+event_body = { "{" ~ (annotation | event_field)* ~ "}" } // Allow annotations or fields
+event_field = { annotation* ~ ident ~ ":" ~ field_type ~ field_ordinal? ~ ";" } // Made field_ordinal optional
 field_ordinal = { "@" ~ integer_literal }
 
 field_type = { primitive_type | list_type | type_identifier }
@@ -99,7 +99,7 @@ type_identifier = { qualified_ident } // Use qualified_ident
 //  Struct Definition (New)
 // ====================================
 
-struct_def = { annotation* ~ "struct" ~ WHITESPACE ~ ident ~ struct_body? ~ ";" }
+struct_def = { annotation* ~ "struct" ~ ident ~ struct_body? ~ ";" }
 struct_body = { "{" ~ WHITESPACE? ~ struct_field* ~ WHITESPACE? ~ "}" }
 // Reuse event_field structure for struct fields
 struct_field = { event_field }
@@ -110,7 +110,7 @@ struct_field = { event_field }
 
 transitions_block = { "transitions" ~ WHITESPACE? ~ "{" ~ WHITESPACE? ~ transition_item* ~ WHITESPACE? ~ "}" }
 transition_item = { annotation* ~ transition_header ~ transition_body ~ ";" }
-transition_header = { ("transition" ~ WHITESPACE ~ ident ~ WHITESPACE)? ~ "from" ~ WHITESPACE ~ ident ~ WHITESPACE ~ "to" ~ WHITESPACE ~ ident }
+transition_header = { ("transition" ~ ident ~ WHITESPACE)? ~ "from" ~ ident ~ WHITESPACE ~ "to" ~ ident }
 transition_body = { "{" ~ WHITESPACE? ~ transition_element* ~ WHITESPACE? ~ "}" }
 transition_element = { on_trigger | guard_condition | action_effect | annotation }
 
@@ -123,7 +123,7 @@ transition_ordinal = { WHITESPACE ~ "@" ~ integer_literal }
 //  Context Block (Placeholder)
 // ====================================
 
-context_block = { "context" ~ WHITESPACE? ~ "{" ~ WHITESPACE? ~ context_field* ~ WHITESPACE? ~ "}" }
+context_block = { "context" ~ "{" ~ WHITESPACE? ~ context_field* ~ WHITESPACE? ~ "}" }
 context_field = { event_field } // Reuse event_field structure for now
 
 // ====================================
