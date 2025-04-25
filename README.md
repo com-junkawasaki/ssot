@@ -17,47 +17,60 @@ This project is organized as a Cargo workspace:
 
 *   `crates/fsm-dsl`: Defines the `.ssot` grammar (`ssot.pest`), Abstract Syntax Tree (`ast.rs`), and parser (`parser.rs`) using `pest`.
 *   `crates/fsm-codegen`: Consumes the AST from `fsm-dsl` to generate:
-    *   **Rust Code:** State/event enums, machine struct with transition logic, callback traits (`lib.rs`, `codegen_rust.rs`).
+    *   **Rust Code:** State/event enums, machine struct with transition logic, callback traits (`lib.rs`).
     *   **Cap'n Proto Schemas:** `.capnp` definitions mirroring the FSM structure (`codegen_capnp.rs`).
     *   **TypeScript Types:** Interfaces and type aliases for states, events, and payloads (`codegen_ts.rs`).
+    *   **XState Configuration:** TypeScript code compatible with XState v5 (`codegen_xstate.rs`).
+    *   **SCXML Documents:** Standard XML representation for state machines (`codegen_scxml.rs`).
 *   `crates/fsm-example`: Demonstrates usage with a sample `spec/my_fsm.ssot` and a `build.rs` script for invoking the generators.
+*   `crates/ssot-linter`: (Placeholder) Intended for linting and validating `.ssot` files.
 
 ## Usage (Example Workflow)
 
 1.  **Define FSM:** Create/edit a `.ssot` file (e.g., `crates/fsm-example/spec/my_fsm.ssot`).
 2.  **Annotate:** Use annotations to specify output locations and add documentation:
-    ```fsm
-    @0x...; // File ID (required, Cap'n Proto compatible)
+    ```ssot
+    @0xcafebabe12345678; // File ID (required, Cap'n Proto compatible)
 
     // Specify output directories (required at top-level or per machine)
     $rust_out("src/generated");
-    $capnp_out("schema/capnp"); // Optional
-    $ts_out("schema/ts");       // Optional
+    $capnp_out("target/generated/capnp"); // Optional
+    $ts_out("target/generated/ts");       // Optional
+    $xstate_out("target/generated/xstate"); // Optional
+    $scxml_out("target/generated/scxml");   // Optional
 
-    $description("Description for the whole state machine.");
-    stateMachine MyMachine {
+    $description("A simple light switch FSM.");
+    stateMachine LightSwitch {
+        $initial(Off);
         states {
-            $description("Initial state.");
-            Idle @0;
-            $description("Active state.");
-            Running @1;
+            $description("The light is off.");
+            Off @0;
+            $description("The light is on.");
+            On @1;
         }
         events {
-            $description("Event to start.");
-            event Start @0 {
-                $description("User ID.");
-                userId @0 : UInt64;
+            $description("Toggles the light state.");
+            event Toggle @0 {}
+            $description("Turns the light on with a specific brightness.");
+            event TurnOn @1 {
+                $description("Brightness level (0-255).");
+                brightness @0 : UInt8;
             }
-            $description("Event to stop.");
-            event Stop @1;
+            $description("Turns the light off.");
+            event TurnOff @2 {}
         }
-        // ... transitions ...
+        transitions {
+            transition ToggleOffToOn from Off to On { on @0 Toggle; action @1 activate_light; };
+            transition ToggleOnToOff from On to Off { on @0 Toggle; action @1 deactivate_light; };
+            transition SpecificTurnOn from Off to On { on @1 TurnOn; action @1 activate_light_specific; };
+            transition SpecificTurnOff from On to Off { on @2 TurnOff; action @1 deactivate_light_specific; };
+        }
     }
     ```
 3.  **Integrate with `build.rs`:** In your crate's `build.rs`, parse the `.ssot` file and call the generation functions from `fsm-codegen`. (See `crates/fsm-example/build.rs`).
 4.  **Build:** Run `cargo build`. The `build.rs` script executes, generating files into the specified output directories before compiling your crate.
-    *   The build script parses `.ssot`, calls `fsm_codegen::generate_*`, and writes outputs (e.g., `src/generated/my_machine.rs`, `schema/capnp/MyMachine.capnp`).
-    *   Your crate code (e.g., `fsm-example/src/main.rs`) can then `include!` or import the generated artifacts.
+    *   The build script parses `.ssot`, calls `fsm_codegen::generate_*`, and writes outputs (e.g., `src/generated/light_switch.rs`, `target/generated/capnp/LightSwitch.capnp`).
+    *   Your crate code (e.g., `fsm-example/src/lib.rs`) can then import the generated artifacts.
 
 *(Refer to `fsm-example/build.rs` for a concrete implementation.)*
 
@@ -68,7 +81,9 @@ This project is organized as a Cargo workspace:
     *   `$rust_out("path/to/dir")`: **Required** (top-level or per-machine). Generates `<MachineNameSnakeCase>.rs`.
     *   `$capnp_out("path/to/dir")`: Optional. Generates `<MachineName>.capnp`.
     *   `$ts_out("path/to/dir")`: Optional. Generates `<MachineName>.types.ts`.
-*   **Documentation:** `$description("...")`: Optional. Adds doc comments to generated Rust (`///`), Cap'n Proto (`#`), and TypeScript (`/** ... */`). Applicable to `stateMachine`, `state`, `event`, `field`.
+    *   `$xstate_out("path/to/dir")`: Optional. Generates `<MachineName>.xstate.ts`.
+    *   `$scxml_out("path/to/dir")`: Optional. Generates `<MachineName>.scxml`.
+*   **Documentation:** `$description("...")`: Optional. Adds doc comments to generated Rust (`///`), Cap'n Proto (`#`), TypeScript (`/** ... */`), XState comments, SCXML `<datamodel>` comments.
 *   **Initial State:** `$initial(StateName)`: **Required** on `stateMachine`. Specifies the entry state.
 *   *(Others like `$version`, `$derive` might be parsed but aren't fully utilized yet.)*
 
