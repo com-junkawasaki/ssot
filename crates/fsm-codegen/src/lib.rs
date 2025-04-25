@@ -109,6 +109,14 @@ fn generate_rust_doc_comment(annotations: &[Annotation]) -> TokenStream {
     doc_stream
 }
 
+// Helper to get the simple Ident from a QualifiedIdent
+fn get_simple_ident(qident: &QualifiedIdent) -> &TokenIdent {
+    match qident {
+        QualifiedIdent::Simple(id) => id,
+        QualifiedIdent::Qualified { name, .. } => name,
+    }
+}
+
 /// Generates the aggregated Event enum.
 /// Assumes events are simple identifiers for now (no associated data structs yet).
 // This function is now superseded by generate_event_enum_and_structs, keep or remove?
@@ -358,68 +366,66 @@ fn generate_event_enum_and_structs(
     ast: &StateMachine,
     derive_tokens: &TokenStream,
 ) -> Result<TokenStream, CodegenError> {
-    let event_enum_name = format_ident!("Event");
-    let event_payload_struct_name = format_ident!("EventPayload"); // Convention for associated data
+    let mut event_structs = quote! {};
+    let mut event_variants = Vec::new();
 
-    let mut event_structs = Vec::new();
-    let variants = ast
-        .events
-        .iter()
-        .map(|event_item| {
-            let variant_name = &event_item.name; // Use the Ident directly
-            let variant_doc_comment = generate_rust_doc_comment(&event_item.annotations);
+    for item in &ast.events {
+        let event_name = &item.name;
+        let event_doc_comment = generate_rust_doc_comment(&item.annotations);
 
-            if event_item.fields.is_empty() {
-                // Event without payload
-                quote! {
-                    #variant_doc_comment
-                    #variant_name
-                }
-            } else {
-                // Event with payload struct
-                let struct_name = format_ident!("{}{}", variant_name, event_payload_struct_name);
-                let struct_doc_comment = generate_rust_doc_comment(&event_item.annotations); // Use event doc for struct too?
-
-                let fields = event_item.fields.iter().map(|field| {
+        if item.fields.is_empty() {
+            // Event without payload
+            event_variants.push(quote! {
+                #event_doc_comment
+                #event_name
+            });
+        } else {
+            // Event with payload
+            let payload_struct_name = format_ident!("{}", item.name);
+            let fields: Vec<TokenStream> = item
+                .fields
+                .iter()
+                .map(|field| {
                     let field_name = &field.name;
-                    let field_type_ts = map_field_type_to_rust_type(&field.field_type)?;
+                    // Use updated map_field_type_to_rust_type without context
+                    let field_type_tokens = map_field_type_to_rust_type(&field.field_type)?;
                     let field_doc_comment = generate_rust_doc_comment(&field.annotations);
-                    quote! {
+                    Ok(quote! {
                         #field_doc_comment
-                        pub #field_name: #field_type_ts
-                    }
-                });
+                        pub #field_name: #field_type_tokens
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?; // Collect results here
 
-                // Generate the payload struct definition
-                event_structs.push(quote! {
-                    #struct_doc_comment
-                    #derive_tokens // Derive traits for payload struct too
-                    pub struct #struct_name {
-                        #(#fields),*
-                    }
-                });
-
-                // Generate the enum variant with the payload struct
-                quote! {
-                    #variant_doc_comment
-                    #variant_name(#struct_name)
+            let payload_doc_comment = generate_rust_doc_comment(&item.annotations); // Use event's doc for payload struct
+            event_structs.extend(quote! {
+                #payload_doc_comment
+                #derive_tokens
+                pub struct #payload_struct_name {
+                    #(#fields),*
                 }
-            }
-        })
-        .collect::<Vec<_>>(); // Collect variants
+            });
 
+            event_variants.push(quote! {
+                #event_doc_comment
+                #event_name(#payload_struct_name)
+            });
+        }
+    }
+
+    let event_enum_name = format_ident!("Event");
     let event_enum_doc_comment = generate_rust_doc_comment(&[]); // TODO: Get annotations for the enum itself?
+    let event_enum = quote! {
+        #event_enum_doc_comment
+        #derive_tokens
+        pub enum #event_enum_name {
+            #(#event_variants),*
+        }
+    };
 
     Ok(quote! {
-        // --- Event Payload Structs ---
-        #(#event_structs)*
-
-        // --- Event Enum ---
-        #event_enum_doc_comment
-        #derive_tokens // Use the same derives as State and Machine
-        pub enum #event_enum_name {
-            #(#variants),*
-        }
+        #event_structs
+        #event_enum
     })
 }
 

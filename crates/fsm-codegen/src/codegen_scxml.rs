@@ -160,6 +160,14 @@ fn generate_scxml_action_content(
     content
 }
 
+// Helper to get the simple Ident from a QualifiedIdent
+fn get_simple_ident(qident: &fsm_dsl::ast::QualifiedIdent) -> &fsm_dsl::ast::Ident {
+    match qident {
+        fsm_dsl::ast::QualifiedIdent::Simple(id) => id,
+        fsm_dsl::ast::QualifiedIdent::Qualified { name, .. } => name,
+    }
+}
+
 pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, CodegenError> {
     let mut output = String::new();
     let indent = "  ";
@@ -216,7 +224,8 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
         // Entry Actions
         if !state.entry_actions.is_empty() {
             writeln!(output, "{indent}{indent}<onentry>")?;
-            for action_ident in &state.entry_actions {
+            for action_ident_q in &state.entry_actions {
+                let action_ident = get_simple_ident(action_ident_q);
                 let action_content = generate_scxml_action_content(
                     action_ident,
                     &ast.context,
@@ -230,7 +239,8 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
         // Exit Actions
         if !state.exit_actions.is_empty() {
             writeln!(output, "{indent}{indent}<onexit>")?;
-            for action_ident in &state.exit_actions {
+            for action_ident_q in &state.exit_actions {
+                let action_ident = get_simple_ident(action_ident_q);
                 let action_content = generate_scxml_action_content(
                     action_ident,
                     &ast.context,
@@ -283,9 +293,10 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
                 writeln!(output, ">")?;
 
                 // Add actions as executable content within <script>
-                for action_ident in actions { // Iterate over &Ident
+                for action_ident_q in actions { // Iterate over &QualifiedIdent
+                    let action_ident = get_simple_ident(action_ident_q);
                     let action_content = generate_scxml_action_content(
-                        action_ident, // Pass &Ident directly
+                        action_ident,
                         &ast.context,
                         &indent.repeat(3),
                     );

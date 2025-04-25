@@ -54,7 +54,8 @@ pub(crate) fn generate_capnp_schema_internal(
     let mut struct_id_counter = 2u64; // Start struct IDs from @2
 
     // --- File ID ---
-    capnp_code.push_str(&format!("@0x{:x};\n\n", file_ast.file_id));
+    let file_id = file_ast.file_id;
+    capnp_code.push_str(&format!("@0x{:x};\n\n", file_id));
 
     // --- File Header Comment ---
     capnp_code.push_str(&generate_capnp_comment(&machine_ast.annotations, "")); // Add comment for the whole machine
@@ -64,9 +65,22 @@ pub(crate) fn generate_capnp_schema_internal(
     ));
     // Add package declaration if present (using annotation for now)
     // TODO: Use file_ast.package_declaration when available
-    if let Some(AnnotationValue::StringLiteral(pkg)) =
-        find_annotation_value(&file_ast.top_level_annotations, "capnpPackage")
-    {
+    let package_name = file_ast.package_declaration.as_deref()
+        .or_else(|| {
+            file_ast.items.iter().find_map(|item| {
+                if let TopLevelItem::Annotation(anno) = item {
+                    if anno.name == "capnpPackage" {
+                         if let Some(AnnotationValue::StringLiteral(pkg)) = &anno.value {
+                             return Some(pkg.as_str())
+                         }
+                    }
+                }
+                None
+            })
+        });
+    if let Some(pkg) = package_name {
+        // Cap'n Proto uses dot notation for package/scope
+        // Simple heuristic: replace :: or / with . (might need refinement)
         capnp_code.push_str(&format!("# package: {}\n", pkg));
     }
     capnp_code.push_str("\n");
