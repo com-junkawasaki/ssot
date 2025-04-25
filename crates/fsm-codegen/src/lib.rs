@@ -718,6 +718,13 @@ pub enum CodegenError {
     // Potential future errors: IO errors, etc.
 }
 
+// Add the From implementation here, once, centrally.
+impl From<std::fmt::Error> for CodegenError {
+    fn from(err: std::fmt::Error) -> Self {
+        CodegenError::GenerationError(format!("Failed to write to string: {}", err))
+    }
+}
+
 // --- Unit Tests ---
 #[cfg(test)]
 mod tests {
@@ -756,13 +763,13 @@ mod tests {
                     name: ident("Start"),
                     ordinal: 0, // Added ordinal
                     fields: vec![],
-                    // Removed annotations
+                    annotations: vec![], // Added missing field
                 },
                 MessageItem {
                     name: ident("Stop"),
                     ordinal: 1, // Added ordinal
                     fields: vec![],
-                    // Removed annotations
+                    annotations: vec![], // Added missing field
                 },
                 MessageItem {
                     name: ident("Update"),
@@ -771,21 +778,25 @@ mod tests {
                         name: ident("value"),
                         ordinal: 0, // Added ordinal
                         field_type: FieldType::Int32,
-                        // Removed annotations
+                        annotations: vec![], // Added missing field
                     }],
-                    // Removed annotations
+                    annotations: vec![], // Added missing field
                 },
             ],
             states: vec![
                 StateItem {
                     name: ident("Idle"),
-                    ordinal: 0, // Added ordinal
-                                // Removed annotations
+                    ordinal: 0,            // Added ordinal
+                    annotations: vec![],   // Added missing field
+                    entry_actions: vec![], // Added missing field
+                    exit_actions: vec![],  // Added missing field
                 },
                 StateItem {
                     name: ident("Running"),
-                    ordinal: 1, // Added ordinal
-                                // Removed annotations
+                    ordinal: 1,            // Added ordinal
+                    annotations: vec![],   // Added missing field
+                    entry_actions: vec![], // Added missing field
+                    exit_actions: vec![],  // Added missing field
                 },
             ],
             transitions: vec![
@@ -832,6 +843,7 @@ mod tests {
                     annotations: vec![], // Added annotations field
                 },
             ],
+            context: vec![], // Added missing field
         }
     }
 
@@ -1184,11 +1196,6 @@ mod tests {
         ); // For inspection
     }
 
-    // Helper to create Ident for tests
-    fn ident(s: &str) -> proc_macro2::Ident {
-        proc_macro2::Ident::new(s, proc_macro2::Span::call_site())
-    }
-
     // Updated test AST creator with annotations
     fn create_annotated_test_ast() -> StateMachine {
         StateMachine {
@@ -1250,6 +1257,8 @@ mod tests {
                     }],
                     name: ident("Idle"),
                     ordinal: 0,
+                    entry_actions: vec![], // Added missing field
+                    exit_actions: vec![],  // Added missing field
                 },
                 StateItem {
                     annotations: vec![Annotation {
@@ -1259,6 +1268,8 @@ mod tests {
                     }],
                     name: ident("Running"),
                     ordinal: 1,
+                    entry_actions: vec![], // Added missing field
+                    exit_actions: vec![],  // Added missing field
                 },
             ],
             transitions: vec![
@@ -1283,6 +1294,7 @@ mod tests {
                     annotations: vec![],
                 },
             ],
+            context: vec![], // Added missing field
         }
     }
 

@@ -1,7 +1,7 @@
 //! Cap'n Proto schema generation logic.
 
 use crate::CodegenError;
-use fsm_dsl::ast::{AnnotationValue, FieldType, Ident, SsotFile, StateMachine};
+use fsm_dsl::ast::{AnnotationValue, FieldType, SsotFile, StateMachine};
 
 // Function to map DSL FieldType to Cap'n Proto type string
 fn map_field_type_to_capnp_type(field_type: &FieldType) -> String {

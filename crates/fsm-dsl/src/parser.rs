@@ -800,7 +800,7 @@ fn parse_transitions_block(pair: Pair<Rule>) -> Result<Vec<TransitionItem>, Pars
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use pretty_assertions::assert_eq;
     use proc_macro2::Ident;
     use proc_macro2::Span;

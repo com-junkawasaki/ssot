@@ -1,7 +1,7 @@
 //! XState machine definition generation logic.
 
 use crate::{find_annotation_value, CodegenError};
-use fsm_dsl::ast::{AnnotationValue, FieldDef, FieldType, StateMachine, TransitionElement};
+use fsm_dsl::ast::{AnnotationValue, FieldType, StateMachine, TransitionElement};
 use heck::ToUpperCamelCase; // For event type casing if needed
 use std::fmt::Write; // For efficient string building
 
@@ -334,11 +334,4 @@ pub(crate) fn generate_xstate_machine_internal(ast: &StateMachine) -> Result<Str
     writeln!(output, "}});")?;
 
     Ok(output)
-}
-
-// Helper to handle potential Write errors, converting them to CodegenError
-impl From<std::fmt::Error> for CodegenError {
-    fn from(err: std::fmt::Error) -> Self {
-        CodegenError::GenerationError(format!("Failed to write to string: {}", err))
-    }
 }
