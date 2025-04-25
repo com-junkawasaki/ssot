@@ -1,0 +1,24 @@
+[package]
+name = "fsm-codegen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Use the actual AST definitions from fsm-dsl
+fsm-dsl = { path = "../fsm-dsl" }
+
+# We need syn to parse the generated code for prettyplease
+syn = { version = "2.0", features = ["full"] }
+
+# We might need quoting for generated code
+quote = "1.0"
+# Add proc_macro2
+proc-macro2 = "1.0"
+# And formatting
+prettyplease = "0.2"
+
+thiserror = "1.0" # For error handling
+
+[dev-dependencies]
+# Add dev dependencies if needed for tests later
+pretty_assertions = "1.4" 

@@ -1,0 +1,16 @@
+[package]
+name = "ssot-linter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pest = "2.7"
+pest_derive = "2.7"
+thiserror = "1.0" # For error handling
+# Add LSP dependencies
+lsp-server = "0.7"
+lsp-types = { version = "0.95", features = ["proposed"] } # Use features as needed
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+crossbeam-channel = "0.5" # For message passing
+once_cell = "1.19" # Added for Lazy static

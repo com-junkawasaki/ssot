@@ -1,0 +1,13 @@
+[package]
+name = "fsm-example"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Add regular dependencies here if needed
+
+[build-dependencies]
+fsm-dsl = { path = "../fsm-dsl" }
+fsm-codegen = { path = "../fsm-codegen" }
+glob = "0.3" # For finding .ssot files
+thiserror = "1.0" # For error handling in build script 
