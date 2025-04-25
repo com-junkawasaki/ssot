@@ -9,9 +9,9 @@
 
 use crate::ast::{
     self, Annotation, AnnotationValue, FieldDef, FieldType, MessageItem, SsotFile, StateItem,
-    StateMachine, TransitionItem,
+    StateMachine, TransitionItem, ImportDeclaration, UseDeclaration, QualifiedIdent, TransitionElement,
 };
-use pest::iterators::Pair;
+use pest::iterators::{Pair, Pairs};
 use pest::Parser;
 use pest_derive::Parser;
 use proc_macro2::Ident;
@@ -152,6 +152,7 @@ pub fn parse_str(input: &str) -> Result<SsotFile, ParseError> {
 
     let mut file_id: Option<u64> = None;
     let mut package_declaration: Option<String> = None;
+    let mut imports: Vec<ImportDeclaration> = Vec::new();
     let mut top_level_annotations: Vec<Annotation> = Vec::new();
     let mut state_machines: Vec<StateMachine> = Vec::new();
 
@@ -162,9 +163,12 @@ pub fn parse_str(input: &str) -> Result<SsotFile, ParseError> {
                 file_id = Some(parse_hex_literal(pair.into_inner().next().unwrap())?);
             }
             Rule::package_decl => {
-                package_declaration = Some(pair.into_inner().next().unwrap().as_str().to_string());
+                package_declaration = Some(parse_package_name(pair.into_inner().next().unwrap())?);
             }
-            // Handle the top_level_item wrapper rule
+            Rule::import_decl => {
+                let package_name = parse_package_name(pair.into_inner().next().unwrap())?;
+                imports.push(ImportDeclaration { package_name });
+            }
             Rule::top_level_item => {
                 let inner_item = pair.into_inner().next().ok_or_else(|| {
                     ParseError::SemanticError("Empty top_level_item encountered".to_string())
@@ -185,9 +189,6 @@ pub fn parse_str(input: &str) -> Result<SsotFile, ParseError> {
                     }
                 }
             }
-            // Redundant arms removed as top_level_item handles them
-            // Rule::annotation => { ... }
-            // Rule::state_machine => { ... }
             Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
             Rule::EOI => break, // EOI marks the end of the inner pairs for ssot_file
             _ => {
@@ -209,6 +210,7 @@ pub fn parse_str(input: &str) -> Result<SsotFile, ParseError> {
     Ok(SsotFile {
         file_id: file_id.unwrap(), // Safe now after check
         package_declaration,
+        imports,
         top_level_annotations,
         state_machines,
     })
@@ -329,10 +331,11 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
     println!("Parsing state_machine body for: {}", name);
 
     let mut annotations = Vec::new();
+    let mut use_declarations = Vec::new();
     let mut states = Vec::new();
     let mut events = Vec::new();
     let mut transitions = Vec::new();
-    let context_fields = Vec::new();
+    let mut context = Vec::new();
 
     // Iterate over items inside the stateMachine block {}
     for item_pair in inner {
@@ -370,13 +373,19 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
                 }
                 annotations.push(annotation);
             }
+            Rule::use_decl => {
+                let target = parse_qualified_ident(actual_item_pair.into_inner().next().unwrap())?;
+                use_declarations.push(UseDeclaration { target });
+            }
             Rule::state_enum => {
                 println!("    -> Matched Rule::state_enum");
                 states = parse_state_enum(actual_item_pair)?;
             }
             Rule::event_definitions => {
                 println!("    -> Matched Rule::event_definitions");
-                events = parse_event_definitions(actual_item_pair)?;
+                let (parsed_events, block_uses) = parse_event_definitions(actual_item_pair)?;
+                events = parsed_events;
+                use_declarations.extend(block_uses);
             }
             Rule::transitions_block => {
                 println!("    -> Matched Rule::transitions_block");
@@ -410,10 +419,11 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
     Ok(StateMachine {
         name,
         annotations,
+        use_declarations,
         states,
         events,
         transitions,
-        context: context_fields,
+        context,
     })
 }
 
@@ -541,11 +551,26 @@ fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
 
 /// Parses the `events` block within a state machine.
 /// Corresponds to the `event_definitions` rule.
-fn parse_event_definitions(pair: Pair<Rule>) -> Result<Vec<MessageItem>, ParseError> {
-    pair.into_inner()
-        .filter(|p| p.as_rule() == Rule::event_struct) // Ensure only event_structs are processed
-        .map(parse_event_struct)
-        .collect()
+fn parse_event_definitions(pair: Pair<Rule>) -> Result<(Vec<MessageItem>, Vec<UseDeclaration>), ParseError> {
+    let mut events = Vec::new();
+    let mut use_declarations = Vec::new();
+    for item_pair in pair.into_inner() {
+        match item_pair.as_rule() {
+            Rule::event_struct => events.push(parse_event_struct(item_pair)?),
+            Rule::use_decl => {
+                let target = parse_qualified_ident(item_pair.into_inner().next().unwrap())?;
+                use_declarations.push(UseDeclaration { target });
+            }
+            Rule::WHITESPACE | Rule::COMMENT => {} // Ignore
+            _ => {
+                return Err(ParseError::UnexpectedRule {
+                    rule: item_pair.as_rule(),
+                    context: "events_block inner elements (event_item)".to_string(),
+                });
+            }
+        }
+    }
+    Ok((events, use_declarations))
 }
 
 /// Parses a single event definition within the `events` block.
@@ -909,6 +934,33 @@ fn parse_hex_literal(pair: Pair<Rule>) -> Result<u64, ParseError> {
     let hex_str = pair.as_str().trim_start_matches("0x");
     u64::from_str_radix(hex_str, 16)
         .map_err(|e| ParseError::InvalidNumber(hex_str.to_string(), e.to_string()))
+}
+
+/// Parses a package name rule (dot-separated identifiers) into a String.
+fn parse_package_name(pair: Pair<Rule>) -> Result<String, ParseError> {
+    // package_name rule is atomic (@) so just get the string value
+    Ok(pair.as_str().to_string())
+}
+
+/// Parses a qualified identifier rule (ident or ns.ident) into an ast::QualifiedIdent.
+fn parse_qualified_ident(pair: Pair<Rule>) -> Result<QualifiedIdent, ParseError> {
+    let mut inner = pair.into_inner();
+    let first_ident_pair = inner.next().ok_or_else(|| ParseError::SemanticError(
+        "Expected identifier within qualified_ident rule".to_string(),
+    ))?;
+    let first_ident = parse_ident(first_ident_pair)?;
+
+    if let Some(second_ident_pair) = inner.next() {
+        // If there's a second part, it's qualifier.name
+        let second_ident = parse_ident(second_ident_pair)?;
+        Ok(QualifiedIdent::Qualified {
+            qualifier: first_ident,
+            name: second_ident,
+        })
+    } else {
+        // Only one part, it's a simple identifier
+        Ok(QualifiedIdent::Simple(first_ident))
+    }
 }
 
 /// Unescapes string literals found in the grammar (removes surrounding quotes and handles escapes).

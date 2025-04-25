@@ -1,0 +1,141 @@
+@0x5507ACDC0DEBABE; // Unique File ID for this SSOT definition
+
+// --- Output Configuration ---
+// Define where generated artifacts for *this* FSM should go.
+// These are illustrative paths; adjust as needed if actually generated.
+$rust_out("target/generated/ssot_project_fsm/rust");
+$ts_out("target/generated/ssot_project_fsm/ts");
+$xstate_out("target/generated/ssot_project_fsm/xstate");
+$capnp_out("target/generated/ssot_project_fsm/capnp");
+$scxml_out("target/generated/ssot_project_fsm/scxml");
+
+$description("Models the development lifecycle and phases of the SSOT project itself.");
+stateMachine ProjectLifecycle {
+    $initial(Planning); // Start with defining what to build
+
+    states {
+        // Core Development Phases
+        $description("Initial phase: Defining requirements, features, and roadmap.");
+        Planning @0;
+
+        $description("Designing the DSL syntax, semantics, and AST structure.");
+        DesigningDSL @1;
+
+        $description("Implementing the parser based on the DSL design (e.g., using pest).");
+        ImplementingParser @2;
+
+        $description("Designing the code generation strategies and interfaces for various targets.");
+        DesigningCodeGen @3;
+
+        $description("Implementing code generators for specific targets (Rust, TS, Cap'n Proto, etc.).");
+        ImplementingCodeGen @4 { // Could be a sub-machine in a hierarchical model
+            entry: log_codegen_start;
+            exit: log_codegen_end;
+        }
+
+        $description("Writing unit, integration, and potentially e2e tests for all components.");
+        Testing @5;
+
+        $description("Creating and updating documentation (README, DSL spec, API docs).");
+        Documenting @6;
+
+        // Release & Maintenance
+        $description("All core features implemented, tested, and documented. Ready for a release.");
+        ReadyForRelease @7;
+
+        $description("The project version has been officially released.");
+        Released @8;
+
+        $description("Ongoing phase for bug fixes, minor enhancements, and refactoring.");
+        Maintenance @9;
+
+        // Future/Expansion Phases (Illustrative)
+        $description("Designing and implementing a Command Line Interface tool.");
+        DevelopingCLI @10;
+
+        $description("Designing and implementing a Language Server Protocol (LSP) for editor support.");
+        DevelopingLSP @11;
+    }
+
+    events {
+        // Triggering Phase Transitions
+        event StartDesign @0 {}
+        event FinalizeDSLSpec @1 {}
+        event StartParserImpl @2 {}
+        event CompleteParserImpl @3 {}
+        event StartCodeGenDesign @4 {}
+        event FinalizeCodeGenSpec @5 {}
+        event StartCodeGenImpl @6 {
+            target @0 : Text; // e.g., "Rust", "TypeScript", "All"
+        }
+        event CompleteCodeGenTarget @7 {
+            target @0 : Text;
+            success @1 : Bool;
+        }
+        event StartTesting @8 {}
+        event CompleteTesting @9 {
+            passed @0 : Bool;
+            coverage @1 : Float32; // Optional: test coverage percentage
+        }
+        event StartDocumentation @10 {}
+        event CompleteDocumentation @11 {}
+        event PrepareRelease @12 {
+            version @0 : Text;
+        }
+        event PublishRelease @13 {}
+        event ReportBug @14 {
+            description @0 : Text;
+            severity @1 : UInt8; // e.g., 1 (low) to 5 (critical)
+            component @2 : Text; // e.g., "Parser", "CodeGenRust"
+        }
+        event RequestFeature @15 {
+            description @0 : Text;
+        }
+        // Future Work Triggers
+        event StartCLI @16 {}
+        event StartLSP @17 {}
+    }
+
+    transitions {
+        // Normal Development Flow
+        transition PlanToDesignDSL from Planning to DesigningDSL { on @0 StartDesign; }
+        transition DesignDSLToImpl from DesigningDSL to ImplementingParser { on @1 FinalizeDSLSpec; action @0 finalize_dsl; }
+        transition ImplParserToDesignCodeGen from ImplementingParser to DesigningCodeGen { on @3 CompleteParserImpl; action @1 confirm_parser_stable; }
+        transition DesignCodeGenToImpl from DesigningCodeGen to ImplementingCodeGen { on @5 FinalizeCodeGenSpec; action @2 finalize_codegen_spec; }
+        transition StartSpecificCodeGen from DesigningCodeGen to ImplementingCodeGen { on @6 StartCodeGenImpl; guard @0 check_codegen_target; action @3 begin_target_generation; }
+
+        // Code Generation Completion (Simplified - assumes one target completion leads back or to Testing)
+        // A more complex model might wait for *all* targets.
+        transition CodeGenTargetDone from ImplementingCodeGen to ImplementingCodeGen { on @7 CompleteCodeGenTarget; guard @1 was_successful; action @4 log_target_success; }
+        transition CodeGenTargetFailed from ImplementingCodeGen to Maintenance { on @7 CompleteCodeGenTarget; guard @2 not_successful; action @5 log_target_failure; } // Go to maintenance on failure
+
+        // Move to Testing after core implementation
+        transition ParserImplToTesting from ImplementingParser to Testing { on @8 StartTesting; } // Can start testing parser early
+        transition CodeGenImplToTesting from ImplementingCodeGen to Testing { on @8 StartTesting; guard @3 all_required_targets_done; } // Test after core codegen
+
+        // Testing Outcomes
+        transition TestsPassedToDocs from Testing to Documenting { on @9 CompleteTesting; guard @4 tests_passed; action @6 record_test_results; }
+        transition TestsFailedToMaintenance from Testing to Maintenance { on @9 CompleteTesting; guard @5 tests_failed; action @7 assign_bug_fixing; }
+
+        // Documentation and Release
+        transition StartDocsAfterTesting from Testing to Documenting { on @10 StartDocumentation; guard @4 tests_passed; }
+        transition DocsDoneToReleaseReady from Documenting to ReadyForRelease { on @11 CompleteDocumentation; }
+        transition PrepareVersionForRelease from ReadyForRelease to ReadyForRelease { on @12 PrepareRelease; action @8 tag_release_candidate; } // Self-transition for prep steps
+        transition ReleaseToPublic from ReadyForRelease to Released { on @13 PublishRelease; action @9 publish_crates_io; }
+
+        // Bug/Feature Handling -> Maintenance or Planning
+        transition BugReportTriggersMaintenance from ImplementingParser to Maintenance { on @14 ReportBug; }
+        transition BugReportTriggersMaintenance_CodeGen from ImplementingCodeGen to Maintenance { on @14 ReportBug; }
+        transition BugReportTriggersMaintenance_Testing from Testing to Maintenance { on @14 ReportBug; }
+        transition BugReportTriggersMaintenance_Released from Released to Released { on @14 ReportBug; action @10 schedule_bug_fix; } // Stay in Released but schedule fix
+        transition FeatureRequestTriggersPlanning from Released to Planning { on @15 RequestFeature; } // New features go back to planning
+        transition FeatureRequestTriggersPlanning_Maint from Maintenance to Planning { on @15 RequestFeature; }
+
+        // Starting Future Work (Illustrative)
+        transition PlanToCLI from Planning to DevelopingCLI { on @16 StartCLI; }
+        transition PlanToLSP from Planning to DevelopingLSP { on @17 StartLSP; }
+
+        // Maintenance loop (Simplified - could go back to specific implementation states)
+        transition FixBugInMaintenance from Maintenance to Testing { on @8 StartTesting; action @11 apply_bug_fix; } // After fix, re-test
+    }
+} 
