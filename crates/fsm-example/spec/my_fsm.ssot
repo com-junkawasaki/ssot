@@ -3,24 +3,34 @@
 
 # Add rust_out annotation
 $rust_out("src/generated");
+# Add Cap'n Proto and TypeScript output annotations for testing
+$capnp_out("target/generated/capnp");
+$ts_out("target/generated/ts");
 
 # package com.example.lightswitch; # Optional package declaration
 
+$description("A simple light switch FSM.");
 stateMachine LightSwitch {
     $initial(Off);
     # $description("A simple light switch FSM."); # (restore value)
 
     states {
+        $description("The light is off.");
         Off @0;
+        $description("The light is on.");
         On @1;
     }
 
     events {
+        $description("Toggles the light state.");
         event Toggle @0 { # Empty 
         }
+        $description("Turns the light on with a specific brightness.");
         event TurnOn @1 {
+            $description("Brightness level (0-255).");
             brightness @0 : UInt8; # Event with payload
         }
+        $description("Turns the light off.");
         event TurnOff @2 { # Empty 
         }
     }

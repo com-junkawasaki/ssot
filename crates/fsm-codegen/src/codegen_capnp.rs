@@ -137,9 +137,9 @@ pub(crate) fn generate_capnp_schema_internal(
     Ok(capnp_code)
 }
 
-// Helper to find annotation value by name (copied from lib.rs or import?)
-// This should ideally be shared or imported.
-use fsm_dsl::ast::{Annotation, AnnotationValue};
+// Helper to find annotation value by name
+// This needs to be defined *before* it's used or be in scope
+use fsm_dsl::ast::Annotation;
 fn find_annotation_value<'a>(
     annotations: &'a [Annotation],
     name: &str,

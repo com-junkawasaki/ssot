@@ -1,6 +1,7 @@
 #![allow(dead_code)] // Allow dead code for now as AST is built incrementally
 
-use proc_macro2::Ident; // Use proc_macro2::Ident for Rust identifiers
+// Make the Ident import public
+pub use proc_macro2::Ident;
 
 // --- Annotations ---
 
@@ -70,7 +71,7 @@ pub struct StateMachine {
 // --- States ---
 
 /// Represents a state variant within the `enum State` block.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateItem {
     pub annotations: Vec<Annotation>, // Added annotations
     pub name: Ident,

@@ -515,9 +515,10 @@ pub fn generate_rust_code(ast: &StateMachine) -> Result<String, CodegenError> {
     match syn::parse_file(&code_str) {
         Ok(syntax_tree) => Ok(prettyplease::unparse(&syntax_tree)),
         Err(e) => {
-            eprintln!("--- Failed to parse generated code ---"); // Log error
+            eprintln!("--- Failed to parse generated code ---");
             eprintln!("{}", code_str);
             eprintln!("--- End generated code ---");
+            // Manually construct the error variant
             Err(CodegenError::SynParseError(e, code_str))
         }
     }
@@ -598,15 +599,15 @@ pub fn generate_typescript_types(ast: &StateMachine) -> Result<String, CodegenEr
 pub enum CodegenError {
     #[error("Failed to parse generated code: {0}\n--- Generated Code ---
 {1}")]
-    SynParseError(#[from] syn::Error, String), // Allow conversion from syn::Error
+    SynParseError(syn::Error, String),
     #[error("AST validation error: {0}")]
     AstValidationError(String),
     #[error("Code generation failed: {0}")]
     GenerationError(String),
     #[error("I/O error during code formatting: {0}")]
-    FormatIoError(#[from] std::io::Error), // Add IO Error variant for prettyplease potentially
+    FormatIoError(#[from] std::io::Error),
     #[error("Failed to format generated code: {0}")]
-    FormatError(String), // Error specifically from formatting
+    FormatError(String),
     // Potential future errors: IO errors, etc.
 }
 
