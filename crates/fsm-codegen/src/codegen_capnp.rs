@@ -1,7 +1,7 @@
 //! Cap'n Proto schema generation logic.
 
 use crate::CodegenError;
-use fsm_dsl::ast::{AnnotationValue, FieldType, Ident, SsotFile, StateMachine};
+use fsm_dsl::ast::{AnnotationValue, FieldType, SsotFile, StateMachine};
 
 // Function to map DSL FieldType to Cap'n Proto type string
 fn map_field_type_to_capnp_type(field_type: &FieldType) -> String {
@@ -33,11 +33,14 @@ fn map_field_type_to_capnp_type(field_type: &FieldType) -> String {
 // Helper function to generate Cap'n Proto comments from annotations
 fn generate_capnp_comment(annotations: &[fsm_dsl::ast::Annotation], indent: &str) -> String {
     let mut comment_str = String::new();
-    // Use the find_annotation_value helper defined below
     if let Some(AnnotationValue::StringLiteral(desc)) =
         find_annotation_value(annotations, "description")
     {
-        for line in desc.lines() {
+        for (i, line) in desc.lines().enumerate() {
+            // Add newline before comment only if it's not the first line and not empty
+            if i > 0 && !comment_str.is_empty() && !comment_str.ends_with("\n\n") {
+                comment_str.push('\n');
+            }
             comment_str.push_str(&format!("{}# {}\n", indent, line.trim()));
         }
     }
@@ -69,7 +72,7 @@ pub(crate) fn generate_capnp_schema_internal(
     {
         capnp_code.push_str(&format!("# package: {}\n", pkg));
     }
-    capnp_code.push_str("\n");
+    capnp_code.push('\n');
 
     // --- State Enum ---
     capnp_code.push_str("enum State @0 {\n");
@@ -77,7 +80,7 @@ pub(crate) fn generate_capnp_schema_internal(
         capnp_code.push_str(&generate_capnp_comment(&state.annotations, "  ")); // Add comment for state variant
         capnp_code.push_str(&format!("  {} @{};\n", state.name, state.ordinal));
     }
-    capnp_code.push_str("}\n\n");
+    capnp_code.push('\n');
 
     // --- Event Payloads (Structs) ---
     let mut event_payload_structs = String::new();
@@ -92,10 +95,10 @@ pub(crate) fn generate_capnp_schema_internal(
             struct_id_counter += 1; // Increment for the next struct
             for field in &event.fields {
                 let field_capnp_type = map_field_type_to_capnp_type(&field.field_type);
-                event_payload_structs.push_str(&generate_capnp_comment(&field.annotations, "  ")); // Add comment for field
+                // Pass indent explicitly for field comments
+                event_payload_structs.push_str(&generate_capnp_comment(&field.annotations, "    "));
                 event_payload_structs.push_str(&format!(
-                    "  {} @{} :{};
-",
+                    "  {} @{} :{};\n",
                     field.name, field.ordinal, field_capnp_type
                 ));
             }
@@ -124,7 +127,7 @@ pub(crate) fn generate_capnp_schema_internal(
             ));
         }
     }
-    capnp_code.push_str("}\n"); // Remove trailing newline
+    capnp_code.push('\n');
 
     // --- Optional: StateMachine Definition Struct ---
     // Can add this later if needed

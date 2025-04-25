@@ -1,7 +1,7 @@
 //! TypeScript type definition generation logic.
 
 use crate::{find_annotation_value, CodegenError};
-use fsm_dsl::ast::{AnnotationValue, FieldType, Ident, MessageItem, StateItem, StateMachine};
+use fsm_dsl::ast::{AnnotationValue, FieldType, StateMachine};
 use heck::ToUpperCamelCase; // For generating PascalCase type names
 use std::fmt::Write; // Use write macro for better performance
 
@@ -53,14 +53,24 @@ pub(crate) fn generate_typescript_types_internal(
     let state_items: Vec<String> = ast
         .states
         .iter()
-        .map(|s| {
-            // JSDoc indent level 1
+        .enumerate() // Add enumerate for index
+        .map(|(i, s)| {
             let doc = generate_jsdoc(&s.annotations, 1);
-            format!("{}{} | \"{}\"", "  ", doc, s.name)
+            // Use prefix logic like in Event generation
+            let prefix = if i == 0 { "  " } else { "| " };
+            // Combine prefix, doc (which includes indentation and newline), and the type string
+            // Ensure doc ends with a newline if present, otherwise add space after prefix
+            let formatted_doc = if doc.is_empty() {
+                "".to_string()
+            } else {
+                format!("{}\n", doc.trim_end())
+            };
+            // Add prefix spacing even if no doc
+            format!("{}{}\"{}\"", prefix, formatted_doc, s.name)
         })
         .collect();
-    // Adjust join logic for potentially multiline JSDoc
-    ts_code.push_str(&state_items.join("\n").trim_end_matches('|').trim_end()); // Remove trailing | and whitespace
+    // Join items, no need to trim pipe anymore
+    ts_code.push_str(&state_items.join("\n"));
     writeln!(ts_code, ";\n")?;
 
     // --- Generate Event Payloads (Interfaces) ---
@@ -167,12 +177,5 @@ fn map_field_type_to_ts_type(field_type: &FieldType) -> String {
             format!("{}[]", inner_ts_type) // Simplified array type generation
         }
         FieldType::Identifier(ident) => ident.to_string(), // Assume identifier maps directly to a TS type
-    }
-}
-
-// Helper to handle potential Write errors, converting them to CodegenError
-impl From<std::fmt::Error> for CodegenError {
-    fn from(err: std::fmt::Error) -> Self {
-        CodegenError::GenerationError(format!("Failed to write to string: {}", err))
     }
 }

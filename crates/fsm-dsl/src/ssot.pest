@@ -2,7 +2,8 @@
 
 // Basic whitespace and comments (Silent rules)
 WHITESPACE = _{ (" " | "\t" | "\n" | "\r")+ }
-COMMENT    = _{ "#" ~ (!("\n" | "\r") ~ ANY)* } // Restore original
+// Allow both # and // style comments
+COMMENT    = _{ ("#" | "//") ~ (!("\n" | "\r") ~ ANY)* }
 // Revert optional_whitespace to simple silent rule
 optional_whitespace = _{ (WHITESPACE | COMMENT)* } // Restore SILENT
 
@@ -32,13 +33,16 @@ state_machine_item = { annotation | state_enum | event_definitions | transitions
 
 // --- State Definitions ---
 // parser.rs expects `state_enum` containing `state_variant`
-state_enum = { "states" ~ "{" ~ optional_whitespace ~ state_variant* ~ optional_whitespace ~ "}" }
-// Allow optional annotations before the state definition
-// Allow optional body block for entry/exit actions
-state_variant = { optional_annotations ~ identifier ~ "@" ~ ordinal ~ state_body? ~ ";" ~ optional_whitespace }
-state_body = { "{" ~ optional_whitespace ~ state_body_item* ~ optional_whitespace ~ "}" }
-state_body_item = { entry_action | exit_action }
+// Allow optional whitespace *between* state variants
+state_enum = { "states" ~ "{" ~ optional_whitespace ~ (state_variant ~ optional_whitespace)* ~ optional_whitespace ~ "}" }
 
+// state_variant expects identifier @ ordinal, optional body, then MANDATORY semicolon
+state_variant = { optional_annotations ~ identifier ~ "@" ~ ordinal ~ state_body_content? ~ ";" ~ optional_whitespace }
+
+// state_body_content captures the optional {...} block
+state_body_content = { "{" ~ optional_whitespace ~ state_body_item* ~ optional_whitespace ~ "}" }
+
+state_body_item = { entry_action | exit_action }
 entry_action = { "entry" ~ ":" ~ identifier ~ ";" ~ optional_whitespace }
 exit_action  = { "exit" ~ ":" ~ identifier ~ ";" ~ optional_whitespace }
 
@@ -48,7 +52,12 @@ event_definitions = { "events" ~ "{" ~ optional_whitespace ~ event_struct* ~ opt
 
 // parser.rs expects `event_struct` containing `event_field`
 // Allow optional annotations before the event keyword
-event_struct = { optional_annotations ~ "event" ~ identifier ~ "@" ~ ordinal ~ "{" ~ optional_whitespace ~ (event_field ~ optional_whitespace)* ~ optional_whitespace ~ "}" }
+// Modify event_struct to accept either a body {} or a semicolon ;
+event_struct = { optional_annotations ~ "event" ~ identifier ~ "@" ~ ordinal ~ (event_body | event_terminator) }
+
+// Define the two possible endings for an event definition
+event_body = { "{" ~ optional_whitespace ~ (event_field ~ optional_whitespace)* ~ optional_whitespace ~ "}" }
+event_terminator = { ";" ~ optional_whitespace }
 
 // parser.rs expects `event_field`
 // Allow optional annotations before the field definition

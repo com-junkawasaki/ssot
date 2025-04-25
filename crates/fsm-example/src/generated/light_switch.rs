@@ -1,35 +1,35 @@
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum State {
-    ///The light is off.
+    /// The light is off.
     Off,
-    ///The light is on.
+    /// The light is on.
     On,
 }
-///Turns the light on with a specific brightness.
+/// Turns the light on with a specific brightness.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TurnOnEventPayload {
-    ///Brightness level (0-255).
+    /// Brightness level (0-255).
     pub brightness: u8,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
-    ///Toggles the light state.
+    /// Toggles the light state.
     Toggle,
-    ///Turns the light on with a specific brightness.
+    /// Turns the light on with a specific brightness.
     TurnOn(TurnOnEventPayload),
-    ///Turns the light off.
+    /// Turns the light off.
     TurnOff,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct LightSwitch {
     pub current_state: State,
 }
-/// Trait defining the required guard and action callbacks for the state machine.
+/// Trait defining the required guard, action, entry, and exit callbacks for the state machine.
 pub trait LightSwitchCallbacks {
-    fn activate_light_specific(&mut self, event: &TurnOnEventPayload);
     fn deactivate_light(&mut self, event: &Event);
-    fn deactivate_light_specific(&mut self, event: &Event);
     fn activate_light(&mut self, event: &Event);
+    fn activate_light_specific(&mut self, event: &TurnOnEventPayload);
+    fn deactivate_light_specific(&mut self, event: &Event);
 }
 impl LightSwitch {
     /// Creates a new instance of the state machine in its initial state.

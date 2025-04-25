@@ -17,49 +17,157 @@ This project is organized as a Cargo workspace:
 
 *   `crates/fsm-dsl`: Defines the `.ssot` grammar (`ssot.pest`), Abstract Syntax Tree (`ast.rs`), and parser (`parser.rs`) using `pest`.
 *   `crates/fsm-codegen`: Consumes the AST from `fsm-dsl` to generate:
-    *   **Rust Code:** State/event enums, machine struct with transition logic, callback traits (`lib.rs`, `codegen_rust.rs`).
+    *   **Rust Code:** State/event enums, machine struct with transition logic, callback traits (`lib.rs`).
     *   **Cap'n Proto Schemas:** `.capnp` definitions mirroring the FSM structure (`codegen_capnp.rs`).
     *   **TypeScript Types:** Interfaces and type aliases for states, events, and payloads (`codegen_ts.rs`).
+    *   **XState Configuration:** TypeScript code compatible with XState v5 (`codegen_xstate.rs`).
+    *   **SCXML Documents:** Standard XML representation for state machines (`codegen_scxml.rs`).
 *   `crates/fsm-example`: Demonstrates usage with a sample `spec/my_fsm.ssot` and a `build.rs` script for invoking the generators.
+*   `crates/ssot-linter`: (Placeholder) Intended for linting and validating `.ssot` files.
 
 ## Usage (Example Workflow)
 
 1.  **Define FSM:** Create/edit a `.ssot` file (e.g., `crates/fsm-example/spec/my_fsm.ssot`).
 2.  **Annotate:** Use annotations to specify output locations and add documentation:
-    ```fsm
-    @0x...; // File ID (required, Cap'n Proto compatible)
+    ```ssot
+    @0xcafebabe12345678; // File ID (required, Cap'n Proto compatible)
 
     // Specify output directories (required at top-level or per machine)
     $rust_out("src/generated");
-    $capnp_out("schema/capnp"); // Optional
-    $ts_out("schema/ts");       // Optional
+    $capnp_out("target/generated/capnp"); // Optional
+    $ts_out("target/generated/ts");       // Optional
+    $xstate_out("target/generated/xstate"); // Optional
+    $scxml_out("target/generated/scxml");   // Optional
 
-    $description("Description for the whole state machine.");
-    stateMachine MyMachine {
+    $description("A simple light switch FSM.");
+    stateMachine LightSwitch {
+        $initial(Off);
         states {
-            $description("Initial state.");
-            Idle @0;
-            $description("Active state.");
-            Running @1;
+            $description("The light is off.");
+            Off @0;
+            $description("The light is on.");
+            On @1;
         }
         events {
-            $description("Event to start.");
-            event Start @0 {
-                $description("User ID.");
-                userId @0 : UInt64;
+            $description("Toggles the light state.");
+            event Toggle @0 {}
+            $description("Turns the light on with a specific brightness.");
+            event TurnOn @1 {
+                $description("Brightness level (0-255).");
+                brightness @0 : UInt8;
             }
-            $description("Event to stop.");
-            event Stop @1;
+            $description("Turns the light off.");
+            event TurnOff @2 {}
         }
-        // ... transitions ...
+        transitions {
+            transition ToggleOffToOn from Off to On { on @0 Toggle; action @1 activate_light; };
+            transition ToggleOnToOff from On to Off { on @0 Toggle; action @1 deactivate_light; };
+            transition SpecificTurnOn from Off to On { on @1 TurnOn; action @1 activate_light_specific; };
+            transition SpecificTurnOff from On to Off { on @2 TurnOff; action @1 deactivate_light_specific; };
+        }
     }
     ```
 3.  **Integrate with `build.rs`:** In your crate's `build.rs`, parse the `.ssot` file and call the generation functions from `fsm-codegen`. (See `crates/fsm-example/build.rs`).
 4.  **Build:** Run `cargo build`. The `build.rs` script executes, generating files into the specified output directories before compiling your crate.
-    *   The build script parses `.ssot`, calls `fsm_codegen::generate_*`, and writes outputs (e.g., `src/generated/my_machine.rs`, `schema/capnp/MyMachine.capnp`).
-    *   Your crate code (e.g., `fsm-example/src/main.rs`) can then `include!` or import the generated artifacts.
+    *   The build script parses `.ssot`, calls `fsm_codegen::generate_*`, and writes outputs (e.g., `src/generated/light_switch.rs`, `target/generated/capnp/LightSwitch.capnp`).
+    *   Your crate code (e.g., `fsm-example/src/lib.rs`) can then import the generated artifacts.
 
 *(Refer to `fsm-example/build.rs` for a concrete implementation.)*
+
+## DSL Syntax Reference
+
+A `.ssot` file defines one or more state machines. Here's a breakdown of the syntax:
+
+**1. File ID (Required, Top-Level):**
+
+*   Specifies a unique identifier for the file, primarily for Cap'n Proto compatibility.
+*   Syntax: `@0x<hexadecimal_id>;`
+*   Example: `@0xcafebabe12345678;`
+
+**2. Top-Level Annotations (Optional):**
+
+*   Apply metadata to the entire file or provide default settings.
+*   Common annotations:
+    *   `$rust_out("path/to/dir")`: Default output directory for Rust code. **Required** if not specified per-machine.
+    *   `$capnp_out("path/to/dir")`: Default output directory for Cap'n Proto schemas.
+    *   `$ts_out("path/to/dir")`: Default output directory for TypeScript types.
+    *   `$xstate_out("path/to/dir")`: Default output directory for XState configurations.
+    *   `$scxml_out("path/to/dir")`: Default output directory for SCXML documents.
+    *   `$description("...")`: Documentation for the entire file.
+*   Syntax: `$AnnotationName("value");` or `$AnnotationName(value);`
+
+**3. State Machine Definition:**
+
+*   Defines a single state machine. A file can contain multiple machines.
+*   Syntax:
+    ```ssot
+    $description("Optional description for the machine."); // Optional annotation
+    $rust_out("path/to/override_dir"); // Optional: Override default output
+    stateMachine MachineName {
+        $initial(InitialStateName); // Required: Specifies the entry state
+
+        // states block (required)
+        states { ... }
+
+        // events block (required)
+        events { ... }
+
+        // transitions block (required)
+        transitions { ... }
+    }
+    ```
+
+**4. States Block:**
+
+*   Defines the possible states of the machine.
+*   Syntax within `states { ... }`:
+    ```ssot
+    $description("Optional description for the state.");
+    StateName @Ordinal { // Ordinal is a unique non-negative integer
+        entry: entryActionName; // Optional: Action executed on entering the state
+        exit: exitActionName;   // Optional: Action executed on exiting the state
+    }
+
+    AnotherState @AnotherOrdinal; // Simple state without entry/exit actions
+    ```
+
+**5. Events Block:**
+
+*   Defines the events that can trigger transitions.
+*   Syntax within `events { ... }`:
+    ```ssot
+    $description("Optional description for the event.");
+    event EventName @Ordinal { // Ordinal is a unique non-negative integer
+        $description("Optional description for the field.");
+        fieldName @FieldOrdinal : FieldType; // Optional: Payload field
+
+        anotherField @AnotherFieldOrdinal : AnotherFieldType; // Can have multiple fields
+        // ... more fields
+    }
+
+    SimpleEvent @SomeOrdinal; // Event without a payload (use empty braces {} or just semicolon ;)
+    ```
+*   **Supported Field Types (`FieldType`):** Corresponds to Cap'n Proto primitive types:
+    *   `Void`, `Bool`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, `Float64`, `Text`, `Data`, `AnyPointer` (use with caution)
+    *   Can also reference structs/enums defined *within the same `.ssot` file* (though struct/enum definition syntax is not yet fully implemented in the DSL parser/codegen). List types (`List(Type)`) are planned but not yet supported.
+
+**6. Transitions Block:**
+
+*   Defines the valid transitions between states based on events.
+*   Syntax within `transitions { ... }`:
+    ```ssot
+    $description("Optional description for the transition.");
+    transition TransitionName from SourceState to TargetState {
+        on @EventOrdinal EventName; // Required: Event triggering the transition
+        guard @GuardOrdinal guardFunctionName;   // Optional: Condition that must be true
+        action @ActionOrdinal actionFunctionName; // Optional: Action executed during the transition
+    }
+    ```
+    *   `TransitionName`: A unique identifier for the transition definition.
+    *   `SourceState`, `TargetState`: Names of states defined in the `states` block.
+    *   `EventName`: Name of an event defined in the `events` block.
+    *   `guardFunctionName`, `actionFunctionName`: Names referencing functions/methods expected to be implemented in the target language (e.g., in the Rust callback trait). The code generator **does not** generate the implementation for these, only the calls or references.
+    *   `@EventOrdinal`, `@GuardOrdinal`, `@ActionOrdinal`: Unique non-negative integers within the scope of the `stateMachine`, used primarily for Cap'n Proto schema generation. These ordinals **must be distinct** across all `on`, `guard`, and `action` declarations within a single `stateMachine`.
 
 ## Key DSL Annotations
 
@@ -68,7 +176,9 @@ This project is organized as a Cargo workspace:
     *   `$rust_out("path/to/dir")`: **Required** (top-level or per-machine). Generates `<MachineNameSnakeCase>.rs`.
     *   `$capnp_out("path/to/dir")`: Optional. Generates `<MachineName>.capnp`.
     *   `$ts_out("path/to/dir")`: Optional. Generates `<MachineName>.types.ts`.
-*   **Documentation:** `$description("...")`: Optional. Adds doc comments to generated Rust (`///`), Cap'n Proto (`#`), and TypeScript (`/** ... */`). Applicable to `stateMachine`, `state`, `event`, `field`.
+    *   `$xstate_out("path/to/dir")`: Optional. Generates `<MachineName>.xstate.ts`.
+    *   `$scxml_out("path/to/dir")`: Optional. Generates `<MachineName>.scxml`.
+*   **Documentation:** `$description("...")`: Optional. Adds doc comments to generated Rust (`///`), Cap'n Proto (`#`), TypeScript (`/** ... */`), XState comments, SCXML `<datamodel>` comments.
 *   **Initial State:** `$initial(StateName)`: **Required** on `stateMachine`. Specifies the entry state.
 *   *(Others like `$version`, `$derive` might be parsed but aren't fully utilized yet.)*
 
@@ -78,15 +188,24 @@ This project is organized as a Cargo workspace:
 *   ✅ Rust Code Generation: Functional state/event enums, machine struct, basic transition logic, callback trait.
 *   ✅ Cap'n Proto Schema Generation: Structures reflecting FSM states, events, and payloads.
 *   ✅ TypeScript Type Generation: State unions, event discriminated unions, payload interfaces.
-*   ✅ Documentation Generation: From `$description` annotations for all targets.
+*   ✅ XState v5 Configuration Generation: TypeScript machine config with states, events, transitions, actions, guards.
+*   ✅ SCXML Generation: Basic SCXML document structure with states and transitions.
+*   ✅ Documentation Generation: From `$description` annotations for Rust, Cap'n Proto, TS, XState, SCXML.
 *   ✅ Example `build.rs` Workflow: Demonstrates parsing and invoking all generators.
+*   ✅ Entry/Exit Actions: Added syntax (`state S @N { entry: action1; exit: action2; }`) and Rust/XState/SCXML codegen support.
+*   ✅ State Parsing Bug Fixed: The parser now correctly handles states with and without bodies, regardless of order.
+*   ✅ Documentation Generation Tests Fixed: Formatting discrepancies in tests for Rust, Cap'n Proto, and TypeScript doc comment generation have been resolved.
+
+## Known Issues
+
+*   (None currently identified. Previously failing documentation tests are now fixed.)
 
 ## Roadmap / Future Enhancements
 
 The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not just for FSM logic, but for related concerns across distributed systems. Key development areas include:
 
 *   **Core DSL Enhancements:** Improving the expressiveness and robustness of the `.ssot` language itself.
-    *   Add syntax for entry/exit actions on states.
+    *   ✅ Add syntax for entry/exit actions on states.
     *   Enhance validation rules within the parser (e.g., duplicate name/ordinal checks, transition validity).
     *   Support for more complex annotation values or specific annotations (e.g., `$deprecated`).
     *   Support for hierarchical state machines in the DSL.
