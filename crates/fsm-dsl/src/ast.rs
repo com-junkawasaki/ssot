@@ -47,90 +47,46 @@ pub enum FieldType {
 
 // --- File Structure ---
 
-/// Represents the entire parsed content of a .ssot file.
+// New: Represents a top-level struct definition
 #[derive(Debug, Clone, PartialEq)]
-pub struct SsotFile {
-    pub file_id: u64,                           // Cap'n Proto style file ID
-    pub package_declaration: Option<String>,    // Keep as string for now
-    pub top_level_annotations: Vec<Annotation>, // e.g., $rust_out, $derive
+pub struct StructDef {
+    /// Annotations specific to this struct definition (e.g., `$description`).
+    pub annotations: Vec<Annotation>,
+    /// The name identifier of the struct (e.g., `TrafficLightContext`).
+    pub name: Ident,
+    /// The data fields contained within this struct.
+    pub fields: Vec<FieldDef>,
+    // Note: No top-level ordinal for now, unlike MessageItem
+}
+
+/// Represents a single import declaration at the top level of an .ssot file.
+/// e.g., `import my.package.name;`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportDeclaration {
+    pub package_declaration: Option<String>,
+    /// Import declarations at the top level (e.g., `import other.package;`)
+    pub imports: Vec<ImportDeclaration>,
+    // Updated: Use TopLevelItem enum instead of separate lists
+    /// A list of all top-level items (state machines, structs, annotations) defined within the file.
+    pub items: Vec<TopLevelItem>,
+    /*
+    /// Annotations defined at the top level of the file, before any `stateMachine` definitions.
+    /// These often provide global configuration for code generation (e.g., `$rust_out`).
+    pub top_level_annotations: Vec<Annotation>,
+    /// A list of all `stateMachine` blocks defined within the file.
     pub state_machines: Vec<StateMachine>,
+    */
+}
+
+// New: Enum to represent different kinds of top-level items
+#[derive(Debug, Clone, PartialEq)]
+pub enum TopLevelItem {
+    StateMachine(StateMachine),
+    StructDefinition(StructDef),
+    Annotation(Annotation),
+    // Add other potential top-level items here in the future (e.g., Enums)
 }
 
 // --- State Machine ---
 
-/// Represents a `state_machine` definition.
-#[derive(Debug, Clone, PartialEq)]
-pub struct StateMachine {
-    pub name: Ident,
-    pub annotations: Vec<Annotation>, // Includes $description, $initial etc.
-    pub states: Vec<StateItem>,
-    pub events: Vec<MessageItem>, // Renamed from messages to events
-    pub transitions: Vec<TransitionItem>,
-    pub context: Vec<FieldDef>, // Added: Context fields for the state machine
-}
-
-// --- States ---
-
-/// Represents a state variant within the `enum State` block.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StateItem {
-    pub annotations: Vec<Annotation>, // Added annotations
-    pub name: Ident,
-    pub ordinal: u64,
-    pub entry_actions: Vec<Ident>, // Added: Actions to execute on entry
-    pub exit_actions: Vec<Ident>,  // Added: Actions to execute on exit
-                                   // pub annotations: Vec<Annotation>, // Future: Annotations on states?
-}
-
-// --- Events (Messages) ---
-
-/// Represents an event struct defined within the `events` block.
-#[derive(Debug, Clone, PartialEq)]
-pub struct MessageItem {
-    pub annotations: Vec<Annotation>, // Added annotations
-    pub name: Ident,
-    pub ordinal: u64,
-    pub fields: Vec<FieldDef>,
-    // pub annotations: Vec<Annotation>, // Future: Annotations on events?
-}
-
-/// Represents a field within an event struct.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FieldDef {
-    pub annotations: Vec<Annotation>, // Added annotations
-    pub name: Ident,
-    pub ordinal: u64,
-    pub field_type: FieldType,
-    // pub annotations: Vec<Annotation>, // Future: Annotations on fields?
-}
-
-// --- Transitions ---
-
-/// Represents a `transition` definition.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransitionItem {
-    pub name: Option<Ident>, // Added optional name
-    pub from: Ident,
-    pub to: Ident,
-    pub elements: Vec<TransitionElement>, // on, guard, action
-    pub annotations: Vec<Annotation>,     // e.g., $id(...)
-}
-
-/// Represents elements within a transition block (`on`, `guard`, `action`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TransitionElement {
-    On { ordinal: u64, event: Ident },
-    Guard { ordinal: u64, function: Ident },
-    Action { ordinal: u64, function: Ident },
-}
-
-// --- Utility ---
-
-// Placeholder for unescaping string literals if needed by the parser
-// pub(crate) fn unescape_string(s: &str) -> String {
-//     // Basic unescaping for quotes and backslashes
-//     s.trim_start_matches('"')
-//      .trim_end_matches('"')
-//      .replace("\\\"", "\"")
-//      .replace("\\\\", "\\")
-// }
+/// Represents a `

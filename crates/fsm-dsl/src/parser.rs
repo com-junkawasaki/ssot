@@ -60,8 +60,8 @@ pub fn parse_str(input: &str) -> Result<SsotFile, ParseError> {
 
     let mut file_id: Option<u64> = None;
     let mut package_declaration: Option<String> = None;
-    let mut top_level_annotations: Vec<Annotation> = Vec::new();
-    let mut state_machines: Vec<StateMachine> = Vec::new();
+    let mut imports: Vec<ImportDeclaration> = Vec::new();
+    let mut items: Vec<ast::TopLevelItem> = Vec::new();
 
     // Iterate over the *inner* pairs of the ssot_file rule
     for pair in ssot_file_pair.into_inner() {
@@ -72,17 +72,23 @@ pub fn parse_str(input: &str) -> Result<SsotFile, ParseError> {
             Rule::package_decl => {
                 package_declaration = Some(pair.into_inner().next().unwrap().as_str().to_string());
             }
-            // Handle the top_level_item wrapper rule
+            Rule::import_decl => {
+                let package_name = parse_package_name(pair.into_inner().next().unwrap())?;
+                imports.push(ImportDeclaration { package_name });
+            }
             Rule::top_level_item => {
                 let inner_item = pair.into_inner().next().ok_or_else(|| {
                     ParseError::SemanticError("Empty top_level_item encountered".to_string())
                 })?;
                 match inner_item.as_rule() {
                     Rule::annotation => {
-                        top_level_annotations.push(parse_annotation(inner_item)?);
+                        items.push(ast::TopLevelItem::Annotation(parse_annotation(inner_item)?));
                     }
                     Rule::state_machine => {
-                        state_machines.push(parse_state_machine(inner_item)?);
+                        items.push(ast::TopLevelItem::StateMachine(parse_state_machine(inner_item)?));
+                    }
+                    Rule::struct_def => {
+                        items.push(ast::TopLevelItem::StructDefinition(parse_struct_def(inner_item)?));
                     }
                     _ => {
                         // Should not happen if grammar is correct
@@ -93,9 +99,6 @@ pub fn parse_str(input: &str) -> Result<SsotFile, ParseError> {
                     }
                 }
             }
-            // Redundant arms removed as top_level_item handles them
-            // Rule::annotation => { ... }
-            // Rule::state_machine => { ... }
             Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
             Rule::EOI => break, // EOI marks the end of the inner pairs for ssot_file
             _ => {
@@ -117,8 +120,8 @@ pub fn parse_str(input: &str) -> Result<SsotFile, ParseError> {
     Ok(SsotFile {
         file_id: file_id.unwrap(), // Safe now after check
         package_declaration,
-        top_level_annotations,
-        state_machines,
+        imports,
+        items,
     })
 }
 
@@ -795,6 +798,63 @@ fn parse_transitions_block(pair: Pair<Rule>) -> Result<Vec<TransitionItem>, Pars
     }
     println!("Finished parsing transitions_block.");
     Ok(parsed_transitions)
+}
+
+// New function to parse top-level struct definitions
+fn parse_struct_def(pair: Pair<Rule>) -> Result<ast::StructDef, ParseError> {
+    debug_assert_eq!(pair.as_rule(), Rule::struct_def);
+    let mut inner = pair.into_inner();
+
+    let mut annotations = Vec::new();
+    let mut name: Option<Ident> = None;
+    let mut fields = Vec::new();
+
+    for item in inner {
+        match item.as_rule() {
+            Rule::annotation => {
+                annotations.push(parse_annotation(item)?);
+            }
+            Rule::ident => {
+                name = Some(parse_ident(item)?);
+            }
+            Rule::struct_body => {
+                // Parse fields inside the body
+                for field_pair in item.into_inner() {
+                    if field_pair.as_rule() == Rule::struct_field {
+                         // Unwrap the struct_field to get the actual event_field
+                         let event_field_pair = field_pair.into_inner().next().unwrap();
+                         if event_field_pair.as_rule() == Rule::event_field {
+                             fields.push(parse_event_field(event_field_pair)?);
+                         } else {
+                             return Err(ParseError::UnexpectedRule {
+                                rule: event_field_pair.as_rule(),
+                                context: "inside struct_field".to_string(),
+                            });
+                         }
+                    } else if field_pair.as_rule() != Rule::WHITESPACE && field_pair.as_rule() != Rule::COMMENT {
+                         return Err(ParseError::UnexpectedRule {
+                            rule: field_pair.as_rule(),
+                            context: "inside struct_body".to_string(),
+                        });
+                    }
+                }
+            }
+            // Allow empty body (struct Foo;)
+            Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
+            _ => {
+                return Err(ParseError::UnexpectedRule {
+                    rule: item.as_rule(),
+                    context: "struct_def inner elements".to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(ast::StructDef {
+        annotations,
+        name: name.ok_or_else(|| ParseError::MissingElement("struct name".to_string()))?,
+        fields,
+    })
 }
 
 #[cfg(test)]
