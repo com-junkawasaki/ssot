@@ -69,9 +69,11 @@ This project is organized as a Cargo workspace:
     *   `$rust_out("path/to/dir")`: **Required** (top-level or per-machine). Generates `<MachineNameSnakeCase>.rs`.
     *   `$capnp_out("path/to/dir")`: Optional. Generates `<MachineName>.capnp`.
     *   `$ts_out("path/to/dir")`: Optional. Generates `<MachineName>.types.ts`.
+    *   **(Other data/API/DB schema outputs like `$zod_out`, `$openapi_out`, `$sql_out`...)**
+    *   **`$terraform_out("path")`, `$cdk_out("path")`, etc.:** Optional. Generates Infrastructure as Code (IaC) configurations.
 *   **Documentation:** `$description("...")`: Optional. Adds doc comments to generated Rust (`///`), Cap'n Proto (`#`), and TypeScript (`/** ... */`). Applicable to `stateMachine`, `state`, `event`, `field`.
 *   **Initial State:** `$initial(StateName)`: **Required** on `stateMachine`. Specifies the entry state.
-*   *(Others like `$version`, `$derive` might be parsed but aren't fully utilized yet.)*
+*   **(Others like `$version`, `$derive` might be parsed but aren't fully utilized yet.)*
 
 ## Current Status
 
@@ -95,12 +97,14 @@ The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not 
 *   **Expanded SSOT Scope:** Define more system aspects within the DSL.
     *   Distributed system components/services definition.
     *   Inter-service communication specification (RPC, messaging, default to Cap'n Proto).
+    *   **Infrastructure Configuration:** Definition of deployment environments, infrastructure resources (compute, database, network), and deployment strategies (**Implemented!** See `DSL.md`).
     *   Integration with related concerns: Routing, UI/UX mapping, API calls, authorization, testing (BDD), observability (logging/monitoring), configuration/feature flags, compliance/auditing, formal verification/simulation.
 
 *   **Code Generation Enhancements:** Refine existing generators and add new capabilities.
     *   Generate skeleton `guard`/`action` functions (Rust).
     *   Improved hierarchical state machine generation.
     *   Generate Cap'n Proto interfaces and client/server stubs.
+    *   **IaC Generation:** Generate configurations for tools like Terraform, CDK, Pulumi, Kubernetes manifests from `environment`, `infrastructure`, and `deployment` definitions.
 
 *   **Expanded Target Formats & Integrations:** Support more output types and standard formats.
     *   Visualizations (Mermaid, Graphviz DOT), advanced documentation (state tables, sequence diagrams).

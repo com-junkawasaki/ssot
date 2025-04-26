@@ -233,9 +233,10 @@ event UserLoggedIn @id(0x200...) {
     - Transitions can target history: `transition ParentState.history` or `transition ParentState.history(deep)`.
 
 ### 2.7. Transitions (`on`, `after`)
-- `on EVENT_NAME @id(...) transition TargetState { action ..., guard ... }`
-- `after DURATION @id(...) transition TargetState { action ..., guard ... }` (e.g., `after 5s`, `after 100ms`)
+- `on EVENT_NAME @id(...) transition TargetState { action ..., guard ..., $requiresActor(...) }`
+- `after DURATION @id(...) transition TargetState { action ..., guard ..., $requiresActor(...) }` (e.g., `after 5s`, `after 100ms`)
 - `TargetState` can be a state name, relative path (`../Sibling`), or history (`State.history`).
+- **NEW: `$requiresActor(ActorName | [ActorName1, ActorName2])`**: Optional annotation specifying which `actor` (or actors) are permitted to trigger this transition. Useful for access control modeling.
 
 ### 2.8. Actions and Guards
 - `action actionName @id(...) (ctx: ContextType, event: EventType) [: ReturnType];`
@@ -267,12 +268,32 @@ event UserLoggedIn @id(0x200...) {
 - Defines a communication protocol type (e.g., CapnpRPC, REST). Primarily for documentation and hinting generators.
 - Annotations: `$description`, `$meta`.
 
-### **NEW: 2.14. Channel Definition**
+### **NEW: 2.14. Actor Definition**
+- `actor ActorName @id(...) { ... }`
+- Defines an entity (human role, external system, etc.) that interacts with the system, particularly state machines.
+- Primarily used with the `$requiresActor` annotation on transitions to model access control.
+- Annotations:
+    - `$description("text")`: Human-readable description of the actor.
+    - `$type("role" | "system" | "user_group" | ...)`: Optional categorization of the actor.
+    - `$meta(...)`: Generic metadata.
+- Example:
+  ```ssot
+  actor AdminUser @id(0xA001) {
+    $description("Administrator role with full access.");
+    $type("role");
+  }
+  actor PaymentGateway @id(0xB001) {
+    $description("External payment processing system.");
+    $type("system");
+  }
+  ```
+
+### **NEW: 2.15. Channel Definition**
 - `channel ChannelName @id(...) { description?: string; parameters?: { key: type }; ... }`
 - Defines a logical message channel for asynchronous communication (used by AsyncAPI).
 - `parameters` allow defining dynamic parts of a channel/topic name.
 
-### **NEW: 2.15. Environment Definition**
+### **NEW: 2.16. Environment Definition**
 - `environment EnvName @id(...) [extends BaseEnvName] { ... }`
 - Defines a deployment environment (e.g., development, staging, production).
 - Can inherit base configurations using `extends`.
@@ -287,7 +308,7 @@ event UserLoggedIn @id(0x200...) {
   }
   ```
 
-### **NEW: 2.16. Infrastructure Definition**
+### **NEW: 2.17. Infrastructure Definition**
 - `infrastructure InfraName @id(...) [extends BaseInfraName] { ... }`
 - Defines reusable infrastructure component blueprints (e.g., compute clusters, databases, networks, load balancers).
 - Annotations: `$description`, `$meta`.
@@ -299,7 +320,7 @@ event UserLoggedIn @id(0x200...) {
   }
   ```
 
-### **NEW: 2.17. Deployment Definition**
+### **NEW: 2.18. Deployment Definition**
 - `deployment DeploymentName @id(...) { ... }`
 - Links a deployable unit (`service`, `machine`) to a target `environment` and `infrastructure`.
 - Specifies deployment parameters (replicas, strategy, configuration overrides).
@@ -324,6 +345,7 @@ event UserLoggedIn @id(0x200...) {
 - **API Specification:** `$route`, `$channel`, `$publishes`, `$subscribes` annotations to support OpenAPI and AsyncAPI generation.
 - **Database Schema Mapping:** Structured `$db` annotation for detailed table/column mapping and RLS policy definition.
 - **Generic Metadata:** `$meta` annotation for extensibility and tool-specific configuration.
+- **NEW: Actor Modeling:** Added `actor` element and `$requiresActor` annotation to model roles, permissions, and system interactions with state machines.
 - **NEW: Infrastructure & Deployment:** Added `environment`, `infrastructure`, and `deployment` elements to model infrastructure configuration and deployment strategies, enabling IaC generation.
 
-This significantly extended DSL aims to be a comprehensive Single Source of Truth for defining not just state logic but also related data structures, communication patterns, API contracts, database schemas, **and the underlying infrastructure and deployment configurations.**
+This significantly extended DSL aims to be a comprehensive Single Source of Truth for defining not just state logic but also related data structures, communication patterns, API contracts, database schemas, **actor interactions/permissions, and the underlying infrastructure and deployment configurations.**
