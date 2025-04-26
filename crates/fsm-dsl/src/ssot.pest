@@ -71,8 +71,12 @@ annotation_value = _{ string_literal | integer_literal /* | boolean_literal | li
 // --- Machine Definitions (Basic) ---
 
 machine_definition = { annotation* ~ "machine" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ machine_element* ~ "}" }
-// Placeholder for elements inside a machine block
-machine_element = { /* TODO: context_definition | states_definition | actions_definition | guards_definition | invokes_definition | initial_annotation etc. */ }
+// Updated placeholder for elements inside a machine block
+machine_element = { context_definition /* | states_definition | actions_definition | guards_definition | invokes_definition | initial_annotation etc. */ }
+
+context_definition = { annotation* ~ "context" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ context_field_definition* ~ "}" }
+// Context fields are similar to struct fields, but might have $default
+context_field_definition = { annotation* ~ identifier ~ ":" ~ type_specifier ~ "@id(" ~ integer_literal ~ ")" ~ annotation* ~ ";" }
 
 // TODO: Add rules for all other elements from DSL.md:
 // - enums, machines, services, interfaces, protocols, actors, channels, events

@@ -164,8 +164,8 @@ pub struct MachineDefinition {
     pub name: Identifier,
     pub id: NumericId,
     pub annotations: Vec<Annotation>,
-    // TODO: Add fields for context, states, initial, actions, guards, invokes
-    // pub context: Option<ContextDefinition>,
+    pub context: Option<ContextDefinition>, // Added context field
+    // TODO: Add fields for states, initial, actions, guards, invokes
     // pub states: Option<StatesBlock>,
     // pub actions: Option<ActionsBlock>,
     // pub guards: Option<GuardsBlock>,
@@ -183,6 +183,25 @@ pub struct MachinesBlock {
 pub struct DeploymentConfigBlock {
     // TODO: Define EnvironmentDefinition, InfrastructureDefinition, DeploymentDefinition
     // pub definitions: Vec<DeploymentItem>,
+    pub annotations: Vec<Annotation>,
+}
+
+// --- Machine Context Definitions (Added) ---
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContextFieldDefinition {
+    pub name: Identifier,
+    pub type_spec: TypeSpecifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
+    // TODO: Potentially add parsed default value
+    // pub default_value: Option<AnnotationValue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContextDefinition {
+    pub id: NumericId,
+    pub fields: Vec<ContextFieldDefinition>,
     pub annotations: Vec<Annotation>,
 }
 

@@ -1,4 +1,4 @@
-use crate::ast::{self, Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock};
+use crate::ast::{self, Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition};
 use pest::Parser;
 use pest_derive::Parser;
 use pest::iterators::{Pair, Pairs};
@@ -199,7 +199,7 @@ fn parse_machines_block(pair: Pair<Rule>) -> ParseResult<MachinesBlock> {
     Ok(block)
 }
 
-// --- Definition Parsing (Implementations) --- 
+// --- Definition Parsing (Implementations & Stubs) --- 
 
 fn parse_struct_definition(pair: Pair<Rule>) -> ParseResult<StructDefinition> {
      if pair.as_rule() != Rule::struct_definition {
@@ -393,20 +393,33 @@ fn parse_machine_definition(pair: Pair<Rule>) -> ParseResult<MachineDefinition> 
     let mut annotations = Vec::new();
     let mut name: Option<Identifier> = None;
     let mut id: Option<NumericId> = None;
-    // TODO: Parse machine elements (context, states, etc.)
+    let mut context: Option<ContextDefinition> = None;
+    // TODO: Add other machine elements (states, actions, etc.)
 
     while let Some(p) = inner_pairs.peek() {
         match p.as_rule() {
             Rule::annotation => annotations.push(parse_annotation(inner_pairs.next().unwrap())?),
             Rule::identifier => {
                 name = Some(parse_identifier(inner_pairs.next().unwrap())?);
-                // Expect ID
                 let id_pair = inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?;
                 id = Some(parse_numeric_id(id_pair)?);
             }
             Rule::machine_element => {
-                // TODO: Implement parsing for machine elements
-                eprintln!("Skipping machine_element for now: {}", inner_pairs.next().unwrap().as_str());
+                let element_pair = inner_pairs.next().unwrap(); // Consume the machine_element pair
+                let element_inner = element_pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty machine_element".to_string() })?;
+                match element_inner.as_rule() {
+                    Rule::context_definition => {
+                        if context.is_some() {
+                             eprintln!("Warning: Duplicate context definition found, ignoring subsequent.");
+                         } else {
+                             context = Some(parse_context_definition(element_inner)?);
+                         }
+                    }
+                    // TODO: Add cases for states_definition, actions_definition, etc.
+                    rule => {
+                        eprintln!("Skipping unimplemented machine_element: {:?}", rule);
+                    }
+                }
             }
             rule => return Err(ParseError::UnexpectedRule { expected: Rule::annotation /* or identifier or machine_element */, found: rule })
         }
@@ -416,7 +429,89 @@ fn parse_machine_definition(pair: Pair<Rule>) -> ParseResult<MachineDefinition> 
         name: name.ok_or(ParseError::MissingRule { expected: Rule::identifier })?,
         id: id.ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?,
         annotations,
-        ..Default::default() // Rest are TODOs
+        context, // Added context
+        ..Default::default()
+    })
+}
+
+fn parse_context_definition(pair: Pair<Rule>) -> ParseResult<ContextDefinition> {
+     if pair.as_rule() != Rule::context_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::context_definition, found: pair.as_rule() });
+    }
+    println!("Parsing context definition: {}", pair.as_str());
+
+    let mut inner_pairs = pair.into_inner();
+    let mut annotations = Vec::new();
+    let mut id: Option<NumericId> = None;
+    let mut fields = Vec::new();
+
+    // Order: annotation*, "context", "@id(", integer_literal, ")", "{", context_field_definition*, "}" 
+    while let Some(p) = inner_pairs.peek() {
+        match p.as_rule() {
+             Rule::annotation => annotations.push(parse_annotation(inner_pairs.next().unwrap())?),
+             Rule::integer_literal => { // ID follows annotations and "context" keyword implicitly 
+                 id = Some(parse_numeric_id(inner_pairs.next().unwrap())?);
+             }
+             Rule::context_field_definition => {
+                 fields.push(parse_context_field_definition(inner_pairs.next().unwrap())?);
+             }
+            rule => return Err(ParseError::UnexpectedRule { expected: Rule::annotation /* or integer_literal or context_field_definition */, found: rule })
+        }
+    }
+
+    Ok(ContextDefinition {
+        id: id.ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?,
+        fields,
+        annotations,
+    })
+}
+
+fn parse_context_field_definition(pair: Pair<Rule>) -> ParseResult<ContextFieldDefinition> {
+    if pair.as_rule() != Rule::context_field_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::context_field_definition, found: pair.as_rule() });
+    }
+    println!("Parsing context field definition: {}", pair.as_str());
+
+     // Reuses much of parse_field_definition logic
+     let mut inner_pairs = pair.into_inner();
+     let mut annotations = Vec::new();
+     let mut leading_annotations = Vec::new();
+     let mut name: Option<Identifier> = None;
+     let mut type_spec: Option<TypeSpecifier> = None;
+     let mut id: Option<NumericId> = None;
+    // TODO: Parse default value from annotation if present
+
+     while let Some(p) = inner_pairs.peek() {
+         if p.as_rule() == Rule::annotation {
+             leading_annotations.push(parse_annotation(inner_pairs.next().unwrap())?);
+         } else {
+             break;
+         }
+     }
+
+    let name_pair = inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::identifier })?;
+    name = Some(parse_identifier(name_pair)?);
+
+    let type_spec_pair = inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::type_specifier })?;
+    type_spec = Some(parse_type_specifier(type_spec_pair)?);
+
+    let id_pair = inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?;
+    id = Some(parse_numeric_id(id_pair)?);
+
+    while let Some(p) = inner_pairs.next() {
+        if p.as_rule() == Rule::annotation {
+            annotations.push(parse_annotation(p)?);
+            // TODO: Check if it's a $default annotation and store its value
+        } else {
+            return Err(ParseError::UnexpectedRule { expected: Rule::annotation, found: p.as_rule() })
+        }
+    }
+
+    Ok(ContextFieldDefinition {
+        name: name.unwrap(),
+        type_spec: type_spec.unwrap(),
+        id: id.unwrap(),
+        annotations: [leading_annotations, annotations].concat(),
     })
 }
 
