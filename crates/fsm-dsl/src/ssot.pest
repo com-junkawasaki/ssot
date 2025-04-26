@@ -1,157 +1,84 @@
-// ssot.pest - Grammar for SSOT FSM definition
+/*
+Basic grammar structure for the SSOT DSL.
+We'll progressively build this based on DSL.md.
+*/
 
-// Basic whitespace and comments
-// WHITESPACE = { (" " | "\t" | "\n" | "\r")+ } // Make WHITESPACE silent again
-WHITESPACE = _{ (" " | "\t" | "\n" | "\r")+ } // Make WHITESPACE TRULY silent
-COMMENT    = _{ ("#" | "//") ~ (!("\n" | "\r") ~ ANY)* }
-// Revert optional_whitespace to simple silent rule
-// optional_whitespace = _{ (WHITESPACE | COMMENT)* } // Keep COMMENT silent
-optional_whitespace = _{ (WHITESPACE | COMMENT)* } // Corrected comment - this should be fine
+// Define whitespace and comments (ignored by parser rules)
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "#" ~ (!"\n" ~ ANY)* }
 
-// ====================================
-//  Top Level Structure
-// ====================================
-
-// parser.rs expects `ssot_file` as the top rule
-// Revert to simpler rule, relying on silent WHITESPACE
-ssot_file = { SOI ~ file_id ~ package_decl? ~ import_decl* ~ top_level_item* ~ EOI }
-
-file_id = { "@" ~ hex_literal ~ ";" }
+// Basic building blocks
+identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+integer_literal = @{ ("-")? ~ ASCII_DIGIT+ }
 hex_literal = @{ "0x" ~ ASCII_HEX_DIGIT+ }
 
-package_decl = { "package" ~ package_name ~ ";" }
-package_name = @{ ident ~ ("." ~ ident)* }
+// Placeholder for the main parsing rule
+file = _{ SOI ~ (COMMENT | PUSH(definition))* ~ EOI }
 
-import_decl = { "import" ~ package_name ~ ";" }
+// Updated top-level definitions rule
+definition = { file_id | import_statement | types_block | actors_block | communication_block | services_block | machines_block | deployment_config_block | annotation }
 
-// Updated: Added struct_def
-top_level_item = { annotation | state_machine | struct_def }
+file_id = { "@" ~ hex_literal ~ ";" }
+import_statement = { "import" ~ string_literal ~ ";" }
 
-// ====================================
-//  Annotations
-// ====================================
+// --- Block Definitions ---
 
-annotation = { "$" ~ ident ~ annotation_value? ~ ";" }
-annotation_value = { "(" ~ annotation_value_inner? ~ ")" }
-annotation_value_inner = { array_literal | literal | ident_list | ident }
+types_block = { annotation* ~ "types" ~ "{" ~ type_definition* ~ "}" }
+type_definition = _{ struct_definition | enum_definition }
 
-literal = { string_literal | number_literal | boolean_literal }
+actors_block = { annotation* ~ "actors" ~ "{" ~ /* TODO: actor_definition* */ ~ "}" } // Placeholder
+communication_block = { annotation* ~ "communication" ~ "{" ~ /* TODO: communication_definition* */ ~ "}" } // Placeholder
+services_block = { annotation* ~ "services" ~ "{" ~ /* TODO: service_definition* */ ~ "}" } // Placeholder
+machines_block = { annotation* ~ "machines" ~ "{" ~ machine_definition* ~ "}" }
+deployment_config_block = { annotation* ~ "deployment_config" ~ "{" ~ /* TODO: deployment_definition* */ ~ "}" } // Placeholder
 
-string_literal = @{ "\"" ~ ( !("\\" | "\"") ~ ANY )* ~ "\"" }
-number_literal = @{ "-"? ~ ASCII_DIGIT+ } // Corresponds to ast::AnnotationValue::NumberLiteral
-boolean_literal = @{ "true" | "false" }
-array_literal = { "[" ~ (string_literal ~ ("," ~ string_literal)*)? ~ "]" }
-ident_list = { ident ~ ("," ~ ident)* }
+// --- Type Definitions ---
 
-// ====================================
-//  Identifiers and Qualified Identifiers
-// ====================================
+struct_definition = { annotation* ~ "struct" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ field_definition* ~ "}" }
+field_definition = { annotation* ~ identifier ~ ":" ~ type_specifier ~ "@id(" ~ integer_literal ~ ")" ~ annotation* ~ ";" }
 
-ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+enum_definition = { annotation* ~ "enum" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ enum_variant* ~ "}" }
+enum_variant = { annotation* ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ annotation* ~ ";" }
 
-// Represents either a simple ident or a qualified one like ns.ident
-qualified_ident = { ident ~ ("." ~ ident)? }
+// Updated type specifiers rule
+type_specifier = _{ list_type | optional_type | simple_type }
 
-// ====================================
-//  State Machine Definition
-// ====================================
+simple_type = { identifier }
+list_type = { "list" ~ "<" ~ type_specifier ~ ">" }
+optional_type = { "optional" ~ "<" ~ type_specifier ~ ">" }
 
-state_machine = { "stateMachine" ~ ident ~ "{" ~ WHITESPACE?
-    ~ machine_item* // Allow machine items directly
-    ~ WHITESPACE? ~ "}" }
+// Updated annotation rules
+annotation = _{ description_annotation | validate_annotation | db_annotation | meta_annotation | generic_kv_annotation | generic_flag_annotation }
 
-// Updated: Added use_decl and context_block placeholder
-machine_item = { annotation | states_block | events_block | transitions_block | context_block | use_decl }
+description_annotation = { "$" ~ ("description") ~ "(" ~ string_literal ~ ")" }
+validate_annotation = { "$" ~ ("validate") ~ "(" ~ annotation_args? ~ ")" } // $validate(...) 
+db_annotation = { "$" ~ ("db") ~ "(" ~ annotation_args? ~ ")" } // $db(...)
+meta_annotation = { "$" ~ ("meta") ~ "(" ~ annotation_args? ~ ")" } // $meta(...)
+generic_kv_annotation = { "$" ~ identifier ~ "(" ~ annotation_value ~ ")" }
+generic_flag_annotation = { "$" ~ identifier ~ ";" }
 
-// Added use declaration inside machine scope
-use_decl = { "use" ~ WHITESPACE ~ qualified_ident ~ ";" }
+// Rule for key-value arguments inside annotations like $validate, $db, $meta
+annotation_args = { annotation_arg ~ ("," ~ annotation_arg)* }
+annotation_arg = { identifier ~ ":" ~ annotation_value }
 
-// ====================================
-//  States Block
-// ====================================
+// Updated annotation values (needs expansion for bool, list, object)
+annotation_value = _{ string_literal | integer_literal /* | boolean_literal | list_literal | object_literal */ }
+// boolean_literal = { "true" | "false" }
+// list_literal = { "[" ~ annotation_value ~ ("," ~ annotation_value)* ~ "]" }
+// object_literal = { "{" ~ annotation_args? ~ "}" } // For nested structures like foreignKey or policies
 
-states_block = { "states" ~ WHITESPACE? ~ "{" ~ WHITESPACE? ~ state_item* ~ WHITESPACE? ~ "}" }
-state_item = { annotation* ~ ident ~ state_ordinal ~ state_body? ~ ";" }
-state_ordinal = { "@" ~ integer_literal }
-state_body = { "{" ~ WHITESPACE? ~ state_element_list? ~ WHITESPACE? ~ "}" }
-state_element_list = { state_element ~ (WHITESPACE? ~ state_element)* } // One or more
-state_element = { entry_action | exit_action | annotation }
-entry_action = { "entry" ~ ":" ~ qualified_ident ~ ";" } // Use qualified_ident
-exit_action = { "exit" ~ ":" ~ qualified_ident ~ ";" }  // Use qualified_ident
+// --- Machine Definitions (Basic) ---
 
-// ====================================
-//  Events Block
-// ====================================
+machine_definition = { annotation* ~ "machine" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ machine_element* ~ "}" }
+// Placeholder for elements inside a machine block
+machine_element = { /* TODO: context_definition | states_definition | actions_definition | guards_definition | invokes_definition | initial_annotation etc. */ }
 
-events_block = { "events" ~ "{" ~ event_item* ~ "}" }
-// Updated: Allow use_decl and annotations within events block
-event_item = { annotation | event_struct | use_decl }
-
-event_struct = { annotation* ~ "event" ~ ident ~ event_ordinal ~ event_body? ~ ";" }
-event_ordinal = { "@" ~ integer_literal }
-event_body = { "{" ~ WHITESPACE? ~ event_body_content? ~ WHITESPACE? ~ "}" }
-event_body_content = { (annotation | event_field) ~ (WHITESPACE? ~ (annotation | event_field))* } // One or more
-event_field = { ident ~ ":" ~ (field_with_ordinal | field_without_ordinal) }
-field_with_ordinal = { field_type ~ field_ordinal ~ ";" }
-field_without_ordinal = { field_type ~ ";" }
-
-field_ordinal = { "@" ~ integer_literal }
-
-// field_type = { primitive_type | list_type | type_identifier }
-field_type = { primitive_type | list_type | type_identifier } // Restore original
-primitive_type = { "Void" | "Bool" | "Int8" | "Int16" | "Int32" | "Int64" | "UInt8" | "UInt16" | "UInt32" | "UInt64" | "Float32" | "Float64" | "Text" | "Data" } // Remove @ capture
-list_type = { "List" ~ "<" ~ field_type ~ ">" }
-type_identifier = { qualified_ident } // Use qualified_ident
-
-// ====================================
-//  Struct Definition (New)
-// ====================================
-
-struct_def = { annotation* ~ "struct" ~ ident ~ struct_body? ~ ";" }
-struct_body = { "{" ~ WHITESPACE? ~ struct_field* ~ WHITESPACE? ~ "}" } // Reverted
-// Reuse event_field structure for struct fields
-struct_field = { event_field }
-
-// ====================================
-//  Transitions Block
-// ====================================
-
-// Keep outer WHITESPACE? for clarity around {}
-transitions_block = { "transitions" ~ WHITESPACE? ~ "{" ~ WHITESPACE? ~ transition_item* ~ WHITESPACE? ~ "}" }
-
-// transition_item = { annotation* ~ WHITESPACE? ~ transition_header ~ WHITESPACE? ~ transition_body ~ WHITESPACE? ~ ";" } // Revert whitespace changes
-transition_item = { annotation* ~ transition_header ~ transition_body ~ ";" }
-
-// transition_header = { ("transition" ~ WHITESPACE ~ ident ~ WHITESPACE)? ~ "from" ~ WHITESPACE ~ ident ~ WHITESPACE ~ "to" ~ WHITESPACE ~ ident } // Revert whitespace changes
-transition_header = { ("transition" ~ ident)? ~ "from" ~ ident ~ "to" ~ ident } // Rely on silent WHITESPACE
-
-// Keep outer WHITESPACE? for clarity around {}
-transition_body = { "{" ~ WHITESPACE? ~ transition_element* ~ WHITESPACE? ~ "}" }
-
-// transition_element = { WHITESPACE? ~ ( on_trigger | guard_condition | action_effect | annotation ) ~ WHITESPACE? } // Revert whitespace changes
-transition_element = { on_trigger | guard_condition | action_effect | annotation }
-
-// on_trigger = { "on" ~ transition_ordinal ~ WHITESPACE ~ qualified_ident ~ WHITESPACE? ~ ";" } // Revert whitespace changes
-on_trigger = { "on" ~ transition_ordinal ~ qualified_ident ~ ";" }
-// guard_condition = { "guard" ~ transition_ordinal ~ WHITESPACE ~ qualified_ident ~ WHITESPACE? ~ ";" } // Revert whitespace changes
-guard_condition = { "guard" ~ transition_ordinal ~ qualified_ident ~ ";" }
-// action_effect = { "action" ~ transition_ordinal ~ WHITESPACE ~ qualified_ident ~ WHITESPACE? ~ ";" } // Revert whitespace changes
-action_effect = { "action" ~ transition_ordinal ~ qualified_ident ~ ";" }
-// transition_ordinal = { WHITESPACE? ~ "@" ~ WHITESPACE? ~ integer_literal } // Revert whitespace changes
-transition_ordinal = { "@" ~ integer_literal } // Rely on silent WHITESPACE
-
-// ====================================
-//  Context Block (Placeholder)
-// ====================================
-
-context_block = { "context" ~ "{" ~ WHITESPACE? ~ context_field* ~ WHITESPACE? ~ "}" } // Reverted
-context_field = { event_field } // Reuse event_field structure for now
-
-// ====================================
-//  Basic Tokens
-// ====================================
-
-integer_literal = @{ ASCII_DIGIT+ }
-
-// Implicit rules handled by Pest based on usage:
-// WHITESPACE, COMMENT, SOI, EOI
+// TODO: Add rules for all other elements from DSL.md:
+// - enums, machines, services, interfaces, protocols, actors, channels, events
+// - context, states, transitions (on, after), actions, guards, invokes
+// - deployment_config, environment, infrastructure, deployment
+// - annotations ($description, $initial, $final, $db, $validate, etc.)
+// - detailed type specifiers (list, optional, map)
+// - expressions within guards/actions (if applicable to parsing stage)
+// - nested structures and blocks 

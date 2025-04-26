@@ -1,9 +1,21 @@
-// crates/fsm-dsl/src/lib.rs
-// This file should only expose the necessary modules.
+"""// Placeholder for the FSM DSL library implementation.
 
-pub mod ast;
 pub mod parser;
+pub mod ast;
+// pub mod generator; // Uncomment when generator module is added
 
-// Re-export key items if desired for convenience
-// pub use ast::{SsotFile, StateMachine, StateItem, MessageItem, FieldDef, TransitionItem, TransitionElement, Annotation, AnnotationValue, FieldType};
-// pub use parser::{parse_file, parse_str, ParseError};
+pub fn add(left: usize, right: usize) -> usize {
+    left + right
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        let result = add(2, 2);
+        assert_eq!(result, 4);
+    }
+}
+"" 
