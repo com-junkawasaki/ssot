@@ -349,3 +349,251 @@ event UserLoggedIn @id(0x200...) {
 - **NEW: Infrastructure & Deployment:** Added `environment`, `infrastructure`, and `deployment` elements to model infrastructure configuration and deployment strategies, enabling IaC generation.
 
 This significantly extended DSL aims to be a comprehensive Single Source of Truth for defining not just state logic but also related data structures, communication patterns, API contracts, database schemas, **actor interactions/permissions, and the underlying infrastructure and deployment configurations.**
+
+# --- DSL.md (Revised with Block Structure) ---
+
+# Unique ID for this definition file
+@0xabcdef1234567890;
+
+# --- Imports ---
+import "/path/to/shared_types.ssot";
+import "/path/to/base_service.ssot";
+import "/path/to/common_actions.ssot";
+
+# --- Output Configuration (Top Level) ---
+$rust_out("src/generated");
+$capnp_out("schema/capnp");
+# ... other $out directives ...
+
+# ==========================================
+#  Type Definitions Block
+# ==========================================
+types {
+  $description("Contains shared data structures and enumerations.");
+
+  struct UserCredentials @id(0xddd...) {
+    username: string @id(0) {
+      $description("User's login name.");
+      $validate(minLength: 3, maxLength: 50, pattern: "^[a-zA-Z0-9_]+$");
+    }
+    password: string @id(1) {
+      $description("User's password (validation often done server-side).");
+      $validate(minLength: 8);
+    }
+  }
+
+  struct AuthToken @id(0xeee...) {
+    $db(table: "auth_tokens", primaryKey: "token");
+    token: string @id(0) { $db(column: "auth_token", type: "VARCHAR(255)"); }
+    userId: string @id(1) { $db(column: "user_id", type: "UUID", index: true); }
+    expiresAt: timestamp @id(2) { $db(column: "expires_at"); }
+  }
+
+  enum LoginStatus @id(0xfff...) {
+    SUCCESS @id(0);
+    INVALID_CREDENTIALS @id(1);
+    ACCOUNT_LOCKED @id(2);
+  }
+
+  struct LoginResult @id(0xggg...) {
+     status: LoginStatus @id(0);
+     token: optional<AuthToken> @id(1);
+  }
+
+  struct UserProfile @id(0x100...) {
+    $description("Stores user profile information.");
+    $db( /* ... RLS policies ... */ );
+    profileId: u64 @id(0) { /* ... */ }
+    userId: string @id(1) { /* ... */ }
+    # ... other fields ...
+  }
+} # end types block
+
+# ==========================================
+#  Actor Definitions Block
+# ==========================================
+actors {
+  $description("Defines actors (roles, systems) interacting with the system.");
+
+  actor AdminUser @id(0xA001) {
+    $description("Administrator role.");
+    $type("role");
+  }
+
+  actor PaymentGateway @id(0xB001) {
+    $description("External payment processing system.");
+    $type("system");
+  }
+} # end actors block
+
+# ==========================================
+#  Communication Definitions Block
+# ==========================================
+communication {
+  $description("Defines protocols, channels, and events for communication.");
+
+  protocol CapnpRPC @id(0xaaa...) {
+    $description("Uses Cap'n Proto RPC framework.");
+  }
+
+  channel UserNotifications @id(0xbbb...) {
+    description: "Channel for user-specific real-time notifications.";
+    parameters: { userId: string };
+  }
+
+  event UserLoggedIn @id(0x200...) {
+    $description("Published when a user successfully logs in.");
+    $channel(UserNotifications);
+    userId: string @id(0);
+    timestamp: timestamp @id(1);
+  }
+} # end communication block
+
+# ==========================================
+#  Service Definitions Block
+# ==========================================
+services {
+  $description("Defines service interfaces and implementations.");
+
+  interface UserAuthentication @id(0xccc...) {
+    $description("Defines user authentication operations.");
+    $protocol(CapnpRPC);
+
+    login @id(0) (credentials: UserCredentials) -> LoginResult {
+      $description("Logs a user in.");
+      $route(method: "POST", path: "/auth/login");
+      $meta(tags: ["Authentication"], operationId: "userLogin");
+    }
+    logout @id(1) (token: AuthToken);
+    $version("1.1");
+  }
+
+  # Assume BaseService is defined elsewhere or in an import
+  # service BaseService @id(...) { ... }
+
+  service AuthService @id(0) extends BaseService {
+    $description("Handles user authentication logic.");
+    $implements(UserAuthentication);
+    $communicatesWith(UserProfileService using CapnpRPC);
+    $route(basePath: "/api/v1");
+    $publishes(UserNotifications);
+    $meta(responsibleTeam: "auth-team");
+    # Could potentially have service-specific config/overrides here
+  }
+
+  # Assume UserProfileService is defined elsewhere or in an import
+  # service UserProfileService @id(...) { ... }
+
+} # end services block
+
+# ==========================================
+#  State Machine Definitions Block
+# ==========================================
+machines {
+  $description("Defines state machines governing application logic.");
+
+  machine ComplexMachine @id(2) {
+    $initial(Loading);
+    $description("An example complex state machine.");
+
+    context @id(0x1000) {
+        currentUser: optional<UserProfile> @id(0);
+        errorMessage: optional<string> @id(1);
+        retryCount: u8 @id(2) { $default(0); }
+    }
+
+    actions @id(0x2000) { # Optional block for defining machine-local actions/guards
+        logError @id(0) (ctx, event);
+        incrementRetry @id(1) (ctx);
+        assignUser @id(2) (ctx, event);
+        clearError @id(3) (ctx);
+    }
+
+    guards @id(0x3000) {
+        hasCurrentUser @id(0) (ctx) -> bool;
+        maxRetriesReached @id(1) (ctx) -> bool;
+    }
+
+    invokes @id(0x4000) { # Optional block for defining invocations
+        fetchUserData @id(0) { src: UserProfileService.fetchProfile, onDone: ..., onError: ... };
+        someBackgroundProcess @id(1) { src: "backgroundTask", onDone: ..., onError: ... };
+    }
+
+    states @id(0x5000) {
+      Loading @id(0) {
+        $description("Initial loading state.");
+        invoke Loading.fetchUser @id(0) {
+            src: invokes.fetchUserData;
+            input: { userId: "some_static_id" }; # Example input mapping
+            onDone: transition Dashboard { action: [actions.assignUser, actions.clearError] };
+            onError: transition Error { action: actions.logError };
+        }
+      }
+
+      Dashboard @id(1) {
+        $description("Main dashboard area.");
+        $meta(uiComponent: "DashboardView");
+        initial: Idle; # Nested initial state
+
+        states @id(0x5100) { # Nested states block
+            Idle @id(0) {
+                on REFRESH @id(0) transition Refreshing;
+                on LOGOUT @id(1) transition LoggingOut { $requiresActor(AdminUser); }; # Example with actor requirement
+            }
+            Refreshing @id(1) {
+                invoke Refreshing.fetchData @id(0) { /* ... similar to Loading invoke ... */ };
+            }
+        }
+      }
+
+      Error @id(2) {
+        $description("Error state.");
+        on RETRY @id(0) transition Loading {
+            guard: [guards.maxRetriesReached(not)], # Negated guard example
+            action: [actions.incrementRetry, actions.clearError]
+        };
+        on RETRY @id(1) transition Failure { # Transition if max retries reached
+            guard: guards.maxRetriesReached;
+        };
+      }
+
+      LoggingOut @id(3) { /* ... */ }
+      Failure @id(4) { $final; } # Final state example
+
+    } # end states block for ComplexMachine
+
+    # Explicit transitions block (optional, could define directly in states)
+    # transitions @id(0x6000) {
+    #    transition FromLoadingToDashboard @id(0) from Loading to Dashboard { on: USER_DATA_LOADED, action: actions.assignUser };
+    # }
+
+  } # end machine ComplexMachine
+
+} # end machines block
+
+# ==========================================
+#  Deployment Configuration Block
+# ==========================================
+deployment_config {
+  $description("Defines environments, infrastructure, and deployment strategies.");
+
+  environment Production @id(0xe00...) {
+    $provider("aws"); $region("us-east-1");
+    variables: { logLevel: "info" };
+    # deployment: DeploymentTarget_ProdAppServers; # Reference deployment if defined separately
+  }
+
+  infrastructure ComputeCluster @id(0xf00...) {
+    type: "kubernetes"; instanceType: "t3.medium"; minSize: 2; maxSize: 10;
+  }
+
+  deployment DeployAuthServiceProd @id(0xd00...) {
+    targetEnvironment: Production;
+    targetInfrastructure: ComputeCluster; # Reference infrastructure blueprint
+    deployable: AuthService; # Reference the service to deploy
+    replicas: 3; strategy: "blue_green";
+    # Environment variable overrides specific to this deployment
+    config: { $db_connection_string: "prod_db_connection_string" };
+  }
+
+} # end deployment_config block
