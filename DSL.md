@@ -548,12 +548,70 @@ deployment_config {
 - **Infrastructure & Deployment:** `environment`, `infrastructure`, `deployment` for IaC.
 
 ## 5. Potential Future Extensions (Considerations)
-This DSL provides a strong foundation. Future versions or tooling could explore:
-- **Standardized Error Handling:** Defining explicit `error` types and mechanisms for propagation within machines or across services.
-- **Test Directives:** Annotations or blocks for defining test cases, scenarios, or mocking behavior directly within the SSOT file (e.g., `$test(...)`, `tests {}` block).
-- **Advanced Generator Configuration:** More granular control over code generation via specialized annotations or configuration blocks (e.g., customizing serialization, specific framework integrations).
-- **Explicit Namespaces:** A more robust mechanism for managing imports and avoiding name collisions in large projects beyond simple filename qualification.
-- **Security Policy Definitions:** Expanding beyond RLS to include network policies, API authentication methods, etc.
-- **Lifecycle Hooks:** Defining hooks for different stages of the DSL processing or code generation.
 
-This revised DSL aims for greater clarity, consistency, and completeness based on the requested improvements.
+This DSL provides a strong foundation. Future versions or tooling could explore the following enhancements to further increase its descriptive power and utility:
+
+### 5.1. Standardized Error Handling Framework
+- **Goal:** Define and manage errors explicitly and consistently across machines and services.
+- **Proposal:**
+    - Introduce a top-level `errors {}` block for defining custom error types, potentially inheriting from a base error type.
+    - `errors { error AuthenticationFailed @id(0) extends BaseError { reason: string @id(0); attempts: u8 @id(1); } error NetworkError @id(1) { url: string @id(0); timeout: u16 @id(1); } }`
+    - Allow service interface methods and machine actions to explicitly declare returned error types using a `Result<SuccessType, ErrorType>` syntax or similar.
+      - `interface UserAuthentication { login(...) -> Result<AuthToken, AuthenticationFailed | NetworkError>; }`
+      - `action attemptLogin @id(...) (...) -> Result<void, AuthenticationFailed>;`
+    - Enhance `onError` transitions in `invoke` and state definitions to trigger based on specific error types returned by invoked actors or actions.
+      - `invoke fetchUserData { ... onError AuthenticationFailed transition AuthError; onError NetworkError transition ConnectionError; }`
+    - This enables more robust error handling logic generation and static analysis.
+
+### 5.2. Integrated Test Definitions
+- **Goal:** Define test cases, scenarios, and mocking behavior directly within the SSOT, improving design-test traceability.
+- **Proposal:**
+    - Introduce a top-level `tests {}` block, or allow `tests {}` within `machine`, `service`, or `interface` blocks for scoping.
+    - Define test scenarios using a BDD-style syntax or structured format referencing DSL elements.
+      - `tests { scenario UserLoginSuccess @id(0) for ComplexMachine { $description("Verify successful login flow."); given state Loading; when event LOGIN_SUCCESS with { token: { userId: "user123", ...} }; then expect state Dashboard; expect context { currentUser.userId == "user123"; }; }`
+      - `scenario AdminLogout @id(1) for ComplexMachine { given state Dashboard with context { currentUser: ... }; require actor AdminUser; when event LOGOUT; then expect state LoggingOut; }`
+    - Define mocks for invoked actors (services, functions).
+      - `mock UserProfileService.fetchProfile @id(0) when input { userId: "user123" } returns success with { profileId: 1, ... };`
+      - `mock PaymentGateway.process @id(1) fails with NetworkError { url: "...", ... };`
+    - Generators could produce executable test skeletons (e.g., using `@xstate/test`, `cucumber-rs`, `mockall`) based on these definitions.
+
+### 5.3. Advanced Generator Configuration & Customization
+- **Goal:** Provide more granular control over generated code and artifacts beyond simple output paths.
+- **Proposal:**
+    - Introduce generator-specific configuration blocks or annotations.
+      - `$rust_out("...") config { derive_serde: true; use_chrono: true; serde_case: "camelCase"; }`
+      - `struct UserProfile { ... email: string { $ts(decorator: "@IsEmail()", typeOverride: "EmailString"); } ... }`
+      - `$openapi_out("...") config { default_security_scheme: "jwtAuth"; info: { title: "...", version: ... }; }`
+    - Allow specifying code snippets or templates to be injected at certain points.
+      - `action customLogic @id(...) { $rust(inline: "/* custom rust code here */"); }`
+    - This allows tailoring output for specific frameworks, libraries, or project conventions.
+
+### 5.4. Explicit Namespacing and Module System
+- **Goal:** Improve organization and prevent name collisions in large projects with multiple SSOT files.
+- **Proposal:**
+    - Introduce a `namespace com.example.project.module;` declaration at the top of SSOT files.
+    - Enhance the `import` statement to allow aliasing: `import "/shared/common_types.ssot" as common;`
+    - Require qualified names for accessing imported definitions: `field: common.Address @id(0);`
+    - Define rules for relative vs. absolute referencing within and across namespaces.
+
+### 5.5. Enhanced Security Policy Definitions
+- **Goal:** Define security requirements beyond database RLS more explicitly.
+- **Proposal:**
+    - Introduce a top-level `security {}` block or allow security annotations directly on elements.
+    - Define API authentication/authorization requirements:
+      - `interface UserAuthentication { login @id(0) (...) { $auth(scheme: "basic"); } getProfile @id(1) (...) { $auth(scheme: "jwt", scopes: ["profile:read", "user:self"]); } }`
+    - Define Network Policies (conceptual, for documentation or potential IaC hints):
+      - `service AuthService { $networkPolicy(allow_inbound: [{ port: 443, protocol: "TCP", source: "load_balancer_sg" }]); }`
+    - Define data sensitivity levels for fields, influencing logging or masking generation:
+      - `struct UserCredentials { password: string { $sensitivity("high", mask: "****"); } }`
+
+### 5.6. Lifecycle Hooks for Tooling Integration
+- **Goal:** Allow integration with external scripts or tools during the SSOT processing lifecycle.
+- **Proposal:**
+    - Introduce a `$hook` annotation attachable to the top-level or specific blocks/elements.
+    - `$hook(event: "pre_codegen", target: "rust", script: "./scripts/validate_rust_config.sh")`
+    - `$hook(event: "post_analysis", command: "node ./scripts/generate_docs.js --input $CONTEXT_FILE")`
+    - Possible events: `post_parse`, `pre_validate`, `post_validate`, `pre_codegen`, `post_codegen`.
+    - Tooling would execute the specified script/command at the designated lifecycle stage, potentially passing context information.
+
+These extensions aim to make the SSOT DSL an even more comprehensive and powerful tool for model-driven development, covering aspects from detailed logic and data to testing, security, and deployment integration. Integrating these would require careful consideration of syntax clarity and tooling complexity.
