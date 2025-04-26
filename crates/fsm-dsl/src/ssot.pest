@@ -86,9 +86,9 @@ event_item = { annotation | event_struct | use_decl }
 
 event_struct = { annotation* ~ "event" ~ ident ~ event_ordinal ~ event_body? ~ ";" }
 event_ordinal = { "@" ~ integer_literal }
-event_body = { "{" ~ (annotation | event_field)* ~ "}" } // Reverted: Allow annotations or fields
-event_field = { annotation* ~ ident ~ ":" ~ field_type ~ field_ordinal? ~ ";" } // Made field_ordinal optional
-field_ordinal = { "@" ~ integer_literal }
+event_body = { "{" ~ (annotation | event_field)* ~ "}" }
+event_field = { ident ~ ":" ~ field_type ~ field_ordinal? ~ ";" } // Restore: Removed annotation*, optional ordinal
+field_ordinal = { WHITESPACE? ~ "@" ~ WHITESPACE? ~ integer_literal }
 
 field_type = { primitive_type | list_type | type_identifier }
 primitive_type = @{ "Void" | "Bool" | "Int8" | "Int16" | "Int32" | "Int64" | "UInt8" | "UInt16" | "UInt32" | "UInt64" | "Float32" | "Float64" | "Text" | "Data" }

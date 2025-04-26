@@ -442,51 +442,59 @@ fn parse_event_struct(pair: Pair<Rule>) -> Result<MessageItem, ParseError> {
 
 fn parse_event_field(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
     debug_assert_eq!(pair.as_rule(), Rule::event_field);
-    let mut inner = pair.into_inner(); // Use mutable iterator
-    let mut annotations = Vec::new();
+    let mut inner = pair.into_inner();
+    let annotations = Vec::new(); // Annotations are not parsed due to grammar change, but keep field
     let mut name: Option<Ident> = None;
     let mut field_type: Option<FieldType> = None;
     let mut ordinal: Option<u64> = None;
 
-    // Peek at the pairs to parse them in order
-    while let Some(item_pair) = inner.peek() {
-        match item_pair.as_rule() {
-            Rule::annotation => {
-                annotations.push(parse_annotation(inner.next().unwrap())?);
-            }
-            Rule::ident => {
-                name = Some(parse_ident(inner.next().unwrap())?);
-            }
-            Rule::field_type => {
-                // The actual type is nested inside field_type rule
-                let type_pair = inner.next().unwrap().into_inner().next().unwrap();
-                field_type = Some(parse_field_type(type_pair)?);
-            }
-            Rule::field_ordinal => {
-                // The actual literal is nested inside field_ordinal
-                let ordinal_pair = inner.next().unwrap().into_inner().next().unwrap();
-                ordinal = Some(parse_integer_literal(ordinal_pair)?);
-            }
-            Rule::WHITESPACE | Rule::COMMENT => {
-                let _ = inner.next(); /* consume and ignore */
-            }
-            _ => {
-                // This should ideally not be reached if grammar is correct
-                // but handles unexpected tokens within the field definition.
-                return Err(ParseError::UnexpectedRule {
-                    rule: item_pair.as_rule(),
-                    context: "event_field definition inner elements".to_string(),
-                });
-            }
-        }
+    // Consume identifier (mandatory)
+    let ident_pair = inner.next().ok_or_else(|| {
+        ParseError::MissingElement("field name identifier in event_field".to_string())
+    })?;
+    if ident_pair.as_rule() == Rule::ident {
+        name = Some(parse_ident(ident_pair)?);
+    } else {
+        return Err(ParseError::UnexpectedRule {
+            rule: ident_pair.as_rule(),
+            context: "Expected identifier for field name".to_string(),
+        });
     }
 
+    // Consume colon (:)
+    let _colon_pair = inner
+        .next()
+        .ok_or_else(|| ParseError::MissingElement("colon after field name".to_string()))?;
+    // Check rule if needed: if _colon_pair.as_rule() != Rule::COLON ...
+
+    // Consume field_type (mandatory)
+    let type_pair = inner
+        .next()
+        .ok_or_else(|| ParseError::MissingElement("field type in event_field".to_string()))?;
+    if type_pair.as_rule() == Rule::field_type {
+        let actual_type_pair = type_pair.into_inner().next().unwrap();
+        field_type = Some(parse_field_type(actual_type_pair)?);
+    } else {
+        return Err(ParseError::UnexpectedRule {
+            rule: type_pair.as_rule(),
+            context: "Expected field_type definition".to_string(),
+        });
+    }
+
+    // Consume optional field_ordinal
+    if let Some(next_pair) = inner.peek() {
+        if next_pair.as_rule() == Rule::field_ordinal {
+            let ordinal_pair = inner.next().unwrap().into_inner().next().unwrap();
+            ordinal = Some(parse_integer_literal(ordinal_pair)?);
+        }
+    }
+    // Semicolon is handled by grammar
+
     Ok(FieldDef {
-        annotations,
-        name: name.ok_or_else(|| ParseError::MissingElement("field name".to_string()))?,
-        ordinal, // Now optional
-        field_type: field_type
-            .ok_or_else(|| ParseError::MissingElement("field type".to_string()))?,
+        annotations, // Return empty vec as annotations are not parsed by current grammar
+        name: name.unwrap(),
+        ordinal,
+        field_type: field_type.unwrap(),
     })
 }
 
