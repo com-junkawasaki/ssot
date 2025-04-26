@@ -252,7 +252,7 @@ machines {
                 # On REFRESH event, transition to Refreshing state.
                 on REFRESH @id(0) transition Refreshing;
                 # On LOGOUT event, transition if triggered by AdminUser.
-                on LOGOUT @id(1) transition LoggingOut { $requiresActor(AdminUser); };
+                on LOGOUT @id(1) transition LoggingOut { $allowedActors(AdminUser); };
             }
             Refreshing @id(1) {
                 # Define invocation specific to this state if needed, or reuse machine-level invokes.
@@ -459,13 +459,13 @@ deployment_config {
 
 ### 2.7. Transitions (`on`, `after`)
 - Defined within a `state` block.
-- `on EVENT_NAME @id(...) transition TargetState { action ..., guard ..., $requiresActor(...) }`
-- `after DURATION @id(...) transition TargetState { action ..., guard ..., $requiresActor(...) }`
+- `on EVENT_NAME @id(...) transition TargetState { action ..., guard ..., $allowedActors(...) }`
+- `after DURATION @id(...) transition TargetState { action ..., guard ..., $allowedActors(...) }`
     - **DURATION Format (Clarified):** A number followed by a unit: `ms` (milliseconds), `s` (seconds), `m` (minutes), `h` (hours). Examples: `100ms`, `5s`, `2m`, `1h`. No spaces between number and unit.
 - `TargetState`: Can be a state name (relative to current scope or absolute from machine root), `.siblingState`, `..parentSiblingState`, `.history`, `StateName.history`.
 - `action`: Optional list of action names to execute.
 - `guard`: Optional list of guard names (all must pass). Use `guardName(not)` for negation.
-- `$requiresActor(ActorName | [ActorName1, ActorName2])`: Optional access control.
+- `$allowedActors(ActorName | [ActorName1, ActorName2])`: Optional. Specifies which `actor` (or actors, defined in the `actors` block) are **permitted** to trigger this transition. If omitted, any actor (or the system itself) might be able to trigger it, depending on implementation context. Essential for modeling access control at the state transition level. Names must resolve to defined Actors.
 
 ### 2.8. Actions and Guards (`action`, `guard`)
 - Defined within a `machine` block (typically in dedicated `actions {}` / `guards {}` sub-blocks).
@@ -508,7 +508,7 @@ deployment_config {
 ### 2.14. Actor Definition (`actor`)
 - Defined within the `actors {}` block.
 - `actor ActorName @id(...) { $description(...), $type("role" | "system" | ...), $meta(...) }`
-- Defines an interacting entity for documentation and access control (`$requiresActor`).
+- Defines an interacting entity (human role, external system). Used for documentation and primarily referenced by the `$allowedActors` annotation on transitions to specify trigger permissions.
 
 ### 2.15. Channel Definition (`channel`)
 - Defined within the `communication {}` block.
@@ -544,7 +544,7 @@ deployment_config {
 - **Name Resolution:** Basic rules and recommendations provided.
 - **Validation:** `$validate` examples provided.
 - **Metadata:** `$meta` examples shown for various elements.
-- **Actor Modeling:** `actor` element and `$requiresActor` for access control.
+- **Actor Modeling:** `actor` element defines interacting entities. The `$allowedActors` annotation on transitions specifies which actors are permitted to trigger them, enabling access control modeling at the transition level.
 - **Infrastructure & Deployment:** `environment`, `infrastructure`, `deployment` for IaC.
 
 ## 5. Potential Future Extensions (Considerations)
