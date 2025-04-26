@@ -1,10 +1,12 @@
 // ssot.pest - Grammar for SSOT FSM definition
 
-// Basic whitespace and comments (Silent rules)
-WHITESPACE = _{ (" " | "\t" | "\n" | "\r")+ } // Make WHITESPACE silent
+// Basic whitespace and comments
+// WHITESPACE = { (" " | "\t" | "\n" | "\r")+ } // Make WHITESPACE silent again
+WHITESPACE = _{ (" " | "\t" | "\n" | "\r")+ } // Make WHITESPACE TRULY silent
 COMMENT    = _{ ("#" | "//") ~ (!("\n" | "\r") ~ ANY)* }
-// Revert optional_whitespace to simple silent rule (likely not needed if WHITESPACE is silent)
-optional_whitespace = _{ (WHITESPACE | COMMENT)* }
+// Revert optional_whitespace to simple silent rule
+// optional_whitespace = _{ (WHITESPACE | COMMENT)* } // Keep COMMENT silent
+optional_whitespace = _{ (WHITESPACE | COMMENT)* } // Corrected comment - this should be fine
 
 // ====================================
 //  Top Level Structure
@@ -48,7 +50,7 @@ ident_list = { ident ~ ("," ~ ident)* }
 ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
 // Represents either a simple ident or a qualified one like ns.ident
-qualified_ident = @{ ident ~ ("." ~ ident)? }
+qualified_ident = { ident ~ ("." ~ ident)? }
 
 // ====================================
 //  State Machine Definition
@@ -86,12 +88,12 @@ event_item = { annotation | event_struct | use_decl }
 
 event_struct = { annotation* ~ "event" ~ ident ~ event_ordinal ~ event_body? ~ ";" }
 event_ordinal = { "@" ~ integer_literal }
-event_body = { "{" ~ (annotation | event_field)* ~ "}" }
-event_field = { ident ~ ":" ~ field_type ~ field_ordinal? ~ ";" } // Restore: Removed annotation*, optional ordinal
-field_ordinal = { WHITESPACE? ~ "@" ~ WHITESPACE? ~ integer_literal }
+event_body = { "{" ~ WHITESPACE? ~ (annotation | event_field)* ~ WHITESPACE? ~ "}" }
+event_field = { (ident ~ ":" ~ field_type ~ field_ordinal ~ ";") | (ident ~ ":" ~ field_type ~ ";") } // Explicit cases
+field_ordinal = { "@" ~ integer_literal } // Simpler definition
 
-field_type = { primitive_type | list_type | type_identifier }
-primitive_type = @{ "Void" | "Bool" | "Int8" | "Int16" | "Int32" | "Int64" | "UInt8" | "UInt16" | "UInt32" | "UInt64" | "Float32" | "Float64" | "Text" | "Data" }
+field_type = @{ !("@") ~ (primitive_type | list_type | type_identifier) }
+primitive_type = { "Void" | "Bool" | "Int8" | "Int16" | "Int32" | "Int64" | "UInt8" | "UInt16" | "UInt32" | "UInt64" | "Float32" | "Float64" | "Text" | "Data" }
 list_type = { "List" ~ "<" ~ field_type ~ ">" }
 type_identifier = { qualified_ident } // Use qualified_ident
 
@@ -108,16 +110,29 @@ struct_field = { event_field }
 //  Transitions Block
 // ====================================
 
+// Keep outer WHITESPACE? for clarity around {}
 transitions_block = { "transitions" ~ WHITESPACE? ~ "{" ~ WHITESPACE? ~ transition_item* ~ WHITESPACE? ~ "}" }
+
+// transition_item = { annotation* ~ WHITESPACE? ~ transition_header ~ WHITESPACE? ~ transition_body ~ WHITESPACE? ~ ";" } // Revert whitespace changes
 transition_item = { annotation* ~ transition_header ~ transition_body ~ ";" }
-transition_header = { ("transition" ~ ident ~ WHITESPACE)? ~ "from" ~ ident ~ WHITESPACE ~ "to" ~ ident }
-transition_body = { "{" ~ WHITESPACE? ~ transition_element* ~ WHITESPACE? ~ "}" } // Reverted
+
+// transition_header = { ("transition" ~ WHITESPACE ~ ident ~ WHITESPACE)? ~ "from" ~ WHITESPACE ~ ident ~ WHITESPACE ~ "to" ~ WHITESPACE ~ ident } // Revert whitespace changes
+transition_header = { ("transition" ~ ident)? ~ "from" ~ ident ~ "to" ~ ident } // Rely on silent WHITESPACE
+
+// Keep outer WHITESPACE? for clarity around {}
+transition_body = { "{" ~ WHITESPACE? ~ transition_element* ~ WHITESPACE? ~ "}" }
+
+// transition_element = { WHITESPACE? ~ ( on_trigger | guard_condition | action_effect | annotation ) ~ WHITESPACE? } // Revert whitespace changes
 transition_element = { on_trigger | guard_condition | action_effect | annotation }
 
-on_trigger = { "on" ~ transition_ordinal ~ qualified_ident ~ ";" }       // Use qualified_ident
-guard_condition = { "guard" ~ transition_ordinal ~ qualified_ident ~ ";" } // Use qualified_ident
-action_effect = { "action" ~ transition_ordinal ~ qualified_ident ~ ";" } // Use qualified_ident
-transition_ordinal = { WHITESPACE ~ "@" ~ integer_literal }
+// on_trigger = { "on" ~ transition_ordinal ~ WHITESPACE ~ qualified_ident ~ WHITESPACE? ~ ";" } // Revert whitespace changes
+on_trigger = { "on" ~ transition_ordinal ~ qualified_ident ~ ";" }
+// guard_condition = { "guard" ~ transition_ordinal ~ WHITESPACE ~ qualified_ident ~ WHITESPACE? ~ ";" } // Revert whitespace changes
+guard_condition = { "guard" ~ transition_ordinal ~ qualified_ident ~ ";" }
+// action_effect = { "action" ~ transition_ordinal ~ WHITESPACE ~ qualified_ident ~ WHITESPACE? ~ ";" } // Revert whitespace changes
+action_effect = { "action" ~ transition_ordinal ~ qualified_ident ~ ";" }
+// transition_ordinal = { WHITESPACE? ~ "@" ~ WHITESPACE? ~ integer_literal } // Revert whitespace changes
+transition_ordinal = { "@" ~ integer_literal } // Rely on silent WHITESPACE
 
 // ====================================
 //  Context Block (Placeholder)

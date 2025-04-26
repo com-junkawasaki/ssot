@@ -103,7 +103,7 @@ The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not 
 
 *   **Expanded Target Formats & Integrations:** Support more output types and standard formats.
     *   Visualizations (Mermaid, Graphviz DOT), advanced documentation (state tables, sequence diagrams).
-    *   Integration with standard formats: Requirements (ReqIF), Process/Architecture (BPMN, ArchiMate), System Modeling (UML/SysML), Data/Schema (JSON Schema, Protobuf, Avro, etc.), API/Interface (OpenAPI, gRPC, GraphQL, AsyncAPI), DB Schema (SQL, Prisma, Drizzle, Liquibase, etc.).
+    *   Integration with standard formats: Requirements (ReqIF), Process/Architecture (BPMN, ArchiMate), System Modeling (UML/SysML), Data/Schema (JSON Schema, Protobuf, Avro, **Zod Schemas**, etc.), API/Interface (OpenAPI, gRPC, GraphQL, AsyncAPI), DB Schema (SQL, Prisma, Drizzle, Liquibase, etc.).
 
 *   **Project-Specific Generation:** Tailor output for specific frameworks and platforms.
     *   Generate Next.js routing (`app/` router), database migrations (SQL diffs), platform configs (`fly.toml`, `vercel.json`), deployment hints (Docker, K8s).

@@ -156,7 +156,7 @@ fn parse_annotation_value(pair: Pair<Rule>) -> Result<AnnotationValue, ParseErro
     // pair matches annotation_value rule: "(" ~ annotation_value_inner? ~ ")"
     if let Some(annotation_value_inner_pair) = pair.into_inner().next() {
         // Check the rule of the content INSIDE the parentheses
-        let actual_content_pair = annotation_value_inner_pair;
+        let actual_content_pair = annotation_value_inner_pair.into_inner().next().unwrap();
         match actual_content_pair.as_rule() {
             Rule::ident => Ok(AnnotationValue::Identifier(parse_ident(
                 actual_content_pair,
@@ -196,11 +196,11 @@ fn parse_annotation_value(pair: Pair<Rule>) -> Result<AnnotationValue, ParseErro
                 }
             }
             Rule::ident_list => {
-                // Handle the new ident_list rule
                 let idents = actual_content_pair
-                    .into_inner() // Gets the idents inside the list
-                    .map(parse_ident) // Parse each ident
-                    .collect::<Result<Vec<Ident>, _>>()?; // Collect results
+                    .into_inner()
+                    .filter(|p| p.as_rule() == Rule::ident)
+                    .map(parse_ident)
+                    .collect::<Result<Vec<Ident>, _>>()?;
                 Ok(AnnotationValue::IdentifierList(idents))
             }
             _ => Err(ParseError::UnexpectedRule {
@@ -233,38 +233,60 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
     let mut context_fields = Vec::new();
 
     // Iterate over items inside the stateMachine block {}
-    for item_pair in inner {
-        match item_pair.as_rule() {
-            Rule::annotation => {
-                annotations.push(parse_annotation(item_pair)?);
+    for machine_item_pair in inner {
+        // This pair *is* the machine_item
+        // Skip silent rules that might sneak in
+        if machine_item_pair.as_rule() == Rule::WHITESPACE
+            || machine_item_pair.as_rule() == Rule::COMMENT
+        {
+            continue;
+        }
+
+        // Expect machine_item rule here, then look inside it
+        if machine_item_pair.as_rule() != Rule::machine_item {
+            return Err(ParseError::UnexpectedRule {
+                rule: machine_item_pair.as_rule(),
+                context: format!("Expected machine_item inside stateMachine '{}'", name),
+            });
+        }
+
+        // Get the actual specific item *inside* machine_item
+        if let Some(specific_item_pair) = machine_item_pair.into_inner().next() {
+            match specific_item_pair.as_rule() {
+                // Match on the specific rule
+                Rule::annotation => {
+                    annotations.push(parse_annotation(specific_item_pair)?);
+                }
+                Rule::states_block => {
+                    states = parse_states_block(specific_item_pair)?;
+                }
+                Rule::events_block => {
+                    let (parsed_events, event_use_decls) = parse_events_block(specific_item_pair)?;
+                    events = parsed_events;
+                    use_declarations.extend(event_use_decls);
+                }
+                Rule::transitions_block => {
+                    transitions = parse_transitions_block(specific_item_pair)?;
+                }
+                Rule::context_block => {
+                    context_fields = parse_context_block(specific_item_pair)?;
+                }
+                Rule::use_decl => {
+                    use_declarations.push(parse_use_declaration(specific_item_pair)?);
+                }
+                _ => {
+                    return Err(ParseError::UnexpectedRule {
+                        rule: specific_item_pair.as_rule(),
+                        context: format!("inside stateMachine '{}' machine_item", name),
+                    });
+                }
             }
-            Rule::states_block => {
-                states = parse_states_block(item_pair)?;
-            }
-            Rule::events_block => {
-                // Parse events block, which might contain events or use declarations
-                let (parsed_events, event_use_decls) = parse_events_block(item_pair)?;
-                events = parsed_events;
-                use_declarations.extend(event_use_decls); // Add any `use` from events block
-            }
-            Rule::transitions_block => {
-                transitions = parse_transitions_block(item_pair)?;
-            }
-            Rule::context_block => {
-                context_fields = parse_context_block(item_pair)?;
-            }
-            Rule::use_decl => {
-                // Handle use declarations directly within the machine
-                use_declarations.push(parse_use_declaration(item_pair)?);
-            }
-            Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
-            Rule::EOI => break, // Should not happen inside machine block normally
-            _ => {
-                return Err(ParseError::UnexpectedRule {
-                    rule: item_pair.as_rule(),
-                    context: format!("inside stateMachine '{}' block", name),
-                });
-            }
+        } else {
+            // This can happen if machine_item matched something empty, which shouldn't occur with the current grammar.
+            return Err(ParseError::SemanticError(format!(
+                "Empty machine_item found in stateMachine '{}'",
+                name
+            )));
         }
     }
 
@@ -284,11 +306,17 @@ fn parse_state_machine(pair: Pair<Rule>) -> Result<StateMachine, ParseError> {
 
 fn parse_use_declaration(pair: Pair<Rule>) -> Result<UseDeclaration, ParseError> {
     debug_assert_eq!(pair.as_rule(), Rule::use_decl);
-    let inner = pair.into_inner().next().ok_or_else(|| {
-        ParseError::MissingElement("qualified identifier in use declaration".to_string())
-    })?;
-    let target = parse_qualified_ident(inner)?;
-    Ok(UseDeclaration { target })
+    let qident_pair = pair.into_inner().next().unwrap();
+    if qident_pair.as_rule() != Rule::qualified_ident {
+        return Err(ParseError::UnexpectedRule {
+            rule: qident_pair.as_rule(),
+            context: "parsing use_decl: expected qualified_ident".to_string(),
+        });
+    }
+    let package_name = parse_qualified_ident(qident_pair)?;
+    Ok(UseDeclaration {
+        target: package_name,
+    })
 }
 
 fn parse_states_block(pair: Pair<Rule>) -> Result<Vec<StateItem>, ParseError> {
@@ -318,28 +346,58 @@ fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
                 )?)
             }
             Rule::state_body => {
-                for body_item_pair in item_pair.into_inner() {
-                    match body_item_pair.as_rule() {
-                        Rule::entry_action => {
-                            let q_ident =
-                                parse_qualified_ident(body_item_pair.into_inner().next().unwrap())?;
-                            entry_actions.push(q_ident);
+                for state_element_pair in item_pair.into_inner() {
+                    // This pair *is* the state_element
+                    // Skip silent rules
+                    if state_element_pair.as_rule() == Rule::WHITESPACE
+                        || state_element_pair.as_rule() == Rule::COMMENT
+                    {
+                        continue;
+                    }
+
+                    // Expect state_element rule here, then look inside it
+                    if state_element_pair.as_rule() != Rule::state_element {
+                        return Err(ParseError::UnexpectedRule {
+                            rule: state_element_pair.as_rule(),
+                            context: format!(
+                                "Expected state_element inside state_body of state '{}'",
+                                name.as_ref().map(|n| n.to_string()).unwrap_or_default()
+                            ),
+                        });
+                    }
+
+                    // Get the actual specific item *inside* state_element
+                    if let Some(specific_element_pair) = state_element_pair.into_inner().next() {
+                        match specific_element_pair.as_rule() {
+                            // Match on specific rule
+                            Rule::entry_action => {
+                                let q_ident = parse_qualified_ident(
+                                    specific_element_pair.into_inner().next().unwrap(),
+                                )?;
+                                entry_actions.push(q_ident);
+                            }
+                            Rule::exit_action => {
+                                let q_ident = parse_qualified_ident(
+                                    specific_element_pair.into_inner().next().unwrap(),
+                                )?;
+                                exit_actions.push(q_ident);
+                            }
+                            Rule::annotation => {
+                                // Add annotations found inside body to the state's annotations
+                                annotations.push(parse_annotation(specific_element_pair)?);
+                            }
+                            _ => {
+                                return Err(ParseError::UnexpectedRule {
+                                    rule: specific_element_pair.as_rule(),
+                                    context: "inside state_element".to_string(),
+                                });
+                            }
                         }
-                        Rule::exit_action => {
-                            let q_ident =
-                                parse_qualified_ident(body_item_pair.into_inner().next().unwrap())?;
-                            exit_actions.push(q_ident);
-                        }
-                        Rule::annotation => {
-                            // Annotations inside state body? Ignore for now.
-                        }
-                        Rule::WHITESPACE | Rule::COMMENT => { /* Ignore */ }
-                        _ => {
-                            return Err(ParseError::UnexpectedRule {
-                                rule: body_item_pair.as_rule(),
-                                context: "state_body definition".to_string(),
-                            });
-                        }
+                    } else {
+                        return Err(ParseError::SemanticError(format!(
+                            "Empty state_element found in state '{}'",
+                            name.as_ref().map(|n| n.to_string()).unwrap_or_default()
+                        )));
                     }
                 }
             }
@@ -370,21 +428,50 @@ fn parse_events_block(
     let mut events = Vec::new();
     let mut use_declarations = Vec::new();
 
-    for item_pair in pair.into_inner() {
-        match item_pair.as_rule() {
-            Rule::event_struct => {
-                events.push(parse_event_struct(item_pair)?);
+    for event_item_pair in pair.into_inner() {
+        // This pair *is* the event_item
+        // Skip silent rules
+        if event_item_pair.as_rule() == Rule::WHITESPACE
+            || event_item_pair.as_rule() == Rule::COMMENT
+        {
+            continue;
+        }
+
+        // Expect event_item rule here, then look inside it
+        if event_item_pair.as_rule() != Rule::event_item {
+            return Err(ParseError::UnexpectedRule {
+                rule: event_item_pair.as_rule(),
+                context: "Expected event_item inside events_block".to_string(),
+            });
+        }
+
+        // Get the actual specific item *inside* event_item
+        if let Some(specific_item_pair) = event_item_pair.into_inner().next() {
+            match specific_item_pair.as_rule() {
+                Rule::annotation => {
+                    // TODO: Decide how to handle annotations directly in events_block
+                    // For now, maybe ignore or collect separately?
+                    // Let's ignore for now, assuming annotations belong ON events.
+                }
+                Rule::event_struct => {
+                    events.push(parse_event_struct(specific_item_pair)?);
+                }
+                Rule::use_decl => {
+                    use_declarations.push(parse_use_declaration(specific_item_pair)?);
+                }
+                _ => {
+                    return Err(ParseError::UnexpectedRule {
+                        rule: specific_item_pair.as_rule(),
+                        context:
+                            "inside event_item (expected annotation, event_struct, or use_decl)"
+                                .to_string(),
+                    });
+                }
             }
-            Rule::use_decl => {
-                use_declarations.push(parse_use_declaration(item_pair)?);
-            }
-            Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
-            _ => {
-                return Err(ParseError::UnexpectedRule {
-                    rule: item_pair.as_rule(),
-                    context: "events_block definition".to_string(),
-                });
-            }
+        } else {
+            return Err(ParseError::SemanticError(
+                "Empty event_item found in events_block".to_string(),
+            ));
         }
     }
     Ok((events, use_declarations))
@@ -393,7 +480,7 @@ fn parse_events_block(
 fn parse_event_struct(pair: Pair<Rule>) -> Result<MessageItem, ParseError> {
     debug_assert_eq!(pair.as_rule(), Rule::event_struct);
     let inner = pair.into_inner();
-    let mut annotations = Vec::new();
+    let mut annotations = Vec::new(); // Annotations for the event itself
     let mut name: Option<Ident> = None;
     let mut ordinal: Option<u64> = None;
     let mut fields = Vec::new();
@@ -408,17 +495,36 @@ fn parse_event_struct(pair: Pair<Rule>) -> Result<MessageItem, ParseError> {
                 )?)
             }
             Rule::event_body => {
-                for field_pair in item_pair.into_inner() {
-                    if field_pair.as_rule() == Rule::event_field {
-                        fields.push(parse_event_field(field_pair)?);
-                    } else if field_pair.as_rule() != Rule::WHITESPACE
-                        && field_pair.as_rule() != Rule::COMMENT
-                    {
-                        return Err(ParseError::UnexpectedRule {
-                            rule: field_pair.as_rule(),
-                            context: "inside event_body".to_string(),
-                        });
+                let mut current_field_annotations = Vec::new();
+                for body_item_pair in item_pair.into_inner() {
+                    match body_item_pair.as_rule() {
+                        Rule::annotation => {
+                            current_field_annotations.push(parse_annotation(body_item_pair)?);
+                        }
+                        Rule::event_field => {
+                            // Pass collected annotations to parse_event_field
+                            fields.push(parse_event_field(
+                                body_item_pair,
+                                current_field_annotations,
+                            )?);
+                            // Clear annotations for the next field
+                            current_field_annotations = Vec::new();
+                        }
+                        Rule::WHITESPACE | Rule::COMMENT => {} // Ignore
+                        _ => {
+                            return Err(ParseError::UnexpectedRule {
+                                rule: body_item_pair.as_rule(),
+                                context: "inside event_body (expected annotation or event_field)"
+                                    .to_string(),
+                            });
+                        }
                     }
+                }
+                // Check if annotations were collected but no field followed
+                if !current_field_annotations.is_empty() {
+                    return Err(ParseError::SemanticError(
+                        "Dangling annotations found at end of event body".to_string(),
+                    ));
                 }
             }
             Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
@@ -432,18 +538,20 @@ fn parse_event_struct(pair: Pair<Rule>) -> Result<MessageItem, ParseError> {
     }
 
     Ok(MessageItem {
-        annotations,
+        annotations, // These are the event's annotations
         name: name.ok_or_else(|| ParseError::MissingElement("event name".to_string()))?,
         ordinal: ordinal
             .ok_or_else(|| ParseError::MissingElement("event ordinal (@N)".to_string()))?,
-        fields,
+        fields, // Fields include their own annotations
     })
 }
 
-fn parse_event_field(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
+fn parse_event_field(
+    pair: Pair<Rule>,
+    annotations: Vec<Annotation>,
+) -> Result<FieldDef, ParseError> {
     debug_assert_eq!(pair.as_rule(), Rule::event_field);
     let mut inner = pair.into_inner();
-    let annotations = Vec::new(); // Annotations are not parsed due to grammar change, but keep field
     let mut name: Option<Ident> = None;
     let mut field_type: Option<FieldType> = None;
     let mut ordinal: Option<u64> = None;
@@ -465,19 +573,27 @@ fn parse_event_field(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
     let _colon_pair = inner
         .next()
         .ok_or_else(|| ParseError::MissingElement("colon after field name".to_string()))?;
-    // Check rule if needed: if _colon_pair.as_rule() != Rule::COLON ...
 
     // Consume field_type (mandatory)
     let type_pair = inner
         .next()
         .ok_or_else(|| ParseError::MissingElement("field type in event_field".to_string()))?;
+
+    // DEBUG PRINT
+    println!(
+        "DEBUG: Token after colon: {:?} -> {}",
+        type_pair.as_rule(),
+        type_pair.as_str()
+    );
+
+    // field_type now has @ capture, so type_pair IS the field_type pair
     if type_pair.as_rule() == Rule::field_type {
-        let actual_type_pair = type_pair.into_inner().next().unwrap();
-        field_type = Some(parse_field_type(actual_type_pair)?);
+        // Pass the pair directly to parse_field_type
+        field_type = Some(parse_field_type(type_pair)?);
     } else {
         return Err(ParseError::UnexpectedRule {
             rule: type_pair.as_rule(),
-            context: "Expected field_type definition".to_string(),
+            context: "Expected field_type rule after colon".to_string(),
         });
     }
 
@@ -488,10 +604,9 @@ fn parse_event_field(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
             ordinal = Some(parse_integer_literal(ordinal_pair)?);
         }
     }
-    // Semicolon is handled by grammar
 
     Ok(FieldDef {
-        annotations, // Return empty vec as annotations are not parsed by current grammar
+        annotations, // Use passed-in annotations
         name: name.unwrap(),
         ordinal,
         field_type: field_type.unwrap(),
@@ -499,8 +614,16 @@ fn parse_event_field(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
 }
 
 fn parse_field_type(pair: Pair<Rule>) -> Result<FieldType, ParseError> {
-    match pair.as_rule() {
-        Rule::primitive_type => match pair.as_str() {
+    // Pair has rule field_type due to @ capture in grammar.
+    // We need to look at the rule matched *inside* this pair.
+    debug_assert_eq!(pair.as_rule(), Rule::field_type);
+    let specific_type_pair = pair.into_inner().next().ok_or_else(|| {
+        ParseError::MissingElement("Specific type rule inside field_type capture".to_string())
+    })?;
+
+    match specific_type_pair.as_rule() {
+        Rule::primitive_type => match specific_type_pair.as_str() {
+            // Use inner pair string
             "Void" => Ok(FieldType::Void),
             "Bool" => Ok(FieldType::Bool),
             "Int8" => Ok(FieldType::Int8),
@@ -515,21 +638,31 @@ fn parse_field_type(pair: Pair<Rule>) -> Result<FieldType, ParseError> {
             "Float64" => Ok(FieldType::Float64),
             "Text" => Ok(FieldType::Text),
             "Data" => Ok(FieldType::Data),
-            _ => Err(ParseError::InvalidTypeString(pair.as_str().to_string())),
+            _ => Err(ParseError::InvalidTypeString(
+                specific_type_pair.as_str().to_string(),
+            )),
         },
         Rule::list_type => {
-            let inner_type_pair = pair.into_inner().next().unwrap(); // Should contain field_type
-            let inner_type = parse_field_type(inner_type_pair.into_inner().next().unwrap())?; // Unwrap inner
-            Ok(FieldType::List(Box::new(inner_type)))
+            // specific_type_pair matches list_type = { "List" ~ "<" ~ field_type ~ ">" }
+            let inner_field_type_pair =
+                specific_type_pair.into_inner().next().ok_or_else(|| {
+                    ParseError::MissingElement("field_type inside list_type".to_string())
+                })?;
+            Ok(FieldType::List(Box::new(parse_field_type(
+                inner_field_type_pair,
+            )?))) // Recurse
         }
         Rule::type_identifier => {
-            Ok(FieldType::Identifier(parse_qualified_ident(
-                pair.into_inner().next().unwrap(),
-            )?)) // Unwrap inner qualified_ident
+            // specific_type_pair matches type_identifier = { qualified_ident }
+            let qident_pair = specific_type_pair.into_inner().next().ok_or_else(|| {
+                ParseError::MissingElement("qualified_ident inside type_identifier".to_string())
+            })?;
+            Ok(FieldType::Identifier(parse_qualified_ident(qident_pair)?))
         }
         _ => Err(ParseError::UnexpectedRule {
-            rule: pair.as_rule(),
-            context: "field type".to_string(),
+            rule: specific_type_pair.as_rule(), // Report the specific rule found inside
+            context: "parsing field_type inner rule (expected primitive, list, or identifier)"
+                .to_string(),
         }),
     }
 }
@@ -556,7 +689,8 @@ fn parse_struct_def(pair: Pair<Rule>) -> Result<StructDef, ParseError> {
                         // Unwrap the struct_field to get the actual event_field
                         let event_field_pair = field_pair.into_inner().next().unwrap();
                         if event_field_pair.as_rule() == Rule::event_field {
-                            fields.push(parse_event_field(event_field_pair)?);
+                            // Pass an empty Vec for annotations for struct fields
+                            fields.push(parse_event_field(event_field_pair, Vec::new())?);
                         } else {
                             return Err(ParseError::UnexpectedRule {
                                 rule: event_field_pair.as_rule(),
@@ -598,91 +732,155 @@ fn parse_transitions_block(pair: Pair<Rule>) -> Result<Vec<TransitionItem>, Pars
         .collect()
 }
 
+fn parse_transition_header(pair: Pair<Rule>) -> Result<(Option<Ident>, Ident, Ident), ParseError> {
+    debug_assert_eq!(pair.as_rule(), Rule::transition_header);
+    let mut inner = pair.into_inner(); // Gets pairs matching the sequence inside {}
+
+    let mut transition_name: Option<Ident> = None;
+
+    // Peek at the first element inside the header rule sequence
+    let first_element = inner.peek().ok_or_else(|| {
+        ParseError::MissingElement("Content inside transition_header".to_string())
+    })?;
+
+    // Check if the optional ("transition" ~ ident) part is present
+    // The grammar implies if the first rule matched within the header is `ident`, it must be the name.
+    if first_element.as_rule() == Rule::ident {
+        // Consume and parse the identifier
+        transition_name = Some(parse_ident(inner.next().unwrap())?);
+    }
+    // If the first element was not ident, then the optional part was skipped.
+
+    // Next must be the "from" state identifier
+    let from_ident_pair = inner.next().ok_or_else(|| {
+        ParseError::MissingElement("'from' state in transition_header".to_string())
+    })?;
+    // Grammar guarantees 'from' keyword then 'ident'. Pest consumes 'from', inner.next() gives the ident.
+    let from_state = parse_ident(from_ident_pair)?;
+
+    // Next must be the "to" state identifier
+    let to_ident_pair = inner
+        .next()
+        .ok_or_else(|| ParseError::MissingElement("'to' state in transition_header".to_string()))?;
+    // Grammar guarantees 'to' keyword then 'ident'. Pest consumes 'to', inner.next() gives the ident.
+    let to_state = parse_ident(to_ident_pair)?;
+
+    Ok((transition_name, from_state, to_state))
+}
+
 fn parse_transition_item(pair: Pair<Rule>) -> Result<TransitionItem, ParseError> {
     debug_assert_eq!(pair.as_rule(), Rule::transition_item);
-    let inner = pair.into_inner();
+    let inner = pair.into_inner(); // annotation*, transition_header, transition_body, ";"
     let mut annotations = Vec::new();
-    let mut name: Option<Ident> = None;
-    let mut from: Option<Ident> = None;
-    let mut to: Option<Ident> = None;
+    let mut header_result: Option<(Option<Ident>, Ident, Ident)> = None;
     let mut elements = Vec::new();
 
     for item_pair in inner {
         match item_pair.as_rule() {
             Rule::annotation => annotations.push(parse_annotation(item_pair)?),
             Rule::transition_header => {
-                let mut header_inner = item_pair.into_inner();
-                // Optional transition name
-                if header_inner.peek().unwrap().as_rule() == Rule::ident {
-                    name = Some(parse_ident(header_inner.next().unwrap())?);
-                }
-                from = Some(parse_ident(header_inner.next().unwrap())?);
-                to = Some(parse_ident(header_inner.next().unwrap())?);
+                header_result = Some(parse_transition_header(item_pair)?);
             }
             Rule::transition_body => {
-                for element_pair in item_pair.into_inner() {
-                    if element_pair.as_rule() == Rule::transition_element {
-                        elements.push(parse_transition_element(
-                            element_pair.into_inner().next().unwrap(),
-                        )?);
-                    } else if element_pair.as_rule() == Rule::annotation {
-                        // TODO: Handle annotations within transition body?
-                    } else if element_pair.as_rule() != Rule::WHITESPACE
-                        && element_pair.as_rule() != Rule::COMMENT
-                    {
-                        return Err(ParseError::UnexpectedRule {
-                            rule: element_pair.as_rule(),
-                            context: "transition_body definition".to_string(),
-                        });
-                    }
-                }
+                // Parse elements within the body
+                elements = item_pair
+                    .into_inner()
+                    .filter(|p| p.as_rule() == Rule::transition_element)
+                    .map(parse_transition_element)
+                    .collect::<Result<Vec<_>, _>>()?;
             }
-            Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
+            // Ignore semicolon, handled by grammar
+            Rule::COMMENT | Rule::WHITESPACE => {} // Ignore
             _ => {
                 return Err(ParseError::UnexpectedRule {
                     rule: item_pair.as_rule(),
-                    context: "transition_item definition".to_string(),
-                });
+                    context: "parsing transition_item".to_string(),
+                })
             }
         }
     }
 
+    let (name, from, to) = header_result.ok_or_else(|| {
+        ParseError::MissingElement("transition header parsing failed or missing".to_string())
+    })?;
+
+    // TODO: Validate transition elements (exactly one 'on', max one 'guard'/'action')
+    // let on_count = elements.iter().filter(|e| matches!(e, TransitionElement::On { .. })).count();
+    // if on_count != 1 {
+    //     return Err(ParseError::SemanticError(format!("Transition must have exactly one 'on' trigger, found {}", on_count)));
+    // }
+    // ... more validation ...
+
     Ok(TransitionItem {
         name,
-        from: from
-            .ok_or_else(|| ParseError::MissingElement("transition 'from' state".to_string()))?,
-        to: to.ok_or_else(|| ParseError::MissingElement("transition 'to' state".to_string()))?,
+        from,
+        to,
         elements,
         annotations,
     })
 }
 
 fn parse_transition_element(pair: Pair<Rule>) -> Result<TransitionElement, ParseError> {
-    match pair.as_rule() {
+    debug_assert_eq!(pair.as_rule(), Rule::transition_element);
+    let inner_pair = pair.into_inner().next().unwrap();
+    match inner_pair.as_rule() {
         Rule::on_trigger => {
-            let mut inner = pair.into_inner();
-            let ordinal =
-                parse_integer_literal(inner.next().unwrap().into_inner().next().unwrap())?;
-            let event = parse_qualified_ident(inner.next().unwrap())?;
-            Ok(TransitionElement::On { ordinal, event })
+            let mut trigger_inner = inner_pair.into_inner();
+            let ordinal_pair = trigger_inner.next().unwrap(); // transition_ordinal = { "@" ~ integer_literal }
+            let ordinal = parse_integer_literal(ordinal_pair.into_inner().next().unwrap())?;
+
+            let qident_pair = trigger_inner.next().unwrap();
+            if qident_pair.as_rule() != Rule::qualified_ident {
+                return Err(ParseError::UnexpectedRule {
+                    rule: qident_pair.as_rule(),
+                    context: "parsing on_trigger: expected qualified_ident".to_string(),
+                });
+            }
+            let target_event = parse_qualified_ident(qident_pair)?;
+            Ok(TransitionElement::On {
+                ordinal,
+                event: target_event,
+            })
         }
         Rule::guard_condition => {
-            let mut inner = pair.into_inner();
-            let ordinal =
-                parse_integer_literal(inner.next().unwrap().into_inner().next().unwrap())?;
-            let function = parse_qualified_ident(inner.next().unwrap())?;
-            Ok(TransitionElement::Guard { ordinal, function })
+            let mut guard_inner = inner_pair.into_inner();
+            let ordinal_pair = guard_inner.next().unwrap();
+            let ordinal = parse_integer_literal(ordinal_pair.into_inner().next().unwrap())?;
+
+            let qident_pair = guard_inner.next().unwrap();
+            if qident_pair.as_rule() != Rule::qualified_ident {
+                return Err(ParseError::UnexpectedRule {
+                    rule: qident_pair.as_rule(),
+                    context: "parsing guard_condition: expected qualified_ident".to_string(),
+                });
+            }
+            let condition = parse_qualified_ident(qident_pair)?;
+            Ok(TransitionElement::Guard {
+                ordinal,
+                function: condition,
+            })
         }
         Rule::action_effect => {
-            let mut inner = pair.into_inner();
-            let ordinal =
-                parse_integer_literal(inner.next().unwrap().into_inner().next().unwrap())?;
-            let function = parse_qualified_ident(inner.next().unwrap())?;
-            Ok(TransitionElement::Action { ordinal, function })
+            let mut action_inner = inner_pair.into_inner();
+            let ordinal_pair = action_inner.next().unwrap();
+            let ordinal = parse_integer_literal(ordinal_pair.into_inner().next().unwrap())?;
+
+            let qident_pair = action_inner.next().unwrap();
+            if qident_pair.as_rule() != Rule::qualified_ident {
+                return Err(ParseError::UnexpectedRule {
+                    rule: qident_pair.as_rule(),
+                    context: "parsing action_effect: expected qualified_ident".to_string(),
+                });
+            }
+            let effect = parse_qualified_ident(qident_pair)?;
+            Ok(TransitionElement::Action {
+                ordinal,
+                function: effect,
+            })
         }
         _ => Err(ParseError::UnexpectedRule {
-            rule: pair.as_rule(),
-            context: "transition element (on, guard, action)".to_string(),
+            rule: inner_pair.as_rule(),
+            context: "parsing transition_element (expected on, guard, or action)".to_string(),
         }),
     }
 }
@@ -693,7 +891,11 @@ fn parse_context_block(pair: Pair<Rule>) -> Result<Vec<FieldDef>, ParseError> {
     for item_pair in pair.into_inner() {
         if item_pair.as_rule() == Rule::context_field {
             // context_field reuses event_field rule
-            fields.push(parse_event_field(item_pair.into_inner().next().unwrap())?);
+            // Pass an empty Vec for annotations for context fields
+            fields.push(parse_event_field(
+                item_pair.into_inner().next().unwrap(),
+                Vec::new(),
+            )?);
         } else if item_pair.as_rule() != Rule::WHITESPACE && item_pair.as_rule() != Rule::COMMENT {
             return Err(ParseError::UnexpectedRule {
                 rule: item_pair.as_rule(),
@@ -705,24 +907,51 @@ fn parse_context_block(pair: Pair<Rule>) -> Result<Vec<FieldDef>, ParseError> {
 }
 
 fn parse_ident(pair: Pair<Rule>) -> Result<Ident, ParseError> {
-    debug_assert_eq!(pair.as_rule(), Rule::ident);
+    if pair.as_rule() != Rule::ident {
+        return Err(ParseError::UnexpectedRule {
+            rule: pair.as_rule(),
+            context: "parse_ident called with wrong rule".to_string(),
+        });
+    }
     let ident_str = pair.as_str();
-    syn::parse_str::<Ident>(ident_str)
-        .map_err(|_| ParseError::InvalidIdentifier(ident_str.to_string()))
+    // Use Span::call_site() as we can't directly convert pest::Span
+    // Ok(proc_macro2::Ident::new(ident_str, pair.as_span().into()))
+    Ok(proc_macro2::Ident::new(
+        ident_str,
+        proc_macro2::Span::call_site(),
+    ))
 }
 
 fn parse_qualified_ident(pair: Pair<Rule>) -> Result<QualifiedIdent, ParseError> {
-    debug_assert_eq!(pair.as_rule(), Rule::qualified_ident);
-    let mut parts = pair.into_inner();
-    let first = parse_ident(parts.next().unwrap())?;
-    if let Some(second) = parts.next() {
-        let name = parse_ident(second)?;
+    // Check the top-level rule passed
+    if pair.as_rule() != Rule::qualified_ident {
+        return Err(ParseError::UnexpectedRule {
+            rule: pair.as_rule(),
+            context: "parse_qualified_ident called with wrong rule".to_string(),
+        });
+    }
+
+    // Grammar: qualified_ident = { ident ~ ("." ~ ident)? } // No @ capture
+    let mut inner = pair.into_inner(); // Inner now yields the sequence
+
+    // Expect the first ident
+    let first_ident_pair = inner
+        .next()
+        .ok_or_else(|| ParseError::MissingElement("First ident in qual. ident".to_string()))?;
+    let first_ident = parse_ident(first_ident_pair)?;
+
+    // Check if there's a second ident (meaning a '.' was matched implicitly)
+    if let Some(second_ident_pair) = inner.next() {
+        // Pest implicitly consumes the '.' between the idents based on the grammar.
+        // The next pair yielded by inner will be the second ident.
+        let second_ident = parse_ident(second_ident_pair)?;
         Ok(QualifiedIdent::Qualified {
-            qualifier: first,
-            name,
+            qualifier: first_ident,
+            name: second_ident,
         })
     } else {
-        Ok(QualifiedIdent::Simple(first))
+        // No second ident pair, so it's a simple identifier
+        Ok(QualifiedIdent::Simple(first_ident))
     }
 }
 
