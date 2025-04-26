@@ -3,7 +3,6 @@ use fsm_dsl::ast::{
     Annotation,
     AnnotationValue,
     FieldType,
-    Ident,
     QualifiedIdent,
     SsotFile, // Import SsotFile to access file_id
     StateMachine,
@@ -11,8 +10,7 @@ use fsm_dsl::ast::{
 };
 use proc_macro2::{Ident as TokenIdent, TokenStream};
 use quote::{format_ident, quote};
-use std::collections::{HashSet, HashMap};
-use std::path::PathBuf; // Add missing import
+use std::collections::{HashMap, HashSet};
 // Needed for parsing generated code before formatting // For collecting unique guard/action names
 
 pub mod codegen_capnp; // Add new module
@@ -25,27 +23,24 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum CodegenError {
-    #[error(
-        "Failed to parse generated code: {0}\n--- Generated Code ---
-{1}"
-    )]
+    #[error("Failed to parse generated code: {0}\n--- Generated Code ---\n{1}")]
     SynParseError(syn::Error, String),
     #[error("AST validation error: {0}")]
     AstValidationError(String),
     #[error("Code generation failed: {0}")]
     GenerationError(String),
     #[error("I/O error during code formatting: {0}")]
-    FormatIoError(#[from] std::io::Error),
+    FormatIoError(#[from] std::io::Error), // This handles From<std::io::Error>
     #[error("Failed to format generated code: {0}")]
     FormatError(String),
     // Removed symbol/package related errors, handled by build script or parser
     // Potential future errors: IO errors, etc.
 }
 
-// Centralized From implementation for std::fmt::Error
+// Add back From<std::fmt::Error> implementation
 impl From<std::fmt::Error> for CodegenError {
     fn from(e: std::fmt::Error) -> Self {
-        CodegenError::GenerationError(e.to_string())
+        CodegenError::GenerationError(e.to_string()) // Map fmt error to GenerationError
     }
 }
 
@@ -61,9 +56,7 @@ fn find_annotation_value<'a>(
 }
 
 // Helper to map DSL FieldType to Rust type string
-fn map_field_type_to_rust_type(
-    field_type: &FieldType,
-) -> Result<TokenStream, CodegenError> {
+fn map_field_type_to_rust_type(field_type: &FieldType) -> Result<TokenStream, CodegenError> {
     match field_type {
         FieldType::Void => Ok(quote! { () }),
         FieldType::Bool => Ok(quote! { bool }),
@@ -262,7 +255,9 @@ fn generate_impl_block(
                     let calls: Vec<TokenStream> = state
                         .exit_actions
                         .iter()
-                        .map(|action_fn| {
+                        .map(|action_fn_qident| {
+                            // Get simple ident before quoting
+                            let action_fn = get_simple_ident(action_fn_qident);
                             quote! { next_state_machine.#action_fn(); }
                         })
                         .collect();
@@ -278,7 +273,9 @@ fn generate_impl_block(
                     let calls: Vec<TokenStream> = state
                         .entry_actions
                         .iter()
-                        .map(|action_fn| {
+                        .map(|action_fn_qident| {
+                            // Get simple ident before quoting
+                            let action_fn = get_simple_ident(action_fn_qident);
                             quote! { next_state_machine.#action_fn(); }
                         })
                         .collect();
@@ -356,7 +353,8 @@ fn generate_impl_block(
 fn generate_event_enum_and_structs(
     ast: &StateMachine,
     derive_tokens: &TokenStream,
-) -> Result<TokenStream, CodegenError> { // Return Result
+) -> Result<TokenStream, CodegenError> {
+    // Return Result
     let event_enum_name = format_ident!("Event");
     // Use a more descriptive convention for payload structs, e.g., EventNamePayload
     // let event_payload_struct_suffix = format_ident!("Payload");
@@ -440,9 +438,7 @@ fn generate_event_enum_and_structs(
 /// # Returns
 ///
 /// * `Result<String, CodegenError>` - Generated Rust code string, or an error.
-pub fn generate_rust_code(
-    machine_ast: &StateMachine,
-) -> Result<String, CodegenError> {
+pub fn generate_rust_code(machine_ast: &StateMachine) -> Result<String, CodegenError> {
     let state_enum_name = format_ident!("State");
     let machine_struct_name = format_ident!("{}", machine_ast.name); // Use name from AST
     let event_enum_name = format_ident!("Event"); // Consistent event enum name
@@ -506,12 +502,11 @@ pub fn generate_rust_code(
             TransitionElement::On { event, .. } => Some(event),
             _ => None,
         });
-         // Get the simple name of the event for lookup
-         let event_ast_item =
-            on_element.and_then(|event_qident| {
-                let event_name = get_simple_ident(event_qident);
-                 machine_ast.events.iter().find(|e| &e.name == event_name)
-             });
+        // Get the simple name of the event for lookup
+        let event_ast_item = on_element.and_then(|event_qident| {
+            let event_name = get_simple_ident(event_qident);
+            machine_ast.events.iter().find(|e| &e.name == event_name)
+        });
 
         for element in &transition.elements {
             match element {
@@ -580,7 +575,7 @@ pub fn generate_rust_code(
 
     // Generate entry action signatures
     for entry_fn_qident in &entry_actions {
-         let entry_fn_ident = get_simple_ident(entry_fn_qident);
+        let entry_fn_ident = get_simple_ident(entry_fn_qident);
         callback_signatures.push(quote! {
             // Use simple ident for trait method name
             fn #entry_fn_ident(&mut self);
@@ -589,7 +584,7 @@ pub fn generate_rust_code(
 
     // Generate exit action signatures
     for exit_fn_qident in &exit_actions {
-         let exit_fn_ident = get_simple_ident(exit_fn_qident);
+        let exit_fn_ident = get_simple_ident(exit_fn_qident);
         callback_signatures.push(quote! {
             // Use simple ident for trait method name
             fn #exit_fn_ident(&mut self);
@@ -733,34 +728,7 @@ pub fn generate_xstate_machine(ast: &StateMachine) -> Result<String, CodegenErro
 /// # Returns
 /// A `Result` containing the generated SCXML document as a `String` or a `CodegenError`.
 pub fn generate_scxml(ast: &StateMachine) -> Result<String, CodegenError> {
-    // Use the internal function from the scxml module
     codegen_scxml::generate_scxml_internal(ast)
-}
-
-// Error type
-#[derive(Debug, thiserror::Error)]
-pub enum CodegenError {
-    #[error(
-        "Failed to parse generated code: {0}\n--- Generated Code ---
-{1}"
-    )]
-    SynParseError(syn::Error, String),
-    #[error("AST validation error: {0}")]
-    AstValidationError(String),
-    #[error("Code generation failed: {0}")]
-    GenerationError(String),
-    #[error("I/O error during code formatting: {0}")]
-    FormatIoError(#[from] std::io::Error),
-    #[error("Failed to format generated code: {0}")]
-    FormatError(String),
-    // Removed symbol/package related errors
-}
-
-// Centralized From implementation for std::fmt::Error
-impl From<std::fmt::Error> for CodegenError {
-    fn from(e: std::fmt::Error) -> Self {
-        CodegenError::GenerationError(e.to_string())
-    }
 }
 
 // --- Unit Tests ---
@@ -774,8 +742,10 @@ mod tests {
         FieldDef,
         FieldType,
         MessageItem,
+        QualifiedIdent,
         StateItem,
         StateMachine,
+        TopLevelItem,
         TransitionElement,
         TransitionItem,
     };
@@ -798,39 +768,43 @@ mod tests {
             }],
             events: vec![
                 MessageItem {
+                    annotations: vec![], // Ensure annotations is present
                     name: ident("Start"),
                     ordinal: 0, // Added ordinal
                     fields: vec![],
-                    // Removed annotations
                 },
                 MessageItem {
+                    annotations: vec![], // Ensure annotations is present
                     name: ident("Stop"),
                     ordinal: 1, // Added ordinal
                     fields: vec![],
-                    // Removed annotations
                 },
                 MessageItem {
+                    annotations: vec![], // Ensure annotations is present
                     name: ident("Update"),
                     ordinal: 2, // Added ordinal
                     fields: vec![FieldDef {
+                        annotations: vec![], // Ensure annotations is present
                         name: ident("value"),
-                        ordinal: 0, // Added ordinal
+                        ordinal: Some(0), // Wrap in Some()
                         field_type: FieldType::Int32,
-                        // Removed annotations
                     }],
-                    // Removed annotations
                 },
             ],
             states: vec![
                 StateItem {
+                    annotations: vec![], // Ensure annotations is present
                     name: ident("Idle"),
-                    ordinal: 0, // Added ordinal
-                                // Removed annotations
+                    ordinal: 0,            // Added ordinal
+                    entry_actions: vec![], // Ensure actions is present
+                    exit_actions: vec![],  // Ensure actions is present
                 },
                 StateItem {
+                    annotations: vec![], // Ensure annotations is present
                     name: ident("Running"),
-                    ordinal: 1, // Added ordinal
-                                // Removed annotations
+                    ordinal: 1,            // Added ordinal
+                    entry_actions: vec![], // Ensure actions is present
+                    exit_actions: vec![],  // Ensure actions is present
                 },
             ],
             transitions: vec![
@@ -840,15 +814,15 @@ mod tests {
                     to: ident("Running"),
                     elements: vec![
                         TransitionElement::On {
-                            ordinal: 1, // Changed from order
-                            event: ident("Start"),
+                            ordinal: 1,                                    // Changed from order
+                            event: QualifiedIdent::Simple(ident("Start")), // Wrap in Simple
                         },
                         TransitionElement::Action {
-                            ordinal: 2, // Changed from order
-                            function: ident("on_start_action"),
+                            ordinal: 2,                                                 // Changed from order
+                            function: QualifiedIdent::Simple(ident("on_start_action")), // Wrap in Simple
                         },
                     ],
-                    annotations: vec![], // Added annotations field
+                    annotations: vec![], // Ensure annotations is present
                 },
                 TransitionItem {
                     name: Some(ident("transition2")), // Wrap in Some()
@@ -856,27 +830,29 @@ mod tests {
                     to: ident("Idle"),
                     elements: vec![
                         TransitionElement::On {
-                            ordinal: 1, // Changed from order
-                            event: ident("Stop"),
+                            ordinal: 1,                                   // Changed from order
+                            event: QualifiedIdent::Simple(ident("Stop")), // Wrap in Simple
                         },
                         TransitionElement::Guard {
-                            ordinal: 2, // Changed from order
-                            function: ident("can_stop_guard"),
+                            ordinal: 2,                                                // Changed from order
+                            function: QualifiedIdent::Simple(ident("can_stop_guard")), // Wrap in Simple
                         },
                     ],
-                    annotations: vec![], // Added annotations field
+                    annotations: vec![], // Ensure annotations is present
                 },
                 TransitionItem {
                     name: Some(ident("transition3")), // Wrap in Some()
                     from: ident("Running"),
                     to: ident("Running"), // Self-transition
                     elements: vec![TransitionElement::On {
-                        ordinal: 1, // Changed from order
-                        event: ident("Update"),
+                        ordinal: 1,                                     // Changed from order
+                        event: QualifiedIdent::Simple(ident("Update")), // Wrap in Simple
                     }],
-                    annotations: vec![], // Added annotations field
+                    annotations: vec![], // Ensure annotations is present
                 },
             ],
+            context: vec![],          // Ensure context is present
+            use_declarations: vec![], // Ensure use_declarations is present
         }
     }
 
@@ -1176,13 +1152,13 @@ mod tests {
 
     #[test]
     fn generates_placeholder_capnp() {
-        let ast = create_test_ast(); // Reuse existing test AST setup
+        let ast = create_annotated_test_ast(); // Use annotated AST for more coverage
         let file_ast = fsm_dsl::ast::SsotFile {
             // Create a dummy SsotFile for the test
             file_id: 0x123456789ABCDEF0,
             package_declaration: None,
-            top_level_annotations: vec![],
-            state_machines: vec![ast.clone()], // Assuming create_test_ast returns StateMachine
+            imports: vec![], // Ensure imports is present
+            items: vec![TopLevelItem::StateMachine(ast.clone())], // Use 'items' field
         };
         let result = crate::generate_capnp_schema(&file_ast, &ast); // Pass both args
         assert!(
@@ -1210,31 +1186,13 @@ mod tests {
 
     #[test]
     fn generates_placeholder_typescript() {
-        let ast = create_test_ast(); // Reuse existing test AST setup
-        let result = crate::generate_typescript_types(&ast);
-        assert!(
-            result.is_ok(),
-            "TypeScript generation failed: {:?}",
-            result.err()
-        );
-        let types = result.unwrap();
-        // Basic check for placeholder content
-        assert!(types.contains("// Placeholder TypeScript types"));
-        assert!(types.contains("export type State"));
-        assert!(types.contains("export type Event"));
-        println!(
-            "--- Generated TypeScript Types (Placeholder) ---
-{}",
-            types
-        ); // For inspection
+        let ast = create_test_ast();
+        let generated = generate_typescript_types(&ast).unwrap();
+        assert!(generated.contains("export type State"));
+        assert!(generated.contains("export type Event"));
     }
 
-    // Helper to create Ident for tests
-    fn ident(s: &str) -> TokenIdent {
-        TokenIdent::new(s, proc_macro2::Span::call_site())
-    }
-
-    // Updated test AST creator with annotations
+    // Test case for AST with annotations
     fn create_annotated_test_ast() -> StateMachine {
         StateMachine {
             name: ident("AnnotatedMachine"),
@@ -1269,7 +1227,7 @@ mod tests {
                             value: Some(AnnotationValue::StringLiteral("The user ID.".to_string())),
                         }],
                         name: ident("userId"),
-                        ordinal: 0,
+                        ordinal: Some(0), // Wrap in Some()
                         field_type: FieldType::UInt64,
                     }],
                 },
@@ -1295,6 +1253,8 @@ mod tests {
                     }],
                     name: ident("Idle"),
                     ordinal: 0,
+                    entry_actions: vec![], // Ensure actions is present
+                    exit_actions: vec![],  // Ensure actions is present
                 },
                 StateItem {
                     annotations: vec![Annotation {
@@ -1304,6 +1264,8 @@ mod tests {
                     }],
                     name: ident("Running"),
                     ordinal: 1,
+                    entry_actions: vec![], // Ensure actions is present
+                    exit_actions: vec![],  // Ensure actions is present
                 },
             ],
             transitions: vec![
@@ -1313,9 +1275,9 @@ mod tests {
                     to: ident("Running"),
                     elements: vec![TransitionElement::On {
                         ordinal: 0,
-                        event: ident("Start"),
+                        event: QualifiedIdent::Simple(ident("Start")), // Wrap in Simple
                     }],
-                    annotations: vec![],
+                    annotations: vec![], // Ensure annotations is present
                 },
                 TransitionItem {
                     name: None,
@@ -1323,11 +1285,13 @@ mod tests {
                     to: ident("Idle"),
                     elements: vec![TransitionElement::On {
                         ordinal: 1,
-                        event: ident("Stop"),
+                        event: QualifiedIdent::Simple(ident("Stop")), // Wrap in Simple
                     }],
-                    annotations: vec![],
+                    annotations: vec![], // Ensure annotations is present
                 },
             ],
+            context: vec![],          // Ensure context is present
+            use_declarations: vec![], // Ensure use_declarations is present
         }
     }
 
@@ -1359,8 +1323,8 @@ mod tests {
         let file_ast = fsm_dsl::ast::SsotFile {
             file_id: 0xdeadbeefcafe0001,
             package_declaration: None,
-            top_level_annotations: vec![],
-            state_machines: vec![machine_ast.clone()],
+            imports: vec![], // Ensure imports is present
+            items: vec![TopLevelItem::StateMachine(machine_ast.clone())], // Use 'items' field
         };
         let result = generate_capnp_schema(&file_ast, &machine_ast);
         assert!(

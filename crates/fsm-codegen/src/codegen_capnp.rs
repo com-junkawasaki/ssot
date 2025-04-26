@@ -1,10 +1,8 @@
 //! Cap'n Proto schema generation logic.
 
 use crate::CodegenError;
-use fsm_dsl::ast::{
-    AnnotationValue, FieldType, Ident, SsotFile, StateMachine, TopLevelItem, QualifiedIdent
-};
-use std::fmt::Write;
+use fsm_dsl::ast::{AnnotationValue, FieldType, SsotFile, StateMachine, TopLevelItem};
+// use std::fmt::Write; // Removed unused import
 
 // Function to map DSL FieldType to Cap'n Proto type string
 fn map_field_type_to_capnp_type(field_type: &FieldType) -> String {
@@ -68,19 +66,18 @@ pub(crate) fn generate_capnp_schema_internal(
     ));
     // Add package declaration if present (using annotation for now)
     // TODO: Use file_ast.package_declaration when available
-    let package_name = file_ast.package_declaration.as_deref()
-        .or_else(|| {
-            file_ast.items.iter().find_map(|item| {
-                if let TopLevelItem::Annotation(anno) = item {
-                    if anno.name == "capnpPackage" {
-                         if let Some(AnnotationValue::StringLiteral(pkg)) = &anno.value {
-                             return Some(pkg.as_str())
-                         }
+    let package_name = file_ast.package_declaration.as_deref().or_else(|| {
+        file_ast.items.iter().find_map(|item| {
+            if let TopLevelItem::Annotation(anno) = item {
+                if anno.name == "capnpPackage" {
+                    if let Some(AnnotationValue::StringLiteral(pkg)) = &anno.value {
+                        return Some(pkg.as_str());
                     }
                 }
-                None
-            })
-        });
+            }
+            None
+        })
+    });
     if let Some(pkg) = package_name {
         // Cap'n Proto uses dot notation for package/scope
         // Simple heuristic: replace :: or / with . (might need refinement)
@@ -110,10 +107,11 @@ pub(crate) fn generate_capnp_schema_internal(
             for field in &event.fields {
                 let field_capnp_type = map_field_type_to_capnp_type(&field.field_type);
                 event_payload_structs.push_str(&generate_capnp_comment(&field.annotations, "  ")); // Add comment for field
+                                                                                                   // Handle optional ordinal correctly in format string
+                let ordinal_str = field.ordinal.map_or("N/A".to_string(), |o| o.to_string());
                 event_payload_structs.push_str(&format!(
-                    "  {} @{} :{};
-",
-                    field.name, field.ordinal, field_capnp_type
+                    "  {} @{} :{};\n", // Corrected format string
+                    field.name, ordinal_str, field_capnp_type
                 ));
             }
             event_payload_structs.push_str("}\n\n");

@@ -442,29 +442,40 @@ fn parse_event_struct(pair: Pair<Rule>) -> Result<MessageItem, ParseError> {
 
 fn parse_event_field(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
     debug_assert_eq!(pair.as_rule(), Rule::event_field);
-    let inner = pair.into_inner();
+    let mut inner = pair.into_inner(); // Use mutable iterator
     let mut annotations = Vec::new();
     let mut name: Option<Ident> = None;
     let mut field_type: Option<FieldType> = None;
     let mut ordinal: Option<u64> = None;
 
-    for item_pair in inner {
+    // Peek at the pairs to parse them in order
+    while let Some(item_pair) = inner.peek() {
         match item_pair.as_rule() {
-            Rule::annotation => annotations.push(parse_annotation(item_pair)?),
-            Rule::ident => name = Some(parse_ident(item_pair)?),
-            Rule::field_type => {
-                field_type = Some(parse_field_type(item_pair.into_inner().next().unwrap())?)
-            } // Unwrap inner rule
-            Rule::field_ordinal => {
-                ordinal = Some(parse_integer_literal(
-                    item_pair.into_inner().next().unwrap(),
-                )?)
+            Rule::annotation => {
+                annotations.push(parse_annotation(inner.next().unwrap())?);
             }
-            Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
+            Rule::ident => {
+                name = Some(parse_ident(inner.next().unwrap())?);
+            }
+            Rule::field_type => {
+                // The actual type is nested inside field_type rule
+                let type_pair = inner.next().unwrap().into_inner().next().unwrap();
+                field_type = Some(parse_field_type(type_pair)?);
+            }
+            Rule::field_ordinal => {
+                // The actual literal is nested inside field_ordinal
+                let ordinal_pair = inner.next().unwrap().into_inner().next().unwrap();
+                ordinal = Some(parse_integer_literal(ordinal_pair)?);
+            }
+            Rule::WHITESPACE | Rule::COMMENT => {
+                let _ = inner.next(); /* consume and ignore */
+            }
             _ => {
+                // This should ideally not be reached if grammar is correct
+                // but handles unexpected tokens within the field definition.
                 return Err(ParseError::UnexpectedRule {
                     rule: item_pair.as_rule(),
-                    context: "event_field definition".to_string(),
+                    context: "event_field definition inner elements".to_string(),
                 });
             }
         }
@@ -473,8 +484,7 @@ fn parse_event_field(pair: Pair<Rule>) -> Result<FieldDef, ParseError> {
     Ok(FieldDef {
         annotations,
         name: name.ok_or_else(|| ParseError::MissingElement("field name".to_string()))?,
-        ordinal: ordinal
-            .ok_or_else(|| ParseError::MissingElement("field ordinal (@N)".to_string()))?,
+        ordinal, // Now optional
         field_type: field_type
             .ok_or_else(|| ParseError::MissingElement("field type".to_string()))?,
     })
@@ -857,11 +867,13 @@ mod tests {
         assert_eq!(machine.context.len(), 3);
         assert_eq!(machine.context[0].name.to_string(), "counter");
         assert_eq!(machine.context[0].field_type, FieldType::Int32);
+        assert_eq!(machine.context[0].ordinal, None);
         assert_eq!(machine.context[1].name.to_string(), "description");
         assert_eq!(machine.context[1].field_type, FieldType::Text);
-        assert_eq!(machine.context[1].ordinal, 1);
+        assert_eq!(machine.context[1].ordinal, Some(1));
         assert_eq!(machine.context[2].name.to_string(), "maybeFlag");
         assert_eq!(machine.context[2].field_type, FieldType::Bool);
+        assert_eq!(machine.context[2].ordinal, None);
 
         assert_eq!(machine.states.len(), 2);
         assert_eq!(machine.states[0].name.to_string(), "Idle");

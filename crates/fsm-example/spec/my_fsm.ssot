@@ -38,15 +38,15 @@ stateMachine LightSwitch {
     events {
         $description("Toggles the light state.");
         event Toggle @0 { # Empty 
-        }
+        };
         $description("Turns the light on with a specific brightness.");
         event TurnOn @1 {
             $description("Brightness level (0-255).");
-            brightness @0 : UInt8; # Event with payload
-        }
+            brightness @0 : UInt8; # Event with payload (Restored @0)
+        };
         $description("Turns the light off.");
         event TurnOff @2 { # Empty 
-        }
+        };
     }
 
     transitions {

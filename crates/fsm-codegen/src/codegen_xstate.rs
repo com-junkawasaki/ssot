@@ -266,7 +266,9 @@ pub(crate) fn generate_xstate_machine_internal(ast: &StateMachine) -> Result<Str
                     .events
                     .iter()
                     // Compare simple names
-                    .any(|evt| &evt.name == get_simple_ident(event_name_qident) && !evt.fields.is_empty());
+                    .any(|evt| {
+                        &evt.name == get_simple_ident(event_name_qident) && !evt.fields.is_empty()
+                    });
                 // If the action is already present, update payload flag only if true
                 all_actions
                     .entry(action_fn.to_string())

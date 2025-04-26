@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -7,7 +6,7 @@ use fsm_codegen::{
     generate_capnp_schema, generate_rust_code, generate_scxml, generate_typescript_types,
     generate_xstate_machine, CodegenError,
 };
-use fsm_dsl::ast::{Annotation, AnnotationValue, SsotFile, StateMachine, TopLevelItem};
+use fsm_dsl::ast::{Annotation, AnnotationValue, StateMachine, TopLevelItem};
 use fsm_dsl::parser::{parse_file, ParseError as DslParseError};
 use thiserror::Error;
 
@@ -24,17 +23,20 @@ enum BuildError {
         #[source]
         source: DslParseError,
     },
-    #[error("Code generation error for state machine \'{machine_name}\' in file {path:?}: {source}")]
+    #[error(
+        "Code generation error for state machine \'{machine_name}\' in file {path:?}: {source}"
+    )]
     Codegen {
         path: PathBuf,
         machine_name: String,
         #[source]
         source: CodegenError,
     },
-    #[error(
-        r#"Missing generation annotation ('$rust_out', '$capnp_out', etc.) in {path:?}"#
-    )]
-    MissingAnnotation { path: PathBuf, annotation_name: String },
+    #[error(r#"Missing generation annotation ('$rust_out', '$capnp_out', etc.) in {path:?}"#)]
+    MissingAnnotation {
+        path: PathBuf,
+        annotation_name: String,
+    },
     #[error("State machine definition not found in file {path:?}")]
     NoStateMachineFound { path: PathBuf },
     #[error("Multiple state machines found in file {path:?}. Example only supports one.")]
@@ -85,7 +87,7 @@ fn main() -> Result<(), BuildError> {
     let crate_path = PathBuf::from(crate_dir);
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
-    let ssot_path = crate_path.join("spec").join("traffic_light.ssot");
+    let ssot_path = crate_path.join("spec").join("my_fsm.ssot");
     println!("cargo:rerun-if-changed={}", ssot_path.display());
 
     println!("Parsing FSM definition: {}", ssot_path.display());
@@ -145,17 +147,25 @@ fn main() -> Result<(), BuildError> {
     fs::write(&rust_out_path, rust_code).map_err(|e| io_err(&rust_out_path, e))?;
     println!(
         "  -> Generated Rust code: {}",
-        rust_out_path.strip_prefix(&out_dir).unwrap_or(&rust_out_path).display()
+        rust_out_path
+            .strip_prefix(&out_dir)
+            .unwrap_or(&rust_out_path)
+            .display()
     );
 
     if rust_out_dir != out_dir {
         fs::create_dir_all(&rust_out_dir).map_err(|e| io_err(&rust_out_dir, e))?;
-        let source_rust_out_path = rust_out_dir.join(format!("{}.rs", camel_to_snake(&machine_name_str)));
-         fs::copy(&rust_out_path, &source_rust_out_path).map_err(|e| io_err(&source_rust_out_path, e))?;
-         println!(
-             "  -> Copied Rust code to: {}",
-             source_rust_out_path.strip_prefix(&crate_path).unwrap_or(&source_rust_out_path).display()
-         );
+        let source_rust_out_path =
+            rust_out_dir.join(format!("{}.rs", camel_to_snake(&machine_name_str)));
+        fs::copy(&rust_out_path, &source_rust_out_path)
+            .map_err(|e| io_err(&source_rust_out_path, e))?;
+        println!(
+            "  -> Copied Rust code to: {}",
+            source_rust_out_path
+                .strip_prefix(&crate_path)
+                .unwrap_or(&source_rust_out_path)
+                .display()
+        );
     }
 
     if let Some(capnp_out_dir) = get_output_dir("capnp_out") {
@@ -170,39 +180,46 @@ fn main() -> Result<(), BuildError> {
         fs::write(&capnp_out_path, capnp_schema).map_err(|e| io_err(&capnp_out_path, e))?;
         println!(
             "  -> Generated Cap'n Proto schema: {}",
-            capnp_out_path.strip_prefix(&crate_path).unwrap_or(&capnp_out_path).display()
+            capnp_out_path
+                .strip_prefix(&crate_path)
+                .unwrap_or(&capnp_out_path)
+                .display()
         );
     }
 
     if let Some(ts_out_dir) = get_output_dir("ts_out") {
         fs::create_dir_all(&ts_out_dir).map_err(|e| io_err(&ts_out_dir, e))?;
-        let ts_types =
-            generate_typescript_types(machine).map_err(|e| BuildError::Codegen {
-                path: ssot_path.clone(),
-                machine_name: machine_name_str.clone(),
-                source: e,
-            })?;
+        let ts_types = generate_typescript_types(machine).map_err(|e| BuildError::Codegen {
+            path: ssot_path.clone(),
+            machine_name: machine_name_str.clone(),
+            source: e,
+        })?;
         let ts_out_path = ts_out_dir.join(format!("{}.types.ts", machine_name_str));
         fs::write(&ts_out_path, ts_types).map_err(|e| io_err(&ts_out_path, e))?;
         println!(
             "  -> Generated TypeScript types: {}",
-            ts_out_path.strip_prefix(&crate_path).unwrap_or(&ts_out_path).display()
+            ts_out_path
+                .strip_prefix(&crate_path)
+                .unwrap_or(&ts_out_path)
+                .display()
         );
     }
 
-     if let Some(xstate_out_dir) = get_output_dir("xstate_out") {
+    if let Some(xstate_out_dir) = get_output_dir("xstate_out") {
         fs::create_dir_all(&xstate_out_dir).map_err(|e| io_err(&xstate_out_dir, e))?;
-        let xstate_config =
-            generate_xstate_machine(machine).map_err(|e| BuildError::Codegen {
-                path: ssot_path.clone(),
-                machine_name: machine_name_str.clone(),
-                source: e,
-            })?;
+        let xstate_config = generate_xstate_machine(machine).map_err(|e| BuildError::Codegen {
+            path: ssot_path.clone(),
+            machine_name: machine_name_str.clone(),
+            source: e,
+        })?;
         let xstate_out_path = xstate_out_dir.join(format!("{}.xstate.ts", machine_name_str));
         fs::write(&xstate_out_path, xstate_config).map_err(|e| io_err(&xstate_out_path, e))?;
         println!(
             "  -> Generated XState config: {}",
-            xstate_out_path.strip_prefix(&crate_path).unwrap_or(&xstate_out_path).display()
+            xstate_out_path
+                .strip_prefix(&crate_path)
+                .unwrap_or(&xstate_out_path)
+                .display()
         );
     }
 
@@ -217,7 +234,10 @@ fn main() -> Result<(), BuildError> {
         fs::write(&scxml_out_path, scxml_doc).map_err(|e| io_err(&scxml_out_path, e))?;
         println!(
             "  -> Generated SCXML document: {}",
-            scxml_out_path.strip_prefix(&crate_path).unwrap_or(&scxml_out_path).display()
+            scxml_out_path
+                .strip_prefix(&crate_path)
+                .unwrap_or(&scxml_out_path)
+                .display()
         );
     }
 

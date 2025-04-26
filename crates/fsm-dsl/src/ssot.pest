@@ -86,7 +86,7 @@ event_item = { annotation | event_struct | use_decl }
 
 event_struct = { annotation* ~ "event" ~ ident ~ event_ordinal ~ event_body? ~ ";" }
 event_ordinal = { "@" ~ integer_literal }
-event_body = { "{" ~ (annotation | event_field)* ~ "}" } // Allow annotations or fields
+event_body = { "{" ~ (annotation | event_field)* ~ "}" } // Reverted: Allow annotations or fields
 event_field = { annotation* ~ ident ~ ":" ~ field_type ~ field_ordinal? ~ ";" } // Made field_ordinal optional
 field_ordinal = { "@" ~ integer_literal }
 
@@ -100,7 +100,7 @@ type_identifier = { qualified_ident } // Use qualified_ident
 // ====================================
 
 struct_def = { annotation* ~ "struct" ~ ident ~ struct_body? ~ ";" }
-struct_body = { "{" ~ WHITESPACE? ~ struct_field* ~ WHITESPACE? ~ "}" }
+struct_body = { "{" ~ WHITESPACE? ~ struct_field* ~ WHITESPACE? ~ "}" } // Reverted
 // Reuse event_field structure for struct fields
 struct_field = { event_field }
 
@@ -111,7 +111,7 @@ struct_field = { event_field }
 transitions_block = { "transitions" ~ WHITESPACE? ~ "{" ~ WHITESPACE? ~ transition_item* ~ WHITESPACE? ~ "}" }
 transition_item = { annotation* ~ transition_header ~ transition_body ~ ";" }
 transition_header = { ("transition" ~ ident ~ WHITESPACE)? ~ "from" ~ ident ~ WHITESPACE ~ "to" ~ ident }
-transition_body = { "{" ~ WHITESPACE? ~ transition_element* ~ WHITESPACE? ~ "}" }
+transition_body = { "{" ~ WHITESPACE? ~ transition_element* ~ WHITESPACE? ~ "}" } // Reverted
 transition_element = { on_trigger | guard_condition | action_effect | annotation }
 
 on_trigger = { "on" ~ transition_ordinal ~ qualified_ident ~ ";" }       // Use qualified_ident
@@ -123,7 +123,7 @@ transition_ordinal = { WHITESPACE ~ "@" ~ integer_literal }
 //  Context Block (Placeholder)
 // ====================================
 
-context_block = { "context" ~ "{" ~ WHITESPACE? ~ context_field* ~ WHITESPACE? ~ "}" }
+context_block = { "context" ~ "{" ~ WHITESPACE? ~ context_field* ~ WHITESPACE? ~ "}" } // Reverted
 context_field = { event_field } // Reuse event_field structure for now
 
 // ====================================

@@ -1,7 +1,7 @@
 //! TypeScript type definition generation logic.
 
 use crate::{find_annotation_value, CodegenError};
-use fsm_dsl::ast::{AnnotationValue, FieldType, Ident, MessageItem, StateItem, StateMachine};
+use fsm_dsl::ast::{AnnotationValue, FieldType, /* MessageItem, StateItem, */ StateMachine};
 use heck::ToUpperCamelCase; // For generating PascalCase type names
 use std::fmt::Write; // Use write macro for better performance
 
