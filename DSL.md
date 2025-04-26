@@ -272,14 +272,58 @@ event UserLoggedIn @id(0x200...) {
 - Defines a logical message channel for asynchronous communication (used by AsyncAPI).
 - `parameters` allow defining dynamic parts of a channel/topic name.
 
+### **NEW: 2.15. Environment Definition**
+- `environment EnvName @id(...) [extends BaseEnvName] { ... }`
+- Defines a deployment environment (e.g., development, staging, production).
+- Can inherit base configurations using `extends`.
+- Annotations: `$description`, `$provider("aws" | "gcp" | ...)` `$region("...")`, `$meta`.
+- Contains environment-specific `variables`, and references to `deployment` targets or `infrastructure` instances applicable to this environment.
+- Example:
+  ```ssot
+  environment Production @id(0xe00...) {
+    $provider("aws"); $region("us-east-1");
+    variables: { logLevel: "info" };
+    deployment: DeploymentTarget_ProdAppServers;
+  }
+  ```
+
+### **NEW: 2.16. Infrastructure Definition**
+- `infrastructure InfraName @id(...) [extends BaseInfraName] { ... }`
+- Defines reusable infrastructure component blueprints (e.g., compute clusters, databases, networks, load balancers).
+- Annotations: `$description`, `$meta`.
+- Contains type-specific attributes (e.g., `instanceType`, `engine`, `version`, `cidrBlock`).
+- Example:
+  ```ssot
+  infrastructure ComputeCluster @id(0xf00...) {
+    type: "kubernetes"; instanceType: "t3.medium"; minSize: 2; maxSize: 10;
+  }
+  ```
+
+### **NEW: 2.17. Deployment Definition**
+- `deployment DeploymentName @id(...) { ... }`
+- Links a deployable unit (`service`, `machine`) to a target `environment` and `infrastructure`.
+- Specifies deployment parameters (replicas, strategy, configuration overrides).
+- Annotations: `$description`, `$meta`.
+- Example:
+  ```ssot
+  deployment DeployAuthServiceProd @id(0xd00...) {
+    targetEnvironment: Production;
+    targetInfrastructure: ComputeCluster_Prod; // Specific instance
+    deployable: AuthService;
+    replicas: 3; strategy: "blue_green";
+  }
+  ```
+  *Alternatively, deployment hints can be placed directly on `service`/`machine` using a `$deployment(...)` annotation for simpler cases.*
+
 ## 3. IDs (`@id`)
 - Crucial for schema evolution and linking definitions. Ensure uniqueness within the appropriate scope. File ID (`@0x...`) must be unique per file.
 
 ## 4. Key Concepts Added/Enhanced
-- **Expanded Code Generation:** Explicit support for generating various artifacts beyond core Rust/Capnp/TS.
+- **Expanded Code Generation:** Explicit support for generating various artifacts beyond core Rust/Capnp/TS, **including Infrastructure as Code (IaC)**.
 - **Data Validation:** `$validate` annotation for defining rules on data fields.
 - **API Specification:** `$route`, `$channel`, `$publishes`, `$subscribes` annotations to support OpenAPI and AsyncAPI generation.
 - **Database Schema Mapping:** Structured `$db` annotation for detailed table/column mapping and RLS policy definition.
 - **Generic Metadata:** `$meta` annotation for extensibility and tool-specific configuration.
+- **NEW: Infrastructure & Deployment:** Added `environment`, `infrastructure`, and `deployment` elements to model infrastructure configuration and deployment strategies, enabling IaC generation.
 
-This significantly extended DSL aims to be a comprehensive Single Source of Truth for defining not just state logic but also related data structures, communication patterns, API contracts, and database schemas.
+This significantly extended DSL aims to be a comprehensive Single Source of Truth for defining not just state logic but also related data structures, communication patterns, API contracts, database schemas, **and the underlying infrastructure and deployment configurations.**
