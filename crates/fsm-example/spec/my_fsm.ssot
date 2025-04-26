@@ -12,7 +12,6 @@ $ts_out("target/generated/ts");
 $description("A simple light switch FSM.");
 stateMachine LightSwitch {
     $initial(Off);
-    # $description("A simple light switch FSM."); # (restore value)
 
     states {
         $description("Initial state, waiting for input.");

@@ -111,29 +111,6 @@ pub(crate) fn get_simple_ident(qident: &QualifiedIdent) -> &TokenIdent {
     }
 }
 
-/// Generates the aggregated Event enum.
-/// Assumes events are simple identifiers for now (no associated data structs yet).
-// This function is now superseded by generate_event_enum_and_structs, keep or remove?
-// Keeping it for now, but it's not used by the main generate_rust_code function.
-/*
-fn generate_event_enum(ast: &StateMachine, derive_tokens: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
-    let event_enum_name = format_ident!("Event");
-    // Use event names collected by the parser
-    let variants = ast.events.iter().map(|event_item| { // event_item is MessageItem
-        let event_ident = &event_item.name; // Use the Ident field directly
-        // For now, assume events don't carry data, just represent the variant
-        quote! { #event_ident }
-    });
-
-    quote! {
-        #derive_tokens // Use the same derives as State and Machine
-        pub enum #event_enum_name {
-            #(#variants),*
-        }
-    }
-}
-*/
-
 /// Generates the `impl` block for the state machine struct.
 fn generate_impl_block(
     ast: &StateMachine,
@@ -197,17 +174,16 @@ fn generate_impl_block(
             let event_pattern = if event_ast_item.fields.is_empty() {
                 quote! { #event_enum_name::#event_variant_ident } // event_variant_ident is already &Ident
             } else {
-                let payload_struct_name = format_ident!("{}", event_variant_ident); // Use simple ident
                 quote! { #event_enum_name::#event_variant_ident(payload) } // Use simple ident
             };
             // Reference to the event or its payload for callbacks
             let (event_ref_or_payload, _event_type_for_callback) =
                 if event_ast_item.fields.is_empty() {
                     // If no payload, pass reference to the whole event enum variant
-                    (quote! { event }, quote! { &#event_enum_name})
+                    (quote! { event }, quote! { &#event_enum_name })
                 } else {
                     // If payload exists, pass reference to the bound payload struct
-                    let payload_struct_name = format_ident!("{}", event_variant_ident); // Use simple ident
+                    let payload_struct_name = format_ident!("{}", event_variant_ident); // Ensure this line is added here
                     (quote! { payload }, quote! { &#payload_struct_name })
                 };
 

@@ -7,6 +7,7 @@ Define Finite State Machines (FSMs) declaratively using a dedicated Domain Speci
 Defining complex stateful logic manually across different languages and platforms is error-prone and time-consuming. This project aims to solve this by providing:
 
 *   **An Intuitive DSL (`.ssot`):** Clearly represent states, events, and transitions inspired by Cap'n Proto schema syntax.
+    *   **Core Principle:** The `.ssot` DSL grammar, defined in `crates/fsm-dsl/src/ssot.pest`, serves as the foundational definition. Unless explicitly requested for specific enhancements, **this grammar definition (`ssot.pest`) should be considered stable and remain unchanged** to ensure parser consistency.
 *   **Multi-Target Code Generation:** Automatically generate boilerplate code and definitions for various targets (initially Rust, Cap'n Proto, TypeScript).
 *   **Type Safety:** Ensure correctness through compile-time checks (Rust) or strong typing (TypeScript, Cap'n Proto).
 *   **Centralized Logic:** Use the `.ssot` file as the definitive source, reducing redundancy and simplifying updates.
