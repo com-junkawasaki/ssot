@@ -1,6 +1,6 @@
 # State Machine DSL Syntax (Inspired by Cap'n Proto)
 
-This document defines the syntax for the Single Source of Truth (`.ssot`) files used to define state machines, services, and related components in this project. The syntax borrows concepts from Cap'n Proto's schema language for clarity and structure, using `@` for IDs and `$` for metadata/tool annotations. The design emphasizes integrating domain-specific concerns into core constructs like `action`, `guard`, and `invoke` rather than proliferating specialized annotations.
+This document defines the syntax for the Single Source of Truth (`.ssot`) files used to define state machines, services, and related components in this project. The syntax borrows concepts from Cap'n Proto's schema language for clarity and structure, using `@` for IDs and `$` for metadata/tool annotations. The design emphasizes integrating domain-specific concerns into core constructs like `action`, `guard`, and `invoke` rather than proliferating specialized annotations. It supports hierarchical states, parallel states, history states, and timed events.
 
 ## 1. Overall Structure
 
@@ -49,138 +49,132 @@ service UserProfileService @id(1) {
   getProfile @id(0) (userId: string) -> UserProfile;
 }
 
-# --- State Machine Definition ---
-machine UserSession @id(1) {
-  # Machine-level annotations
-  $description("Manages user login session state.");
-  $version("2.1");
-  $initial(LoggedOut); # Required: Specify the initial state
-  $route("/session"); # Optional: Base route associated with this machine
-  $meta(uiComponent: "SessionManager"); # Hint for related UI component
-  $meta(testScenario: "./tests/user_session.feature"); # Link to test file
+# --- State Machine Definition with Advanced Features ---
+machine ComplexMachine @id(2) {
+  $description("Demonstrates advanced state machine features.");
+  $initial(Loading);
 
-  # Define the context (state data)
-  context @id(1) {
-    userId: optional<string> @id(0); $description("Logged-in user ID, if any.") $meta(dbColumn: "user_id");
-    authToken: optional<AuthToken> @id(1) $meta(dbColumn: "auth_token_id");
-    lastActivity: timestamp @id(2); $deprecated("Use sessionExpiry instead.");
-    sessionExpiry: timestamp @id(3) $meta(dbColumn: "expires_at");
+  context @id(0) {
+    data: string @id(0);
+    historyMarker: string @id(1);
+    timerId: optional<u32> @id(2);
   }
 
-  # --- Define States (including hierarchical) ---
-  state LoggedOut @id(2) {
-    $description("User is not logged in.");
-    $route("/login"); # Route specific to this state
-    $meta(uiComponent: "LoginForm");
-
-    onEntry @id(0) {
-      action clearSessionData; $description("Clear any residual session info.");
-      action logInfo(message: "User logged out or session cleared"); # Use common action
-    }
-
-    on LOGIN_REQUEST @id(1) transition Authenticating {
-      action initiateLogin;
-      # Use a guard for permission checks
-      guard isValidLoginRequest && userHasPermission("public");
+  state Loading @id(0) {
+    invoke loadData @id(0) {
+      src: DataLoader.fetch;
+      onDone @id(1) transition Dashboard { action storeData; }
+      onError @id(2) transition ErrorState;
     }
   }
 
-  state Authenticating @id(3) {
-    $description("Attempting to authenticate the user.");
-    $meta(uiComponent: "LoginSpinner");
+  # --- Composite State with History ---
+  state Dashboard @id(1) {
+    $description("Main dashboard area with multiple sections.");
+    $initial(SectionA); # Initial sub-state
 
-    # Invoke an external service using its interface
-    invoke authServiceLogin @id(0) {
-      src: AuthService.login; # Reference service method directly
-      input: { credentials: event.credentials };
-      onDone @id(1) transition LoggedIn {
-        # Action can encapsulate DB logic, metrics, logging
-        action handleSuccessfulLogin;
-      }
-      onError @id(2) transition LoginFailed {
-        action handleAuthError;
-        action incrementMetric(name: "login_failure_count"); # Use common action
-      }
-    }
-  }
+    # --- History State Definition ---
+    # Remembers the last active sub-state (SectionA or SectionB)
+    history shallow @id(0) target SectionA; # Default target if no history
 
-  state LoggedIn @id(4) {
-    $description("User is successfully logged in.");
-    $initial(Active); # Initial sub-state for this composite state
+    on GOTO_SETTINGS @id(0) transition Settings;
+    on GOTO_DEEP_SETTINGS @id(1) transition DeepSettings;
 
-    onEntry @id(0) {
-       action startSessionTimer;
-       action logInfo(message: "User logged in, session active.");
-    }
-    onExit @id(1) {
-       action stopSessionTimer;
-       action logDebug(message: "Exiting logged in state."); # Different log level via different action
-    }
-
-    # --- Define Sub-States (Hierarchical) ---
+    # --- Sub-States ---
     states {
-      state Active @id(0) {
-        $description("User session is active.");
-        $route("/"); # Route within the LoggedIn state
+      state SectionA @id(0) {
+        on GOTO_B @id(0) transition SectionB;
+      }
+      state SectionB @id(1) {
+        $initial(SubB1);
+        # Deep history example
+        history deep @id(0) target SubB1;
 
-        on USER_ACTIVITY @id(0) transition self {
-          action updateLastActivity;
+        on GOTO_A @id(0) transition SectionA;
+        states {
+           state SubB1 @id(0);
+           state SubB2 @id(1);
+           on GOTO_SUB_B2 @id(0) transition SubB2;
+           on GOTO_SUB_B1 @id(1) transition SubB1;
         }
-        on VIEW_PROFILE @id(1) transition ViewingProfile {
-          guard userHasPermission("view_profile"); # Permission check via guard
-        }
-        on LOGOUT_REQUEST @id(2) transition LoggedOut {
-          action initiateLogout;
-        }
-        on SESSION_TIMEOUT @id(3) transition LoggedOut {
-          action handleTimeout;
+      }
+    }
+  }
+
+  # --- State with Delayed Event / Timeout ---
+  state Settings @id(2) {
+    $description("User settings screen.");
+
+    onEntry @id(0) { action startSettingsTimer; }
+    onExit @id(1) { action cancelSettingsTimer; }
+
+    # --- Delayed Transition --- After 5 seconds, transition back to Dashboard
+    after 5s @id(0) transition Dashboard.history; # Transition to history state
+
+    on SAVE_SETTINGS @id(1) transition Dashboard { action saveSettings; }
+    on BACK @id(2) transition Dashboard.history; # Explicit transition to history
+  }
+
+  state DeepSettings @id(3) {
+     on BACK @id(0) transition Dashboard.history(deep); # Target deep history of Dashboard.SectionB
+  }
+
+  # --- Parallel State Example ---
+  state Processing @id(4) {
+    $description("Handles background processing with status display.");
+    $parallel: true; # Mark this state as parallel
+
+    on CANCEL @id(0) transition Loading;
+
+    # --- Parallel Regions --- These run concurrently
+    states {
+      # Region 1: Background Task Management
+      state TaskRunner @id(0) {
+        $initial(Running);
+        states {
+          state Running @id(0) {
+            invoke backgroundTask @id(0) {
+              src: Worker.run;
+              onDone @id(0) transition ../Success; # Transition relative to parent
+              onError @id(1) transition ../Failure;
+            }
+          }
+          # Success/Failure are sibling states to TaskRunner within Processing
         }
       }
 
-      state ViewingProfile @id(1) {
-        $description("User is viewing their profile.");
-        $route("/profile");
-        $meta(uiComponent: "UserProfileDisplay");
-
-        # Invoke a different service
-        invoke fetchProfile @id(0) {
-           src: UserProfileService.getProfile;
-           input: { userId: context.userId };
-           onDone @id(1) transition self { action displayProfile; }
-           onError @id(2) transition Active { action showProfileError; }
+      # Region 2: Status Display
+      state StatusDisplay @id(1) {
+        $initial(ShowingProgress);
+        states {
+          state ShowingProgress @id(0) {
+            onEntry @id(0) { action startStatusUpdates; }
+            onExit @id(1) { action stopStatusUpdates; }
+            on SHOW_DETAILS @id(0) transition ShowingDetails;
+          }
+          state ShowingDetails @id(1) {
+            on HIDE_DETAILS @id(0) transition ShowingProgress;
+          }
         }
-
-        on BACK_TO_ACTIVE @id(1) transition Active;
       }
-    } # End of sub-states for LoggedIn
-  }
+    } # End of parallel regions
 
-  state LoginFailed @id(5) {
-    $description("Authentication failed.");
-    $meta(uiComponent: "LoginError");
-    on RETRY_LOGIN @id(0) transition LoggedOut;
-  }
+    # These states are siblings to the parallel regions, acting as join points
+    state Success @id(2) { $final; } # Processing finishes when TaskRunner reaches Success
+    state Failure @id(3) { on RETRY @id(0) transition TaskRunner; } # Option to retry
 
-  # Define shared actions and guards (implementation provided elsewhere)
-  action clearSessionData @id(0) (ctx: ContextType);
-  guard isValidLoginRequest @id(1) (ctx: ContextType, event: EventType) -> bool;
-  action initiateLogin @id(2) (ctx: ContextType, event: EventType);
-  # This action now handles storing token, DB updates, logging, metrics etc.
-  action handleSuccessfulLogin @id(3) (ctx: ContextType, event: DoneInvokeEventType<LoginResult>);
-  action handleAuthError @id(4) (ctx: ContextType, event: ErrorInvokeEventType);
-  guard userHasPermission @id(5) (permission: string) -> bool;
-  action startSessionTimer @id(6) (ctx: ContextType);
-  action stopSessionTimer @id(7) (ctx: ContextType);
-  action updateLastActivity @id(8) (ctx: ContextType, event: EventType);
-  action initiateLogout @id(9) (ctx: ContextType, event: EventType);
-  action handleTimeout @id(10) (ctx: ContextType, event: EventType);
-  action displayProfile @id(11) (ctx: ContextType, event: DoneInvokeEventType<UserProfile>);
-  action showProfileError @id(12) (ctx: ContextType, event: ErrorInvokeEventType);
+  } # End of parallel state Processing
 
-  # Common actions (potentially imported)
-  action logInfo @id(100) (message: string);
-  action logDebug @id(101) (message: string);
-  action incrementMetric @id(102) (name: string);
+  state ErrorState @id(5);
+
+  # --- Actions & Guards (Definitions) ---
+  action storeData @id(100) (ctx: ContextType, event: DoneInvokeEventType);
+  action saveSettings @id(101) (ctx: ContextType, event: EventType);
+  action startSettingsTimer @id(102) (ctx: ContextType);
+  action cancelSettingsTimer @id(103) (ctx: ContextType);
+  action startStatusUpdates @id(104) (ctx: ContextType);
+  action stopStatusUpdates @id(105) (ctx: ContextType);
+  # ... other actions/guards ...
 }
 
 # --- Shared Type Definitions ---
@@ -221,7 +215,7 @@ service BaseService @id(0x111...) {
 # This is a comment
 ```
 
-### 2.2. Annotations (`@` and `$ - Refined`)
+### 2.2. Annotations (`@` and `$ - Extended Further`)
 - Annotations provide metadata or tool directives.
 - **`@id(unique_id)`**: **Mandatory numerical ID** for schema evolution (unchanged).
 - **`$name("value")` or `$flag;`**: **Metadata and Tool Directives** (unchanged prefix).
@@ -238,6 +232,8 @@ service BaseService @id(0x111...) {
   - **NEW: `$meta(key: string, value: string)`**: **Generic metadata annotation**. Used to attach arbitrary key-value pairs to elements (`machine`, `state`, `context` field, `service`, etc.). Replaces specialized annotations like `$uiComponent`, `$dbTable`, `$testScenario`. Keys and values are interpreted by code generators or other tools.
     *   Example: `$meta(uiComponent: "MyForm")`, `$meta(dbColumn: "user_email")`, `$meta(testId: "scenario-5")`
   - **REMOVED Annotations:** `$uiComponent`, `$dbTable`, `$dbQuery`, `$testScenario`, `$logLevel`, `$metric`, `$requiresPermission`, `$apiCall`. These concerns are now handled by `$meta`, `action`, `guard`, or `invoke`.
+- **New `$` Annotations:**
+  - **`$parallel: true;`**: Applied to a composite `state`. Indicates that the regions defined within its `states` block should be treated as parallel (concurrent) state regions.
 
 ### 2.3. Imports
 - `import "/path/to/file.ssot";`
@@ -256,19 +252,35 @@ service BaseService @id(0x111...) {
 - Supported primitive types: `u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64`, `f32`, `f64`, `bool`, `string` (or `text`), `list<Type>`, `map<KeyType, ValueType>`.
 - Can reference types defined within the file or imported using `TypeName`.
 
-### 2.6. State Definition (Refined)
+### 2.6. State Definition (Extended for Parallel & History)
 - `state StateName @id(state_id) { ... }`
-- Contains `onEntry`, `onExit`, `states` (for hierarchy) as before.
-- Can have `$description`, `$final;`, `$version`, `$deprecated`, `$route`, `$meta`.
-- **Logging/Metrics:** Performed by invoking specific `action`s within `onEntry`, `onExit`, or transition actions.
+- **Parallel States:** If a state has the `$parallel: true;` annotation:
+    - The `states { ... }` block defines the parallel regions.
+    - Each direct child `state` within this block represents an independent, concurrently active region.
+    - The parallel state is considered exited only when all its regions have reached a final state (a state marked `$final;` *within the scope of the parallel state*).
+    - Transitions originating from *within* a parallel region can target states outside the parallel state or sibling states/regions using relative paths (e.g., `../TargetState`).
+    - Events sent to the machine while in a parallel state are delivered to *all* active regions that can handle them.
+- **Composite States (Hierarchical):** Can contain:
+    - `onEntry`, `onExit`, `states { ... }` (as before).
+    - **NEW: `history [shallow|deep] @id(history_id) target DefaultTargetState;`**: Defines a history pseudo-state.
+        - `shallow` (default if omitted): Remembers only the direct child state of this composite state.
+        - `deep`: Remembers the full path to the most nested active state(s) within this composite state.
+        - `@id`: Unique ID for the history state definition.
+        - `target DefaultTargetState`: The state to transition to if there is no history information to restore (e.g., first entry). Must be a sub-state of the current composite state.
+        - Transitions can target this history state using dot notation: `transition ParentState.history` or `transition ParentState.history(deep)` to specify which history type to invoke if multiple are defined.
+- Can have standard annotations: `$description`, `$final;`, `$version`, `$deprecated`, `$route`, `$meta`.
 
-### 2.7. Transitions (`on ... transition` - Refined)
-- `on EVENT_NAME @id(event_id) transition TargetState { action ..., guard ... }`
-- **Permission Checks:** Handled by `guard` conditions (e.g., `guard userHasPermission("admin")`).
-- Actions within the transition block handle the core logic, potentially including logging or metric updates by calling other defined actions.
-- Can have `$description`, `$version`, `$deprecated`, `$meta`.
+### 2.7. Transitions (`on ... transition` and `after ... transition`)
+- **Event Transitions:** `on EVENT_NAME @id(event_id) transition TargetState { ... }` (Unchanged structure).
+- **NEW: Delayed Transitions:** `after DURATION @id(delay_id) transition TargetState { action ..., guard ... }`
+    - Defined within a `state` block.
+    - `DURATION`: Specifies the delay before the transition is triggered. Format examples: `5s`, `100ms`, `2.5m` (seconds, milliseconds, minutes). The interpretation depends on the runtime environment.
+    - The timer for the delay starts when the state is entered.
+    - If the state is exited before the delay completes, the transition is cancelled.
+    - Multiple `after` transitions can be defined within a state.
+- **Targeting History:** Transitions can target a history state using `TargetState.history` or `TargetState.history(deep|shallow)`.
 
-### 2.8. Actions and Guards (Refined)
+### 2.8. Actions and Guards
 - `action actionName @id(action_id) (...);`
 - `guard guardName @id(guard_id) (...) -> bool;`
 - **Core Logic:** Actions encapsulate specific pieces of logic, including side effects like logging (`logInfo`), metric updates (`incrementMetric`), database operations, etc. Complex operations might be broken into multiple actions.
@@ -276,7 +288,7 @@ service BaseService @id(0x111...) {
 - **Permissions:** Guards are the primary mechanism for permission checks.
 - Can have `$description`, `$version`, `$deprecated`, `$meta`.
 
-### 2.9. Actors (`invoke` - Refined)
+### 2.9. Actors (`invoke`)
 - `invoke invocationName @id(invoke_id) { ... }`
 - **Purpose:** Used for calling external services, other state machines, promises, **and interacting with data layers (DB operations)**.
 - **`src`:** Identifies the target callable. This could be a service method (`ServiceName.methodName`), a reference to another actor definition, a promise factory, or a special identifier for a data source (e.g., `database.users.update`). The exact format depends on the generator/runtime.
@@ -312,4 +324,4 @@ service BaseService @id(0x111...) {
 - File ID (`@0x...`) should be unique per file.
 - Element IDs (`@integer`) should be unique within their immediate scope (e.g., fields within a struct, states within a machine). Start IDs from 0 for each scope.
 
-This revised DSL promotes a cleaner separation of concerns by integrating cross-cutting aspects like UI hints, DB mapping, and test links into the generic `$meta` annotation, while leveraging core constructs like `action`, `guard`, and `invoke` for dynamic behaviors like logging, permissions, and external interactions. 
+This further extended DSL now incorporates parallel states, shallow/deep history states, and delayed transitions (`after`), significantly increasing its compatibility with SCXML and XState patterns and enhancing its expressiveness for complex stateful logic. 
