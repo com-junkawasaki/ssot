@@ -3,7 +3,7 @@
   "displayName": "SSOT (Single Source of Truth) Language Support",
   "description": "Provides language support for the .ssot Finite State Machine DSL.",
   "publisher": "gftd",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "icon": "images/icon.png",
   "repository": {
     "type": "git",
@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@types/node": "^18.19.87",
-    "@types/vscode": "^1.99.1",
+    "@types/vscode": "^1.96.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "@vscode/test-electron": "^2.5.2",

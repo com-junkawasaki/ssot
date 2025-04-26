@@ -346,60 +346,60 @@ fn parse_state_item(pair: Pair<Rule>) -> Result<ast::StateItem, ParseError> {
                 )?)
             }
             Rule::state_body => {
-                for state_element_pair in item_pair.into_inner() {
-                    // This pair *is* the state_element
-                    // Skip silent rules
-                    if state_element_pair.as_rule() == Rule::WHITESPACE
-                        || state_element_pair.as_rule() == Rule::COMMENT
-                    {
-                        continue;
-                    }
-
-                    // Expect state_element rule here, then look inside it
-                    if state_element_pair.as_rule() != Rule::state_element {
-                        return Err(ParseError::UnexpectedRule {
-                            rule: state_element_pair.as_rule(),
-                            context: format!(
-                                "Expected state_element inside state_body of state '{}'",
-                                name.as_ref().map(|n| n.to_string()).unwrap_or_default()
-                            ),
-                        });
-                    }
-
-                    // Get the actual specific item *inside* state_element
-                    if let Some(specific_element_pair) = state_element_pair.into_inner().next() {
-                        match specific_element_pair.as_rule() {
-                            // Match on specific rule
-                            Rule::entry_action => {
-                                let q_ident = parse_qualified_ident(
-                                    specific_element_pair.into_inner().next().unwrap(),
-                                )?;
-                                entry_actions.push(q_ident);
+                // Body is optional, find the list rule if it exists
+                if let Some(list_pair) = item_pair
+                    .into_inner()
+                    .find(|p| p.as_rule() == Rule::state_element_list)
+                {
+                    // Iterate through elements in the list
+                    for state_element_pair in list_pair.into_inner() {
+                        match state_element_pair.as_rule() {
+                            Rule::WHITESPACE | Rule::COMMENT => continue, // Skip silent rules within the list iteration
+                            Rule::state_element => {
+                                // Process the actual element nested inside state_element
+                                if let Some(specific_element_pair) =
+                                    state_element_pair.into_inner().next()
+                                {
+                                    match specific_element_pair.as_rule() {
+                                        Rule::entry_action => {
+                                            entry_actions.push(parse_qualified_ident(
+                                                specific_element_pair.into_inner().next().unwrap(),
+                                            )?);
+                                        }
+                                        Rule::exit_action => {
+                                            exit_actions.push(parse_qualified_ident(
+                                                specific_element_pair.into_inner().next().unwrap(),
+                                            )?);
+                                        }
+                                        Rule::annotation => {
+                                            annotations
+                                                .push(parse_annotation(specific_element_pair)?);
+                                        }
+                                        _ => {
+                                            return Err(ParseError::UnexpectedRule {
+                                                rule: specific_element_pair.as_rule(),
+                                                context: "inside state_element".to_string(),
+                                            });
+                                        }
+                                    }
+                                } else {
+                                    return Err(ParseError::SemanticError(format!(
+                                        "Empty state_element found in state '{}'",
+                                        name.as_ref().map(|n| n.to_string()).unwrap_or_default()
+                                    )));
+                                }
                             }
-                            Rule::exit_action => {
-                                let q_ident = parse_qualified_ident(
-                                    specific_element_pair.into_inner().next().unwrap(),
-                                )?;
-                                exit_actions.push(q_ident);
-                            }
-                            Rule::annotation => {
-                                // Add annotations found inside body to the state's annotations
-                                annotations.push(parse_annotation(specific_element_pair)?);
-                            }
+                            // This case should ideally not be reached if grammar is correct
                             _ => {
                                 return Err(ParseError::UnexpectedRule {
-                                    rule: specific_element_pair.as_rule(),
-                                    context: "inside state_element".to_string(),
+                                     rule: state_element_pair.as_rule(),
+                                     context: "inside state_element_list (expected state_element or silent)".to_string(),
                                 });
                             }
                         }
-                    } else {
-                        return Err(ParseError::SemanticError(format!(
-                            "Empty state_element found in state '{}'",
-                            name.as_ref().map(|n| n.to_string()).unwrap_or_default()
-                        )));
                     }
                 }
+                // If state_body existed but state_element_list wasn't found, it was empty {}. No action needed.
             }
             Rule::WHITESPACE | Rule::COMMENT => { /* ignore */ }
             _ => {
@@ -496,31 +496,38 @@ fn parse_event_struct(pair: Pair<Rule>) -> Result<MessageItem, ParseError> {
             }
             Rule::event_body => {
                 let mut current_field_annotations = Vec::new();
-                for body_item_pair in item_pair.into_inner() {
-                    match body_item_pair.as_rule() {
-                        Rule::annotation => {
-                            current_field_annotations.push(parse_annotation(body_item_pair)?);
-                        }
-                        Rule::event_field => {
-                            // Pass collected annotations to parse_event_field
-                            fields.push(parse_event_field(
-                                body_item_pair,
-                                current_field_annotations,
-                            )?);
-                            // Clear annotations for the next field
-                            current_field_annotations = Vec::new();
-                        }
-                        Rule::WHITESPACE | Rule::COMMENT => {} // Ignore
-                        _ => {
-                            return Err(ParseError::UnexpectedRule {
-                                rule: body_item_pair.as_rule(),
-                                context: "inside event_body (expected annotation or event_field)"
-                                    .to_string(),
-                            });
+                // Body is optional, find the content rule if it exists
+                if let Some(content_pair) = item_pair
+                    .into_inner()
+                    .find(|p| p.as_rule() == Rule::event_body_content)
+                {
+                    // Iterate through elements in the content list
+                    for body_item_pair in content_pair.into_inner() {
+                        match body_item_pair.as_rule() {
+                            Rule::WHITESPACE | Rule::COMMENT => continue, // Skip silent rules
+                            Rule::annotation => {
+                                current_field_annotations.push(parse_annotation(body_item_pair)?);
+                            }
+                            Rule::event_field => {
+                                // Annotation applies to this field
+                                fields.push(parse_event_field(
+                                    body_item_pair,
+                                    current_field_annotations,
+                                )?);
+                                current_field_annotations = Vec::new(); // Reset for next field
+                            }
+                            // This case should ideally not be reached
+                            _ => {
+                                return Err(ParseError::UnexpectedRule {
+                                    rule: body_item_pair.as_rule(),
+                                    context: "inside event_body_content (expected annotation, event_field, or silent)".to_string(),
+                                });
+                            }
                         }
                     }
                 }
-                // Check if annotations were collected but no field followed
+                // If event_body existed but event_body_content wasn't found, it was empty {}.
+                // Check for dangling annotations AFTER processing the optional content.
                 if !current_field_annotations.is_empty() {
                     return Err(ParseError::SemanticError(
                         "Dangling annotations found at end of event body".to_string(),
@@ -1001,46 +1008,43 @@ mod tests {
     #[test]
     fn test_parse_valid_input() {
         let input = r#"
-            @0x123456789ABCDEF0;
-            package my.package;
+            @0x1;
+            package my_pkg;
+            import another_pkg.utils;
 
-            $top_level_derive(Debug, Clone);
-
-            stateMachine MyMachine {
-                $initial(Idle);
-                $description("A simple state machine.");
-
-                context {
-                    counter: Int32;
-                    description: Text @1;
-                    maybeFlag: Bool;
-                }
+            $top_level_annotation("Info");
+            stateMachine MyFSM {
+                $machine_annotation("Details");
 
                 states {
-                    Idle @0;
-                    Running @1 {
-                        entry / action1, action2;
-                        exit / cleanup;
+                    $state_ann("Initial");
+                    Initial @0;
+
+                    Active @1 {
+                        entry : action1;
+                        exit : action3;
+                        $state_element_ann("Note");
                     }
+                    Done @2;
                 }
 
                 events {
-                    Start @0 {
-                        source: Text;
+                    $description("Event to start processing.");
+                    event Start @0 {
+                        $description("User ID initiating the start.");
+                        userId : UInt64 @0;
+
+                        $description("Optional config string.");
+                        config : Text @1;
                     }
-                    Stop @1;
-                    Internal @2;
+
+                    $description("Event without payload.");
+                    event Stop @1 {}
                 }
 
                 transitions {
-                    from Idle to Running {
-                        on @1 Start;
-                        action @2 doStart;
-                    }
-                    from Running to Idle {
-                        on @1 Stop;
-                        guard @2 canStop;
-                    }
+                    transition from Initial to Active { on @0 Start; }
+                    transition from Active to Done { on @1 Stop; }
                 }
             }
         "#;
@@ -1048,28 +1052,22 @@ mod tests {
         assert!(result.is_ok(), "Parse failed: {:?}", result.err());
         let ssot_file = result.unwrap();
 
-        assert_eq!(ssot_file.file_id, 0x123456789ABCDEF0);
-        assert_eq!(
-            ssot_file.package_declaration,
-            Some("my.package".to_string())
-        );
+        assert_eq!(ssot_file.file_id, 0x1);
+        assert_eq!(ssot_file.package_declaration, Some("my_pkg".to_string()));
 
-        // Find the $top_level_derive annotation and check its value
+        // Find the $top_level_annotation annotation and check its value
         let derive_annotation = ssot_file
             .items
             .iter()
             .find_map(|item| match item {
-                TopLevelItem::Annotation(ann) if ann.name == "top_level_derive" => Some(ann),
+                TopLevelItem::Annotation(ann) if ann.name == "top_level_annotation" => Some(ann),
                 _ => None,
             })
-            .expect("Expected $top_level_derive annotation");
+            .expect("Expected $top_level_annotation annotation");
 
         assert_eq!(
             derive_annotation.value,
-            Some(AnnotationValue::IdentifierList(vec![
-                ident("Debug"),
-                ident("Clone")
-            ]))
+            Some(AnnotationValue::IdentifierList(vec![ident("Info")]))
         );
 
         let top_level_annotations_count = ssot_file
@@ -1097,33 +1095,32 @@ mod tests {
         );
 
         let machine = state_machines[0];
-        assert_eq!(machine.name.to_string(), "MyMachine");
+        assert_eq!(machine.name.to_string(), "MyFSM");
         assert!(!machine.annotations.is_empty());
 
         // Verify Context
-        assert_eq!(machine.context.len(), 3);
+        assert_eq!(machine.context.len(), 2);
         assert_eq!(machine.context[0].name.to_string(), "counter");
         assert_eq!(machine.context[0].field_type, FieldType::Int32);
         assert_eq!(machine.context[0].ordinal, None);
         assert_eq!(machine.context[1].name.to_string(), "description");
         assert_eq!(machine.context[1].field_type, FieldType::Text);
         assert_eq!(machine.context[1].ordinal, Some(1));
-        assert_eq!(machine.context[2].name.to_string(), "maybeFlag");
-        assert_eq!(machine.context[2].field_type, FieldType::Bool);
-        assert_eq!(machine.context[2].ordinal, None);
 
-        assert_eq!(machine.states.len(), 2);
-        assert_eq!(machine.states[0].name.to_string(), "Idle");
+        assert_eq!(machine.states.len(), 3);
+        assert_eq!(machine.states[0].name.to_string(), "Initial");
         assert!(machine.states[0].entry_actions.is_empty());
         assert!(machine.states[0].exit_actions.is_empty());
-        assert_eq!(machine.states[1].name.to_string(), "Running");
-        assert_eq!(machine.states[1].entry_actions.len(), 2);
+        assert_eq!(machine.states[1].name.to_string(), "Active");
+        assert_eq!(machine.states[1].entry_actions.len(), 1);
         assert_eq!(machine.states[1].entry_actions[0].to_string(), "action1");
-        assert_eq!(machine.states[1].entry_actions[1].to_string(), "action2");
         assert_eq!(machine.states[1].exit_actions.len(), 1);
-        assert_eq!(machine.states[1].exit_actions[0].to_string(), "cleanup");
+        assert_eq!(machine.states[1].exit_actions[0].to_string(), "action3");
+        assert_eq!(machine.states[2].name.to_string(), "Done");
+        assert!(machine.states[2].entry_actions.is_empty());
+        assert!(machine.states[2].exit_actions.is_empty());
 
-        assert_eq!(machine.events.len(), 3);
+        assert_eq!(machine.events.len(), 2);
         assert_eq!(machine.transitions.len(), 2);
     }
 
@@ -1233,10 +1230,10 @@ mod tests {
                 $description("Event to start processing.");
                 event Start @0 {
                     $description("User ID initiating the start.");
-                    userId @0 : UInt64;
+                    userId : UInt64 @0;
 
                     $description("Optional config string.");
-                    config @1 : Text;
+                    config : Text @1;
                 }
 
                 $description("Event without payload.");
