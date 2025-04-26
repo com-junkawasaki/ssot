@@ -81,11 +81,10 @@ pub(crate) fn generate_typescript_types_internal(
         .map(|s| format!("  \"{}\",", s.name))
         .collect();
     // Adjust join logic for potentially multiline JSDoc
-    ts_code.push_str(&state_items_ts.join("\\n").trim_end_matches('|').trim_end()); // Remove trailing | and whitespace
+    ts_code.push_str(state_items_ts.join("\n").trim_end_matches('|').trim_end()); // Remove trailing | or space
     writeln!(ts_code, ";\\n")?;
-    writeln!(zod_code, "{}", state_items_zod.join("\\n"))?;
+    writeln!(zod_code, "{}", state_items_zod.join("\n"))?;
     writeln!(zod_code, "]);\\n")?;
-
 
     // --- Generate Event Payloads (Interfaces for TS, Schemas for Zod) ---
     let mut event_payload_interfaces = String::new();
@@ -99,19 +98,27 @@ pub(crate) fn generate_typescript_types_internal(
             // JSDoc indent level 0
             let event_doc = generate_jsdoc(&event.annotations, 0);
             write!(event_payload_interfaces, "{}", event_doc)?;
-            write!(event_payload_schemas, "// Schema for {}\n", payload_interface_name)?; // Add comment for Zod
+            writeln!(
+                event_payload_schemas,
+                "// Schema for {}",
+                payload_interface_name
+            )?;
 
             writeln!(
                 event_payload_interfaces,
                 "export interface {} {{",
                 payload_interface_name
             )?;
-            writeln!(event_payload_schemas, "export const {} = z.object({{", payload_schema_name)?;
+            writeln!(
+                event_payload_schemas,
+                "export const {} = z.object({{",
+                payload_schema_name
+            )?;
 
             for field in &event.fields {
                 // JSDoc indent level 1
-                 let field_doc_ts = generate_jsdoc(&field.annotations, 1);
-                 let field_doc_zod = field_doc_ts.replace(" * ", " // "); // Convert JSDoc to Zod comment
+                let field_doc_ts = generate_jsdoc(&field.annotations, 1);
+                let field_doc_zod = field_doc_ts.replace(" * ", " // "); // Convert JSDoc to Zod comment
                 write!(event_payload_interfaces, "{}", field_doc_ts)?;
                 write!(event_payload_schemas, "{}", field_doc_zod)?;
 
@@ -124,7 +131,7 @@ pub(crate) fn generate_typescript_types_internal(
                     "  {}: {};",
                     field_name, field_ts_type
                 )?;
-                 writeln!(
+                writeln!(
                     event_payload_schemas,
                     "  {}: {},",
                     field_name, field_zod_type
@@ -142,9 +149,14 @@ pub(crate) fn generate_typescript_types_internal(
     // --- Generate Event Discriminated Union (TS & Zod) ---
     writeln!(ts_code, "/** Discriminated union of all possible events */")?;
     writeln!(ts_code, "export type Event =")?;
-    writeln!(zod_code, "// Discriminated union schema for all possible events")?;
-    writeln!(zod_code, "export const EventSchema = z.discriminatedUnion(\"type\", [")?;
-
+    writeln!(
+        zod_code,
+        "// Discriminated union schema for all possible events"
+    )?;
+    writeln!(
+        zod_code,
+        "export const EventSchema = z.discriminatedUnion(\"type\", ["
+    )?;
 
     for (index, event) in ast.events.iter().enumerate() {
         let type_name = event.name.to_string().to_upper_camel_case();
@@ -157,8 +169,11 @@ pub(crate) fn generate_typescript_types_internal(
         if event.fields.is_empty() {
             writeln!(ts_code, "{} {{ type: \\\"{}\\\" }}", prefix_ts, type_name)?;
             // Zod part for event without payload
-             writeln!(zod_code, "  z.object({{ type: z.literal(\"{}\") }}),", type_name)?;
-
+            writeln!(
+                zod_code,
+                "  z.object({{ type: z.literal(\"{}\") }}),",
+                type_name
+            )?;
         } else {
             let payload_interface_name = format!("{}Payload", type_name);
             let payload_schema_name = format!("{}PayloadSchema", type_name);
@@ -167,8 +182,12 @@ pub(crate) fn generate_typescript_types_internal(
                 "{} {{ type: \\\"{}\\\", payload: {} }}",
                 prefix_ts, type_name, payload_interface_name
             )?;
-             // Zod part for event with payload
-            writeln!(zod_code, "  z.object({{ type: z.literal(\"{}\"), payload: {} }}),", type_name, payload_schema_name)?;
+            // Zod part for event with payload
+            writeln!(
+                zod_code,
+                "  z.object({{ type: z.literal(\"{}\"), payload: {} }}),",
+                type_name, payload_schema_name
+            )?;
         }
     }
     if ast.events.is_empty() {
@@ -177,15 +196,16 @@ pub(crate) fn generate_typescript_types_internal(
             "    {{ type: \\\"__PlaceholderEvent__\\\" }}; // No events defined"
         )?;
         // Handle empty events for Zod (might need a placeholder or different structure)
-        writeln!(zod_code, "  // No events defined, Zod schema might be empty or require a placeholder")?;
-
+        writeln!(
+            zod_code,
+            "  // No events defined, Zod schema might be empty or require a placeholder"
+        )?;
     } else {
         // Add semicolon only if there are events for TS
         ts_code.pop(); // Remove last newline
         ts_code.push_str(";\\n");
     }
-     writeln!(zod_code, "]);\\n")?; // Close Zod discriminated union
-
+    writeln!(zod_code, "]);\\n")?; // Close Zod discriminated union
 
     // TODO:\n    // - Optionally generate types/schemas for Guards and Actions.\n    // - Handle FieldType::Identifier more robustly (imports?).\n
     // Combine TS and Zod code
@@ -217,7 +237,6 @@ fn map_field_type_to_ts_type(field_type: &FieldType) -> String {
         FieldType::Identifier(ident) => ident.to_string(), // Assume identifier maps directly to a TS type
     }
 }
-
 
 /// Maps DSL FieldType to Zod schema string.
 fn map_field_type_to_zod_type(field_type: &FieldType) -> String {

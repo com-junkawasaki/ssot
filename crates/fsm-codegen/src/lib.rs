@@ -350,6 +350,7 @@ fn generate_impl_block(
 }
 
 /// Generates the Event enum definition with associated data structs.
+#[allow(unused_assignments)] // payload_struct_name used in quote! macro later
 fn generate_event_enum_and_structs(
     ast: &StateMachine,
     derive_tokens: &TokenStream,
@@ -857,10 +858,10 @@ mod tests {
     }
 
     // Helper to parse and format code for comparison
-    #[cfg(test)] // Add cfg(test) attribute
+    #[allow(dead_code)]
     fn parse_and_format(code: &str) -> String {
-        let parsed_file = syn_parse_file(code).expect("Failed to parse generated code");
-        prettyplease::unparse(&parsed_file)
+        let syntax_tree: syn::File = syn::parse_str(code).expect("Failed to parse generated code");
+        prettyplease::unparse(&syntax_tree)
     }
 
     #[test]

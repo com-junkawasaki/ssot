@@ -83,7 +83,7 @@ pub(crate) fn generate_capnp_schema_internal(
         // Simple heuristic: replace :: or / with . (might need refinement)
         capnp_code.push_str(&format!("# package: {}\n", pkg));
     }
-    capnp_code.push_str("\n");
+    capnp_code.push('\n');
 
     // --- State Enum ---
     capnp_code.push_str("enum State @0 {\n");

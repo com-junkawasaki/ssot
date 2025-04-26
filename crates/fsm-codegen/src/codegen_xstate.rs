@@ -343,7 +343,8 @@ pub(crate) fn generate_xstate_machine_internal(ast: &StateMachine) -> Result<Str
     Ok(output)
 }
 
-// Helper to map FieldType to TypeScript type string for event payloads
+// Map DSL field types to TS types
+#[allow(dead_code)]
 fn map_field_type_to_ts_type(field_type: &fsm_dsl::ast::FieldType) -> String {
     match field_type {
         FieldType::Void => "void".to_string(), // Use void for Void
@@ -367,9 +368,11 @@ fn map_field_type_to_ts_type(field_type: &fsm_dsl::ast::FieldType) -> String {
     }
 }
 
+// Format event payload type string for TS interface
+#[allow(dead_code)]
 fn format_event_payload_type(payload_fields: &[FieldDef]) -> String {
     if payload_fields.is_empty() {
-        return "never".to_string(); // Or maybe 'void'? 'never' indicates no payload property.
+        return "never".to_string(); // No payload means type is never expected
     }
     let fields_str = payload_fields
         .iter()

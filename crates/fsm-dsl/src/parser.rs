@@ -551,79 +551,77 @@ fn parse_event_field(
     annotations: Vec<Annotation>,
 ) -> Result<FieldDef, ParseError> {
     debug_assert_eq!(pair.as_rule(), Rule::event_field);
-    let mut inner = pair.into_inner();
-    let mut name: Option<Ident> = None;
-    let mut field_type: Option<FieldType> = None;
-    let mut ordinal: Option<u64> = None;
+    let mut inner_event_field = pair.into_inner();
 
     // Consume identifier (mandatory)
-    let ident_pair = inner.next().ok_or_else(|| {
+    let name_pair = inner_event_field.next().ok_or_else(|| {
         ParseError::MissingElement("field name identifier in event_field".to_string())
     })?;
-    if ident_pair.as_rule() == Rule::ident {
-        name = Some(parse_ident(ident_pair)?);
-    } else {
-        return Err(ParseError::UnexpectedRule {
-            rule: ident_pair.as_rule(),
-            context: "Expected identifier for field name".to_string(),
-        });
-    }
+    let name = parse_ident(name_pair)?;
 
-    // Consume colon (:)
-    let _colon_pair = inner
-        .next()
-        .ok_or_else(|| ParseError::MissingElement("colon after field name".to_string()))?;
+    // Consume the next part which is either field_with_ordinal or field_without_ordinal
+    let field_details_pair = inner_event_field.next().ok_or_else(|| {
+        ParseError::MissingElement("field details (with/without ordinal) after colon".to_string())
+    })?;
 
-    // Consume field_type (mandatory)
-    let type_pair = inner
-        .next()
-        .ok_or_else(|| ParseError::MissingElement("field type in event_field".to_string()))?;
+    let (field_type, ordinal) = match field_details_pair.as_rule() {
+        Rule::field_with_ordinal => {
+            let mut inner_details = field_details_pair.into_inner();
+            // First is field_type
+            let type_pair = inner_details.next().ok_or_else(|| {
+                ParseError::MissingElement("field_type inside field_with_ordinal".to_string())
+            })?;
+            let specific_type_pair = type_pair.into_inner().next().ok_or_else(|| {
+                ParseError::MissingElement("Specific type inside field_type rule".to_string())
+            })?;
+            let parsed_field_type = parse_field_type(specific_type_pair)?;
 
-    // DEBUG PRINT
-    println!(
-        "DEBUG: Token after colon: {:?} -> {}",
-        type_pair.as_rule(),
-        type_pair.as_str()
-    );
+            // Second is field_ordinal
+            let ordinal_wrapper_pair = inner_details.next().ok_or_else(|| {
+                ParseError::MissingElement("field_ordinal inside field_with_ordinal".to_string())
+            })?;
+            let ordinal_pair = ordinal_wrapper_pair.into_inner().next().unwrap(); // Get integer_literal
+            let parsed_ordinal = Some(parse_integer_literal(ordinal_pair)?);
 
-    // field_type now has @ capture, so type_pair IS the field_type pair
-    if type_pair.as_rule() == Rule::field_type {
-        // Pass the pair directly to parse_field_type
-        field_type = Some(parse_field_type(type_pair)?);
-    } else {
-        return Err(ParseError::UnexpectedRule {
-            rule: type_pair.as_rule(),
-            context: "Expected field_type rule after colon".to_string(),
-        });
-    }
-
-    // Consume optional field_ordinal
-    if let Some(next_pair) = inner.peek() {
-        if next_pair.as_rule() == Rule::field_ordinal {
-            let ordinal_pair = inner.next().unwrap().into_inner().next().unwrap();
-            ordinal = Some(parse_integer_literal(ordinal_pair)?);
+            (parsed_field_type, parsed_ordinal)
         }
-    }
+        Rule::field_without_ordinal => {
+            let mut inner_details = field_details_pair.into_inner();
+            // Only contains field_type
+            let type_pair = inner_details.next().ok_or_else(|| {
+                ParseError::MissingElement("field_type inside field_without_ordinal".to_string())
+            })?;
+            let specific_type_pair = type_pair.into_inner().next().ok_or_else(|| {
+                ParseError::MissingElement("Specific type inside field_type rule".to_string())
+            })?;
+            let parsed_field_type = parse_field_type(specific_type_pair)?;
+
+            (parsed_field_type, None)
+        }
+        _ => {
+            return Err(ParseError::UnexpectedRule {
+                rule: field_details_pair.as_rule(),
+                context: "Expected field_with_ordinal or field_without_ordinal".to_string(),
+            });
+        }
+    };
 
     Ok(FieldDef {
-        annotations, // Use passed-in annotations
-        name: name.unwrap(),
+        annotations,
+        name,
         ordinal,
-        field_type: field_type.unwrap(),
+        field_type,
     })
 }
 
 fn parse_field_type(pair: Pair<Rule>) -> Result<FieldType, ParseError> {
-    // Pair has rule field_type due to @ capture in grammar.
-    // We need to look at the rule matched *inside* this pair.
-    debug_assert_eq!(pair.as_rule(), Rule::field_type);
-    let specific_type_pair = pair.into_inner().next().ok_or_else(|| {
-        ParseError::MissingElement("Specific type rule inside field_type capture".to_string())
-    })?;
+    // Pair should be primitive_type, list_type, or type_identifier
+    // debug_assert_eq!(pair.as_rule(), Rule::field_type); // No longer true
+    // let specific_type_pair = pair.into_inner().next()... // No longer needed
 
-    match specific_type_pair.as_rule() {
-        Rule::primitive_type => match specific_type_pair.as_str() {
-            // Use inner pair string
+    match pair.as_rule() {
+        Rule::primitive_type => match pair.as_str() {
+            // primitive_type now has @, so use pair.as_str()
             "Void" => Ok(FieldType::Void),
             "Bool" => Ok(FieldType::Bool),
             "Int8" => Ok(FieldType::Int8),
@@ -638,29 +636,31 @@ fn parse_field_type(pair: Pair<Rule>) -> Result<FieldType, ParseError> {
             "Float64" => Ok(FieldType::Float64),
             "Text" => Ok(FieldType::Text),
             "Data" => Ok(FieldType::Data),
-            _ => Err(ParseError::InvalidTypeString(
-                specific_type_pair.as_str().to_string(),
-            )),
+            _ => Err(ParseError::InvalidTypeString(pair.as_str().to_string())), // Use pair directly
         },
         Rule::list_type => {
-            // specific_type_pair matches list_type = { "List" ~ "<" ~ field_type ~ ">" }
-            let inner_field_type_pair =
-                specific_type_pair.into_inner().next().ok_or_else(|| {
-                    ParseError::MissingElement("field_type inside list_type".to_string())
+            // pair matches list_type = { "List" ~ "<" ~ field_type ~ ">" }
+            let inner_field_type_pair = pair.into_inner().next().ok_or_else(|| {
+                ParseError::MissingElement("field_type inside list_type".to_string())
+            })?;
+            // The inner pair IS field_type rule, need to get specific type inside it
+            let specific_inner_type_pair =
+                inner_field_type_pair.into_inner().next().ok_or_else(|| {
+                    ParseError::MissingElement("Specific type inside nested field_type".to_string())
                 })?;
             Ok(FieldType::List(Box::new(parse_field_type(
-                inner_field_type_pair,
-            )?))) // Recurse
+                specific_inner_type_pair,
+            )?)))
         }
         Rule::type_identifier => {
-            // specific_type_pair matches type_identifier = { qualified_ident }
-            let qident_pair = specific_type_pair.into_inner().next().ok_or_else(|| {
+            // pair matches type_identifier = { qualified_ident }
+            let qident_pair = pair.into_inner().next().ok_or_else(|| {
                 ParseError::MissingElement("qualified_ident inside type_identifier".to_string())
             })?;
             Ok(FieldType::Identifier(parse_qualified_ident(qident_pair)?))
         }
         _ => Err(ParseError::UnexpectedRule {
-            rule: specific_type_pair.as_rule(), // Report the specific rule found inside
+            rule: pair.as_rule(), // Report the rule received
             context: "parsing field_type inner rule (expected primitive, list, or identifier)"
                 .to_string(),
         }),

@@ -6,9 +6,10 @@ use fsm_dsl::ast::{AnnotationValue, FieldDef, FieldType, StateMachine, Transitio
 use std::fmt::Write;
 
 // Helper to map DSL FieldType to SCXML data type string (approximations)
+#[allow(dead_code)]
 fn map_field_type_to_scxml_type(field_type: &FieldType) -> &'static str {
     match field_type {
-        FieldType::Void => "", // No direct equivalent, maybe omit or use custom type
+        FieldType::Void => "string", // SCXML doesn't have a direct void, maybe use string?
         FieldType::Bool => "boolean",
         FieldType::Int8
         | FieldType::Int16
@@ -52,12 +53,7 @@ fn generate_xml_comment(annotations: &[fsm_dsl::ast::Annotation], indent: &str) 
     if let Some(AnnotationValue::StringLiteral(desc)) =
         find_annotation_value(annotations, "description")
     {
-        let comment_lines = desc
-            .lines()
-            .map(|line| format!("{}<!-- {} -->", indent, line.trim()))
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!("{}\n", comment_lines)
+        format!("{}<!-- {} -->", indent, desc)
     } else {
         String::new()
     }
@@ -78,10 +74,9 @@ fn generate_scxml_action_content(
     let decrement_prefix = "decrement";
 
     let mut assigned = false;
-    if action_name.starts_with(assign_prefix) {
-        let field_name = &action_name[assign_prefix.len()..];
+    if let Some(field_name) = action_name.strip_prefix(assign_prefix) {
         if context_fields.iter().any(|f| f.name == field_name) {
-            // Assume assigning a default/null value for now, DSL needs more info for actual value
+            // Found context field matching the part after "assign_"
             write!(
                 content,
                 "{indent}<assign location=\"{}\" expr=\"null\" />",
@@ -90,8 +85,7 @@ fn generate_scxml_action_content(
             .unwrap();
             assigned = true;
         }
-    } else if action_name.starts_with(increment_prefix) {
-        let field_name_maybe_camel = &action_name[increment_prefix.len()..];
+    } else if let Some(field_name_maybe_camel) = action_name.strip_prefix(increment_prefix) {
         // Attempt to find matching field (case-insensitive?)
         if let Some(field) = context_fields.iter().find(|f| {
             f.name
@@ -119,8 +113,7 @@ fn generate_scxml_action_content(
                 _ => { /* Type mismatch, fall back to log */ }
             }
         }
-    } else if action_name.starts_with(decrement_prefix) {
-        let field_name_maybe_camel = &action_name[decrement_prefix.len()..];
+    } else if let Some(field_name_maybe_camel) = action_name.strip_prefix(decrement_prefix) {
         if let Some(field) = context_fields.iter().find(|f| {
             f.name
                 .to_string()
@@ -191,7 +184,7 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
             write!(
                 output,
                 "{}",
-                generate_xml_comment(&field.annotations, &indent.repeat(2))
+                generate_xml_comment(&field.annotations, indent)
             )?;
             // Add expr attribute for initial value
             writeln!(
@@ -208,7 +201,7 @@ pub(crate) fn generate_scxml_internal(ast: &StateMachine) -> Result<String, Code
         write!(
             output,
             "{}",
-            generate_xml_comment(&state.annotations, &indent)
+            generate_xml_comment(&state.annotations, indent)
         )?;
         writeln!(output, "{indent}<state id=\"{}\">", state.name)?;
 
