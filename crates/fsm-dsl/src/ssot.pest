@@ -14,12 +14,14 @@ integer_literal = @{ ("-")? ~ ASCII_DIGIT+ }
 hex_literal = @{ "0x" ~ ASCII_HEX_DIGIT+ }
 
 // Placeholder for the main parsing rule
-file = _{ SOI ~ (COMMENT | PUSH(definition))* ~ EOI }
+// file = _{ SOI ~ (ignored | PUSH(definition))* ~ ignored* ~ EOI } // Reverted change
+file = { SOI ~ (COMMENT | PUSH(definition))* ~ EOI } // Make file rule atomic
 
 // Updated top-level definitions rule
 definition = { file_id | import_statement | types_block | actors_block | communication_block | services_block | machines_block | deployment_config_block | annotation }
 
-file_id = { "@" ~ hex_literal ~ ";" }
+// file_id = { "@" ~ hex_literal ~ ";" } // Keep the reverted change for now
+file_id = { "file_id" ~ ":" ~ hex_literal ~ ";" }
 import_statement = { "import" ~ string_literal ~ ";" }
 
 // --- Block Definitions ---
@@ -51,10 +53,10 @@ optional_type = { "optional" ~ "<" ~ type_specifier ~ ">" }
 // Updated annotation rules
 annotation = _{ description_annotation | validate_annotation | db_annotation | meta_annotation | generic_kv_annotation | generic_flag_annotation }
 
-description_annotation = { "$" ~ ("description") ~ "(" ~ string_literal ~ ")" }
-validate_annotation = { "$" ~ ("validate") ~ "(" ~ annotation_args? ~ ")" } // $validate(...) 
-db_annotation = { "$" ~ ("db") ~ "(" ~ annotation_args? ~ ")" } // $db(...)
-meta_annotation = { "$" ~ ("meta") ~ "(" ~ annotation_args? ~ ")" } // $meta(...)
+description_annotation = { "$" ~ ("description") ~ "(" ~ string_literal ~ ")" ~ ";" }
+validate_annotation = { "$" ~ ("validate") ~ "(" ~ annotation_args? ~ ")" ~ ";" }
+db_annotation = { "$" ~ ("db") ~ "(" ~ annotation_args? ~ ")" ~ ";" }
+meta_annotation = { "$" ~ ("meta") ~ "(" ~ annotation_args? ~ ")" ~ ";" }
 generic_kv_annotation = { "$" ~ identifier ~ "(" ~ annotation_value ~ ")" }
 generic_flag_annotation = { "$" ~ identifier ~ ";" }
 
