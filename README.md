@@ -91,6 +91,26 @@ This project is organized as a Cargo workspace:
 *   ✅ Documentation Generation: From `$description` annotations for all targets.
 *   ✅ Example `build.rs` Workflow: Demonstrates parsing and invoking generators.
 
+## DSL Completion Status (as of [Current Date/Time])
+
+Based on the current codebase structure and analysis:
+
+**Core DSL Crate (`fsm-dsl`):**
+
+*   **AST Definition (`ast.rs`):** Mature and comprehensive. Defines structures for types, services, actors, communication protocols, state machines (including context, states, transitions, actions, guards, invokes, parallel/history states), and deployment configurations.
+*   **Parsing (`parser.rs`, `ssot.pest`):** A substantial parser exists using `pest`. It likely covers a large portion of the defined grammar, translating DSL text into the AST. Full coverage requires further verification against the `ast.rs` definitions.
+*   **Validation (`validation.rs`):** Extensive validation logic is implemented, covering identifier uniqueness, name resolution, and structural rules for various DSL constructs (e.g., initial states, parallel states, history states).
+
+**Supporting Crates:**
+
+*   **Code Generation (`fsm-codegen`):** This crate exists, but its implementation status is unknown. Transforming the validated AST into executable code or configurations appears to be the primary remaining work area for the core DSL functionality.
+*   **Example Usage (`fsm-example`):** Purpose and content need review. Likely intended to demonstrate DSL usage.
+*   **Linter (`ssot-linter`):** Purpose and content need review. Likely intended for enforcing DSL style or rules outside core validation.
+
+**Overall Assessment:**
+
+The DSL definition, parsing, and validation components are well-developed. The main focus for completion seems to be implementing the code generation or runtime aspects to make the DSL definitions executable/usable. Further review of the `fsm-codegen` crate and test coverage is recommended for a more detailed picture.
+
 ## Roadmap / Future Enhancements
 
 The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not just for FSM logic, but for related concerns across distributed systems. Key development areas include:
