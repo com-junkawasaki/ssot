@@ -62,6 +62,10 @@ pub enum Annotation {
     Initial, // $initial;
     Final,   // $final;
     Parallel, // $parallel;
+    // Service specific
+    Implements(Identifier), // $implements(InterfaceName);
+    // Communication specific
+    Channel(Identifier), // $channel(ChannelName);
 }
 
 // --- Definitions ---
@@ -138,6 +142,15 @@ pub struct ImportStatement {
     // pub span: Span<'static>,
 }
 
+// --- Actor Definitions (Added) ---
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActorDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>, // Includes $type etc.
+}
+
 // --- Placeholder Blocks (Added) ---
 
 #[derive(Debug, Clone, PartialEq)]
@@ -145,6 +158,7 @@ pub struct ActorsBlock {
     // TODO: Define ActorDefinition
     // pub definitions: Vec<ActorDefinition>,
     pub annotations: Vec<Annotation>,
+    pub definitions: Vec<ActorDefinition>, // Added definitions field
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -183,11 +197,58 @@ pub struct MachinesBlock {
     pub annotations: Vec<Annotation>,
 }
 
+// --- Deployment Config Definitions (Added) ---
+
+// Represents a generic key-value attribute found in infra/deployment bodies
+#[derive(Debug, Clone, PartialEq)]
+pub struct AttributeDefinition {
+    pub key: Identifier,
+    pub value: AnnotationValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnvironmentDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
+    pub extends: Option<Identifier>,
+    pub variables: Option<Vec<Argument>>, // Reuse Argument for { key: value }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InfrastructureDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
+    pub extends: Option<Identifier>,
+    pub attributes: Vec<AttributeDefinition>, // Store key-value attributes
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeploymentDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
+    pub target_environment: Option<Identifier>,
+    pub target_infrastructure: Option<Vec<Argument>>, // Store as key-value pairs for now
+    pub deployable: Option<Identifier>,
+    pub config: Option<Vec<Argument>>, // Store as key-value pairs
+    pub other_attributes: Vec<AttributeDefinition>, // For misc attributes like replicas, strategy
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DeploymentItem {
+    Environment(EnvironmentDefinition),
+    Infrastructure(InfrastructureDefinition),
+    Deployment(DeploymentDefinition),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeploymentConfigBlock {
     // TODO: Define EnvironmentDefinition, InfrastructureDefinition, DeploymentDefinition
     // pub definitions: Vec<DeploymentItem>,
     pub annotations: Vec<Annotation>,
+    pub definitions: Vec<DeploymentItem>, // Added definitions field
 }
 
 // --- Machine Context Definitions (Added) ---
@@ -385,6 +446,95 @@ pub struct HistoryDefinition {
     pub history_type: HistoryType,
     pub id: NumericId,
     pub default_target: Identifier, // Default state to transition to if no history exists
+}
+
+// --- Service Definitions (Added) ---
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParameterDefinition {
+    pub name: Identifier,
+    pub type_spec: TypeSpecifier,
+    pub id: Option<NumericId>, // ID might be optional for parameters
+    pub annotations: Vec<Annotation>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MethodDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>, // Annotations directly on the method
+    pub parameters: Vec<ParameterDefinition>,
+    pub return_type: Option<TypeSpecifier>,
+    pub body_annotations: Vec<Annotation>, // Annotations inside optional {} body
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InterfaceDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
+    pub methods: Vec<MethodDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ServiceDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>, // Includes $implements, $protocol, $route etc.
+    pub extends: Option<Identifier>, // Name of the base service
+    // Note: $implements is stored in annotations Vec
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ServiceItem {
+    Interface(InterfaceDefinition),
+    Service(ServiceDefinition),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ServicesBlock {
+    pub annotations: Vec<Annotation>,
+    pub definitions: Vec<ServiceItem>,
+}
+
+// --- Communication Definitions (Added) ---
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProtocolDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
+    // Body annotations can be stored directly in the main annotations vec for now
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChannelDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
+    pub description: Option<String>,
+    pub parameters: Option<Vec<Argument>>, // Reuse Argument for { key: type_string } structure for now
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EventDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>, // Includes $channel
+    pub fields: Vec<FieldDefinition>, // Reuse FieldDefinition for event payload
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CommunicationItem {
+    Protocol(ProtocolDefinition),
+    Channel(ChannelDefinition),
+    Event(EventDefinition),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CommunicationBlock {
+    pub annotations: Vec<Annotation>,
+    pub definitions: Vec<CommunicationItem>,
 }
 
 /// Represents the entire parsed content of a .ssot file.

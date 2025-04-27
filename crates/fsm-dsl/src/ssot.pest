@@ -39,11 +39,13 @@ import_statement = { "import" ~ string_literal ~ ";" }
 types_block = { annotation* ~ "types" ~ "{" ~ type_definition* ~ "}" }
 type_definition = _{ struct_definition | enum_definition }
 
-actors_block = { annotation* ~ "actors" ~ "{" ~ "}" } // TODO: actor_definition* Placeholder
-communication_block = { annotation* ~ "communication" ~ "{" ~ "}" } // TODO: communication_definition* Placeholder
-services_block = { annotation* ~ "services" ~ "{" ~ "}" } // TODO: service_definition* Placeholder
+actors_block = { annotation* ~ "actors" ~ "{" ~ actor_definition* ~ "}" }
+
+communication_block = { annotation* ~ "communication" ~ "{" ~ communication_item* ~ "}" }
+services_block = { annotation* ~ "services" ~ "{" ~ service_item* ~ "}" }
 machines_block = { annotation* ~ "machines" ~ "{" ~ machine_definition* ~ "}" }
-deployment_config_block = { annotation* ~ "deployment_config" ~ "{" ~ "}" } // TODO: deployment_definition* Placeholder
+deployment_config_block = { annotation* ~ "deployment_config" ~ "{" ~ deployment_item* ~ "}" }
+deployment_item = { environment_definition | infrastructure_definition | deployment_definition }
 
 // --- Type Definitions ---
 
@@ -162,6 +164,83 @@ invoke_ref = { "invokes" ~ "." ~ identifier }
 // history [shallow|deep] @id(N) target DefaultTargetState;
 history_definition = { "history" ~ history_type ~ "@id(" ~ integer_literal ~ ")" ~ "target" ~ identifier ~ ";" }
 history_type = { "shallow" | "deep" }
+
+// --- Service Block Definitions (Added) ---
+service_item = { interface_definition | service_definition }
+
+// interface Name @id(N) { method ... ; }
+interface_definition = { annotation* ~ "interface" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ method_definition* ~ "}" }
+
+// method Name @id(N) (param: Type @id(N), ...) -> ReturnType? { ... }? ;
+method_definition = { annotation* ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "(" ~ parameter_list? ~ ")" ~ method_return? ~ method_body? ~ ";" }
+parameter_list = { parameter ~ ("," ~ parameter)* }
+parameter = { identifier ~ ":" ~ type_specifier ~ ("@id(" ~ integer_literal ~ ")")? } // ID on param is optional for now
+method_return = { "->" ~ type_specifier }
+method_body = { "{" ~ annotation* ~ "}" } // Placeholder for potential method-specific annotations/details
+
+// service Name @id(N) extends Base { $implements(Iface); ... }
+service_definition = { annotation* ~ "service" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ service_extends? ~ service_body }
+service_extends = { "extends" ~ identifier }
+service_body = { "{" ~ service_element* ~ "}" }
+// Service elements are primarily annotations for now ($implements, $route, etc.)
+service_element = { annotation } // TODO: Add method overrides if needed later
+
+// Specific service annotations (can also be generic kv)
+protocol_annotation = { "$" ~ "protocol" ~ "(" ~ identifier ~ ")" ~ ";" }
+route_annotation = { "$" ~ "route" ~ "(" ~ annotation_args ~ ")" ~ ";" }
+implements_annotation = { "$" ~ "implements" ~ "(" ~ identifier ~ ")" ~ ";" }
+channel_annotation = { "$" ~ "channel" ~ "(" ~ identifier ~ ")" ~ ";" } // Added $channel annotation
+
+// --- Communication Block Definitions (Added) ---
+communication_item = { protocol_definition | channel_definition | event_definition }
+
+// protocol Name @id(N) { ... };
+protocol_definition = { annotation* ~ "protocol" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ protocol_body ~ ";" }
+protocol_body = { "{" ~ annotation* ~ "}" } // Body mainly for annotations for now
+
+// channel Name @id(N) { description: "..."; parameters: {...}; ... };
+channel_definition = { annotation* ~ "channel" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ channel_body ~ ";" }
+channel_body = { "{" ~ channel_element* ~ "}" }
+channel_element = { description_element | parameters_element | annotation }
+// Simple key-value like elements for description/parameters
+description_element = { "description" ~ ":" ~ string_literal ~ ";" }
+parameters_element = { "parameters" ~ ":" ~ object_literal ~ ";" } // Reuse object_literal { key: type; ... }
+
+// event Name @id(N) { field: Type @id(N); ... };
+event_definition = { annotation* ~ "event" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ event_field_definition* ~ "}" }
+// Reuse field_definition structure for event fields
+event_field_definition = { field_definition }
+
+// --- Actor Block Definitions (Added) ---
+actor_definition = { annotation* ~ "actor" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ actor_body ~ ";" }
+actor_body = { "{" ~ annotation* ~ "}" } // Body mainly for annotations
+
+// --- Deployment Config Block Definitions (Added) ---
+deployment_config_block = { annotation* ~ "deployment_config" ~ "{" ~ deployment_item* ~ "}" }
+deployment_item = { environment_definition | infrastructure_definition | deployment_definition }
+
+// environment Name @id(N) extends Base { variables: {...}; $provider(...); ... };
+environment_definition = { annotation* ~ "environment" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ environment_extends? ~ environment_body ~ ";" }
+environment_extends = { "extends" ~ identifier }
+environment_body = { "{" ~ environment_element* ~ "}" }
+environment_element = { variables_element | annotation }
+variables_element = { "variables" ~ ":" ~ object_literal ~ ";" } // Reuse object_literal { key: value; ... }
+
+// infrastructure Name @id(N) extends Base { type: "..."; ... };
+infrastructure_definition = { annotation* ~ "infrastructure" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ infrastructure_extends? ~ infrastructure_body ~ ";" }
+infrastructure_extends = { "extends" ~ identifier }
+infrastructure_body = { "{" ~ infrastructure_element* ~ "}" }
+infrastructure_element = { attribute_kv_pair | annotation } // Allow generic key-value pairs for attributes
+attribute_kv_pair = { identifier ~ ":" ~ annotation_value ~ ";" } // Simple key: value; structure
+
+// deployment Name @id(N) { targetEnvironment: Env; targetInfrastructure: {...}; deployable: Serv; ... };
+deployment_definition = { annotation* ~ "deployment" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ deployment_body ~ ";" }
+deployment_body = { "{" ~ deployment_element* ~ "}" }
+deployment_element = { target_env_element | target_infra_element | deployable_element | attribute_kv_pair | config_element | annotation }
+target_env_element = { "targetEnvironment" ~ ":" ~ identifier ~ ";" }
+target_infra_element = { "targetInfrastructure" ~ ":" ~ object_literal ~ ";" } // Complex structure, parse as key-value for now
+deployable_element = { "deployable" ~ ":" ~ identifier ~ ";" }
+config_element = { "config" ~ ":" ~ object_literal ~ ";" } // Reuse object_literal
 
 // TODO: Add rules for all other elements from DSL.md:
 // - enums, machines, services, interfaces, protocols, actors, channels, events

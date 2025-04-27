@@ -1,4 +1,4 @@
-use crate::ast::{Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition, ActionsBlock, ActionDefinition, GuardsBlock, GuardDefinition, InvokesBlock, InvokeDefinition, InvokeSource, StateInvokeDefinition, InvokeTransitionTarget, Duration, TimeUnit, AfterTransitionDefinition, HistoryDefinition, HistoryType};
+use crate::ast::{Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition, ActionsBlock, ActionDefinition, GuardsBlock, GuardDefinition, InvokesBlock, InvokeDefinition, InvokeSource, StateInvokeDefinition, InvokeTransitionTarget, Duration, TimeUnit, AfterTransitionDefinition, HistoryDefinition, HistoryType, ServicesBlock, ServiceItem, InterfaceDefinition, MethodDefinition, ParameterDefinition, ServiceDefinition, CommunicationBlock, CommunicationItem, ProtocolDefinition, ChannelDefinition, EventDefinition, ActorsBlock, ActorDefinition};
 use pest::Parser;
 use pest_derive::Parser;
 use pest::iterators::{Pair, Pairs};
@@ -75,16 +75,13 @@ pub fn parse_ssot_content(content: &str, source_path: Option<PathBuf>) -> ParseR
                             ast.definitions.push(TopLevelDefinition::Machines(parse_machines_block(inner_definition_pair)?));
                         }
                         Rule::actors_block => {
-                            eprintln!("Skipping actors_block definition for now.");
-                             // ast.definitions.push(TopLevelDefinition::Actors(parse_actors_block(inner_definition_pair)?));
+                            ast.definitions.push(TopLevelDefinition::Actors(parse_actors_block(inner_definition_pair)?));
                         }
                         Rule::communication_block => {
-                            eprintln!("Skipping communication_block definition for now.");
-                            // ast.definitions.push(TopLevelDefinition::Communication(parse_communication_block(inner_definition_pair)?));
+                            ast.definitions.push(TopLevelDefinition::Communication(parse_communication_block(inner_definition_pair)?));
                         }
                          Rule::services_block => {
-                            eprintln!("Skipping services_block definition for now.");
-                            // ast.definitions.push(TopLevelDefinition::Services(parse_services_block(inner_definition_pair)?));
+                            ast.definitions.push(TopLevelDefinition::Services(parse_services_block(inner_definition_pair)?));
                         }
                          Rule::deployment_config_block => {
                             eprintln!("Skipping deployment_config_block definition for now.");
@@ -828,6 +825,14 @@ fn parse_annotation(pair: Pair<Rule>) -> ParseResult<Annotation> {
         Rule::initial_annotation => Ok(Annotation::Initial),
         Rule::final_annotation => Ok(Annotation::Final),
         Rule::parallel_annotation => Ok(Annotation::Parallel),
+        Rule::implements_annotation => { 
+             let ident = parse_identifier(inner_pair.into_inner().next().unwrap())?;
+             Ok(Annotation::Implements(ident))
+        }
+        Rule::channel_annotation => { // Added case for $channel
+             let ident = parse_identifier(inner_pair.into_inner().next().unwrap())?;
+             Ok(Annotation::Channel(ident))
+        }
         rule => Err(ParseError::UnexpectedRule { expected: Rule::description_annotation /* or others */, found: rule }),
     }
 }
@@ -963,6 +968,394 @@ fn parse_history_definition(pair: Pair<Rule>) -> ParseResult<HistoryDefinition> 
     })
 }
 
+// --- Service Block Parsing (Added) ---
+
+fn parse_services_block(pair: Pair<Rule>) -> ParseResult<ServicesBlock> {
+    if pair.as_rule() != Rule::services_block {
+        return Err(ParseError::UnexpectedRule { expected: Rule::services_block, found: pair.as_rule() });
+    }
+    println!("Parsing services block: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut definitions = Vec::new();
+
+    // Order: annotation*, "services", "{", service_item*, "}"
+    for inner_pair in pair.into_inner() {
+        match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::service_item => {
+                let item_pair = inner_pair.into_inner().next().unwrap();
+                match item_pair.as_rule() {
+                    Rule::interface_definition => definitions.push(ServiceItem::Interface(parse_interface_definition(item_pair)?)),
+                    Rule::service_definition => definitions.push(ServiceItem::Service(parse_service_definition(item_pair)?)),
+                    rule => return Err(ParseError::UnexpectedRule { expected: Rule::interface_definition /* or service */, found: rule })
+                }
+            }
+            _ => { /* Skip keyword 'services', braces */ }
+        }
+    }
+
+    Ok(ServicesBlock { annotations, definitions })
+}
+
+fn parse_interface_definition(pair: Pair<Rule>) -> ParseResult<InterfaceDefinition> {
+    if pair.as_rule() != Rule::interface_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::interface_definition, found: pair.as_rule() });
+    }
+    println!("Parsing interface definition: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut name: Option<Identifier> = None;
+    let mut id: Option<NumericId> = None;
+    let mut methods = Vec::new();
+
+    // Order: annotation*, "interface", identifier, "@id(", int, ")", "{", method_definition*, "}"
+    for inner_pair in pair.into_inner() {
+        match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::identifier => name = Some(parse_identifier(inner_pair)?),
+            Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
+            Rule::method_definition => methods.push(parse_method_definition(inner_pair)?),
+            _ => { /* Skip keywords, braces, @id */ }
+        }
+    }
+
+    Ok(InterfaceDefinition {
+        name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing interface name".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing interface id".to_string() })?,
+        annotations,
+        methods,
+    })
+}
+
+fn parse_method_definition(pair: Pair<Rule>) -> ParseResult<MethodDefinition> {
+    if pair.as_rule() != Rule::method_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::method_definition, found: pair.as_rule() });
+    }
+     println!("Parsing method definition: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut name: Option<Identifier> = None;
+    let mut id: Option<NumericId> = None;
+    let mut parameters = Vec::new();
+    let mut return_type: Option<TypeSpecifier> = None;
+    let mut body_annotations = Vec::new();
+
+    // Order: annotation*, identifier, "@id(", int, ")", "(", param_list?, ")", return?, body?, ";"
+    for inner_pair in pair.into_inner() {
+        match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::identifier => name = Some(parse_identifier(inner_pair)?),
+            Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
+            Rule::parameter_list => {
+                for param_pair in inner_pair.into_inner() {
+                     if param_pair.as_rule() == Rule::parameter {
+                        parameters.push(parse_parameter(param_pair)?);
+                     }
+                }
+            }
+            Rule::method_return => {
+                let type_pair = inner_pair.into_inner().next().unwrap(); // Skip "->"
+                 return_type = Some(parse_type_specifier(type_pair)?);
+            }
+            Rule::method_body => {
+                 for body_item in inner_pair.into_inner() {
+                    if body_item.as_rule() == Rule::annotation {
+                         body_annotations.push(parse_annotation(body_item)?);
+                    }
+                 }
+            }
+             _ => { /* Skip keywords, parens, braces, @id, etc. */ }
+        }
+    }
+
+     Ok(MethodDefinition {
+        name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing method name".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing method id".to_string() })?,
+        annotations,
+        parameters,
+        return_type,
+        body_annotations,
+    })
+}
+
+fn parse_parameter(pair: Pair<Rule>) -> ParseResult<ParameterDefinition> {
+     if pair.as_rule() != Rule::parameter {
+        return Err(ParseError::UnexpectedRule { expected: Rule::parameter, found: pair.as_rule() });
+    }
+     println!("Parsing parameter: {}", pair.as_str());
+
+     let mut name: Option<Identifier> = None;
+     let mut type_spec: Option<TypeSpecifier> = None;
+     let mut id: Option<NumericId> = None;
+     // TODO: Parse annotations on parameters if grammar allows
+
+     // Order: identifier, ":", type_specifier, ("@id(", int, ")")?
+     for inner_pair in pair.into_inner() {
+         match inner_pair.as_rule() {
+            Rule::identifier => name = Some(parse_identifier(inner_pair)?),
+            Rule::type_specifier => type_spec = Some(parse_type_specifier(inner_pair)?),
+            Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
+            _ => { /* Skip : @id() */ }
+         }
+     }
+
+     Ok(ParameterDefinition {
+         name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing parameter name".to_string() })?,
+         type_spec: type_spec.ok_or_else(|| ParseError::InvalidInput { message: "Missing parameter type".to_string() })?,
+         id,
+         annotations: Vec::new(), // TODO
+     })
+}
+
+fn parse_service_definition(pair: Pair<Rule>) -> ParseResult<ServiceDefinition> {
+     if pair.as_rule() != Rule::service_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::service_definition, found: pair.as_rule() });
+    }
+     println!("Parsing service definition: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut name: Option<Identifier> = None;
+    let mut id: Option<NumericId> = None;
+    let mut extends: Option<Identifier> = None;
+
+    // Order: annotation*, "service", identifier, "@id(", int, ")", extends?, body
+     for inner_pair in pair.into_inner() {
+         match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::identifier => name = Some(parse_identifier(inner_pair)?),
+            Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
+            Rule::service_extends => {
+                extends = Some(parse_identifier(inner_pair.into_inner().next().unwrap())?); // Skip "extends"
+            }
+            Rule::service_body => {
+                 // Body only contains annotations for now
+                 for body_item in inner_pair.into_inner() {
+                     if body_item.as_rule() == Rule::annotation {
+                         annotations.push(parse_annotation(body_item)?);
+                     } else if body_item.as_rule() != Rule::service_element { // service_element is just annotation now
+                        eprintln!("Warning: Skipping unexpected element in service body: {:?}", body_item.as_rule());
+                     }
+                 }
+            }
+             _ => { /* Skip keywords, @id, braces etc. */ }
+         }
+     }
+
+     Ok(ServiceDefinition {
+        name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing service name".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing service id".to_string() })?,
+        annotations, // Note: $implements etc. are parsed into here
+        extends,
+    })
+}
+
+// --- Communication Block Parsing (Added) ---
+
+fn parse_communication_block(pair: Pair<Rule>) -> ParseResult<CommunicationBlock> {
+    if pair.as_rule() != Rule::communication_block {
+        return Err(ParseError::UnexpectedRule { expected: Rule::communication_block, found: pair.as_rule() });
+    }
+    println!("Parsing communication block: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut definitions = Vec::new();
+
+    // Order: annotation*, "communication", "{", communication_item*, "}"
+    for inner_pair in pair.into_inner() {
+        match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::communication_item => {
+                let item_pair = inner_pair.into_inner().next().unwrap();
+                match item_pair.as_rule() {
+                    Rule::protocol_definition => definitions.push(CommunicationItem::Protocol(parse_protocol_definition(item_pair)?)),
+                    Rule::channel_definition => definitions.push(CommunicationItem::Channel(parse_channel_definition(item_pair)?)),
+                    Rule::event_definition => definitions.push(CommunicationItem::Event(parse_event_definition(item_pair)?)),
+                    rule => return Err(ParseError::UnexpectedRule { expected: Rule::protocol_definition /* or others */, found: rule })
+                }
+            }
+            _ => { /* Skip keyword 'communication', braces */ }
+        }
+    }
+    Ok(CommunicationBlock { annotations, definitions })
+}
+
+fn parse_protocol_definition(pair: Pair<Rule>) -> ParseResult<ProtocolDefinition> {
+    if pair.as_rule() != Rule::protocol_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::protocol_definition, found: pair.as_rule() });
+    }
+    println!("Parsing protocol definition: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut name: Option<Identifier> = None;
+    let mut id: Option<NumericId> = None;
+
+    // Order: annotation*, "protocol", identifier, "@id(", int, ")", body, ";"
+    for inner_pair in pair.into_inner() {
+        match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::identifier => name = Some(parse_identifier(inner_pair)?),
+            Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
+            Rule::protocol_body => {
+                 // Body only contains annotations for now
+                 for body_item in inner_pair.into_inner() {
+                     if body_item.as_rule() == Rule::annotation {
+                         annotations.push(parse_annotation(body_item)?);
+                     }
+                 }
+            }
+             _ => { /* Skip keywords, @id, braces etc. */ }
+        }
+    }
+
+    Ok(ProtocolDefinition {
+        name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing protocol name".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing protocol id".to_string() })?,
+        annotations,
+    })
+}
+
+fn parse_channel_definition(pair: Pair<Rule>) -> ParseResult<ChannelDefinition> {
+    if pair.as_rule() != Rule::channel_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::channel_definition, found: pair.as_rule() });
+    }
+    println!("Parsing channel definition: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut name: Option<Identifier> = None;
+    let mut id: Option<NumericId> = None;
+    let mut description: Option<String> = None;
+    let mut parameters: Option<Vec<Argument>> = None;
+
+    // Order: annotation*, "channel", identifier, "@id(", int, ")", body, ";"
+    for inner_pair in pair.into_inner() {
+        match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::identifier => name = Some(parse_identifier(inner_pair)?),
+            Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
+            Rule::channel_body => {
+                 for element in inner_pair.into_inner() {
+                    match element.as_rule() {
+                        Rule::description_element => {
+                            let desc_val = element.into_inner().find(|p| p.as_rule() == Rule::string_literal).unwrap();
+                            description = Some(parse_string_literal(desc_val)?);
+                        }
+                        Rule::parameters_element => {
+                            let params_obj = element.into_inner().find(|p| p.as_rule() == Rule::object_literal).unwrap();
+                            // Reuse annotation args parser for { key: value } structure
+                            // Note: Value is currently parsed as String/Int, not type identifier
+                            parameters = Some(parse_annotation_args(params_obj.into_inner())?);
+                        }
+                        Rule::annotation => annotations.push(parse_annotation(element)?),
+                         _ => { /* Skip braces etc. */ }
+                    }
+                 }
+            }
+             _ => { /* Skip keywords, @id, etc. */ }
+        }
+    }
+
+    Ok(ChannelDefinition {
+        name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing channel name".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing channel id".to_string() })?,
+        annotations,
+        description,
+        parameters,
+    })
+}
+
+fn parse_event_definition(pair: Pair<Rule>) -> ParseResult<EventDefinition> {
+    if pair.as_rule() != Rule::event_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::event_definition, found: pair.as_rule() });
+    }
+    println!("Parsing event definition: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut name: Option<Identifier> = None;
+    let mut id: Option<NumericId> = None;
+    let mut fields = Vec::new();
+
+    // Order: annotation*, "event", identifier, "@id(", int, ")", "{", event_field_definition*, "}"
+    for inner_pair in pair.into_inner() {
+        match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::identifier => name = Some(parse_identifier(inner_pair)?),
+            Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
+            Rule::event_field_definition => {
+                // event_field_definition just wraps field_definition
+                let field_pair = inner_pair.into_inner().next().unwrap();
+                fields.push(parse_field_definition(field_pair)?);
+            }
+            _ => { /* Skip keywords, braces, @id etc. */ }
+        }
+    }
+
+    Ok(EventDefinition {
+        name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing event name".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing event id".to_string() })?,
+        annotations, // Includes $channel
+        fields,
+    })
+}
+
+// --- Actor Block Parsing (Added) ---
+
+fn parse_actors_block(pair: Pair<Rule>) -> ParseResult<ActorsBlock> {
+    if pair.as_rule() != Rule::actors_block {
+        return Err(ParseError::UnexpectedRule { expected: Rule::actors_block, found: pair.as_rule() });
+    }
+    println!("Parsing actors block: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut definitions = Vec::new();
+
+    // Order: annotation*, "actors", "{", actor_definition*, "}"
+    for inner_pair in pair.into_inner() {
+        match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::actor_definition => definitions.push(parse_actor_definition(inner_pair)?),
+            _ => { /* Skip keyword 'actors', braces */ }
+        }
+    }
+
+    Ok(ActorsBlock { annotations, definitions })
+}
+
+fn parse_actor_definition(pair: Pair<Rule>) -> ParseResult<ActorDefinition> {
+     if pair.as_rule() != Rule::actor_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::actor_definition, found: pair.as_rule() });
+    }
+    println!("Parsing actor definition: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut name: Option<Identifier> = None;
+    let mut id: Option<NumericId> = None;
+
+     // Order: annotation*, "actor", identifier, "@id(", int, ")", body, ";"
+    for inner_pair in pair.into_inner() {
+        match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::identifier => name = Some(parse_identifier(inner_pair)?),
+            Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
+            Rule::actor_body => {
+                 // Body only contains annotations for now
+                 for body_item in inner_pair.into_inner() {
+                     if body_item.as_rule() == Rule::annotation {
+                         annotations.push(parse_annotation(body_item)?);
+                     }
+                 }
+            }
+             _ => { /* Skip keywords, @id, braces etc. */ }
+        }
+    }
+
+     Ok(ActorDefinition {
+        name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing actor name".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing actor id".to_string() })?,
+        annotations,
+    })
+}
+
 // --- Public API ---
 
 /// Reads and parses an SSOT file from the given path.
@@ -979,7 +1372,7 @@ pub fn parse_ssot_file<P: AsRef<Path>>(path: P) -> ParseResult<SsotAst> {
 mod tests {
     use super::*;
     
-    use crate::ast::{TypeDefinition, Annotation, TypeSpecifier};
+    use crate::ast::{TypeDefinition, Annotation, TypeSpecifier, InvokeSource, Duration, TimeUnit, HistoryType, ServiceItem, CommunicationItem, ActorsBlock, ActorDefinition}; // Ensure needed types are imported
     use pretty_assertions::assert_eq;
 
     // Helper to create simple Identifier
@@ -1347,4 +1740,240 @@ mod tests {
             _ => panic!("Expected Machines block"),
         }
     }
+
+    #[test]
+    fn test_parse_services_block() {
+         let content = r#"
+            file_id: 0xcccccccccccccccc;
+            types { // Need some types for parameters/return
+                struct Request @id(0) { data: string @id(0); }
+                struct Response @id(1) { result: string @id(0); }
+                enum Status @id(2) { OK @id(0); ERR @id(1); }
+            }
+            services {
+                $description("Core services");
+                interface MyInterface @id(0) {
+                     $protocol(CapnpRPC); // Example annotation
+                     methodA @id(0) ( req: Request @id(0) ) -> Response { $route(path: "/a"); }; // Param ID optional in grammar
+                     methodB @id(1) () -> optional<Status>; // No params, optional return
+                }
+
+                service MyService @id(1) extends BaseService {
+                     $implements(MyInterface);
+                     $route(basePath: "/api");
+                     $meta(version: "1.0");
+                }
+            }
+        "#;
+        let result = parse_ssot_content(content, None);
+        println!("Parse result (services): {:?}", result);
+        if let Err(e) = &result {
+            if let ParseError::PestError(pe) = e {
+                eprintln!("Pest Error Details:\n{}", pe);
+            }
+        }
+        assert!(result.is_ok());
+        let ast = result.unwrap();
+
+        let services_block = ast.definitions.iter().find_map(|def| match def {
+            TopLevelDefinition::Services(block) => Some(block),
+            _ => None,
+        }).expect("Services block not found");
+
+        assert_eq!(services_block.annotations.len(), 1);
+         if let Annotation::Description(d) = &services_block.annotations[0] {
+             assert_eq!(d, "Core services");
+         } else { panic!("Expected description annotation"); }
+
+         assert_eq!(services_block.definitions.len(), 2);
+
+         // Check Interface
+         let interface = match &services_block.definitions[0] {
+             ServiceItem::Interface(iface) => iface,
+             _ => panic!("Expected InterfaceDefinition"),
+         };
+         assert_eq!(interface.name.name, "MyInterface");
+         assert_eq!(interface.id.value, 0);
+         assert_eq!(interface.annotations.len(), 1);
+         // TODO: Check protocol annotation if parsed specifically or as GenericKeyValue
+
+         assert_eq!(interface.methods.len(), 2);
+         let method_a = &interface.methods[0];
+         assert_eq!(method_a.name.name, "methodA");
+         assert_eq!(method_a.id.value, 0);
+         assert_eq!(method_a.parameters.len(), 1);
+         assert_eq!(method_a.parameters[0].name.name, "req");
+         assert_eq!(method_a.parameters[0].id, Some(NumericId{ value: 0})); // Check optional ID parsed
+         if let TypeSpecifier::Simple(ts) = &method_a.parameters[0].type_spec {
+            assert_eq!(ts.name, "Request");
+         } else { panic!("Expected simple type"); }
+         assert!(method_a.return_type.is_some());
+         if let TypeSpecifier::Simple(ts) = method_a.return_type.as_ref().unwrap() {
+             assert_eq!(ts.name, "Response");
+         } else { panic!("Expected simple return type"); }
+         assert_eq!(method_a.body_annotations.len(), 1); // Check annotation in body
+
+         let method_b = &interface.methods[1];
+         assert_eq!(method_b.name.name, "methodB");
+         assert_eq!(method_b.parameters.len(), 0);
+         assert!(method_b.return_type.is_some());
+         if let TypeSpecifier::Optional(ot) = method_b.return_type.as_ref().unwrap() {
+            if let TypeSpecifier::Simple(ts) = &**ot {
+                 assert_eq!(ts.name, "Status");
+            } else { panic!("Expected simple type inside optional"); }
+         } else { panic!("Expected optional return type"); }
+         assert!(method_b.body_annotations.is_empty());
+
+        // Check Service
+        let service = match &services_block.definitions[1] {
+            ServiceItem::Service(serv) => serv,
+            _ => panic!("Expected ServiceDefinition"),
+        };
+        assert_eq!(service.name.name, "MyService");
+        assert_eq!(service.id.value, 1);
+        assert!(service.extends.is_some());
+        assert_eq!(service.extends.as_ref().unwrap().name, "BaseService");
+        assert_eq!(service.annotations.len(), 3); // $implements, $route, $meta
+        assert!(service.annotations.iter().any(|a| matches!(a, Annotation::Implements(id) if id.name == "MyInterface")));
+
+    }
+
+    #[test]
+    fn test_parse_communication_block() {
+        let content = r#"
+            file_id: 0xdddddddddddddddd;
+             types { // Need string type
+                 struct Dummy @id(0) {}
+             }
+             communication {
+                 $description("System messaging");
+                 protocol MyProto @id(0) { $meta(standard: "custom"); };
+
+                 channel UserEvents @id(1) {
+                     description: "Events for specific users";
+                     parameters: { userId: string }; // Using string directly for now
+                 };
+
+                 event UserLoggedIn @id(2) {
+                     $channel(UserEvents);
+                     userId: string @id(0);
+                     timestamp: u64 @id(1);
+                 }
+             }
+        "#;
+        let result = parse_ssot_content(content, None);
+        println!("Parse result (communication): {:?}", result);
+        if let Err(e) = &result {
+            if let ParseError::PestError(pe) = e {
+                eprintln!("Pest Error Details:\n{}", pe);
+            }
+        }
+        assert!(result.is_ok());
+        let ast = result.unwrap();
+
+         let comm_block = ast.definitions.iter().find_map(|def| match def {
+            TopLevelDefinition::Communication(block) => Some(block),
+            _ => None,
+        }).expect("Communication block not found");
+
+        assert_eq!(comm_block.annotations.len(), 1);
+         if let Annotation::Description(d) = &comm_block.annotations[0] {
+             assert_eq!(d, "System messaging");
+         } else { panic!("Expected description annotation"); }
+
+         assert_eq!(comm_block.definitions.len(), 3);
+
+         // Check Protocol
+         let proto = match &comm_block.definitions[0] {
+             CommunicationItem::Protocol(p) => p,
+             _ => panic!("Expected ProtocolDefinition")
+         };
+         assert_eq!(proto.name.name, "MyProto");
+         assert_eq!(proto.id.value, 0);
+         assert_eq!(proto.annotations.len(), 1);
+         assert!(matches!(proto.annotations[0], Annotation::Meta(_)));
+
+         // Check Channel
+          let channel = match &comm_block.definitions[1] {
+             CommunicationItem::Channel(c) => c,
+             _ => panic!("Expected ChannelDefinition")
+         };
+          assert_eq!(channel.name.name, "UserEvents");
+          assert_eq!(channel.id.value, 1);
+          assert!(channel.description.is_some());
+          assert_eq!(channel.description.as_ref().unwrap(), "Events for specific users");
+          assert!(channel.parameters.is_some());
+          let params = channel.parameters.as_ref().unwrap();
+          assert_eq!(params.len(), 1);
+          assert_eq!(params[0].key.name, "userId");
+          // Note: Value is parsed as string/int, not type. Grammar/parser needs update for type parsing here.
+          if let AnnotationValue::String(s) = &params[0].value {
+              assert_eq!(s, "string");
+          } else { panic!("Expected string value for parameter type placeholder"); }
+
+          // Check Event
+          let event = match &comm_block.definitions[2] {
+              CommunicationItem::Event(e) => e,
+              _ => panic!("Expected EventDefinition")
+          };
+          assert_eq!(event.name.name, "UserLoggedIn");
+          assert_eq!(event.id.value, 2);
+          assert_eq!(event.annotations.len(), 1);
+          assert!(matches!(event.annotations[0], Annotation::Channel(id) if id.name == "UserEvents"));
+          assert_eq!(event.fields.len(), 2);
+          assert_eq!(event.fields[0].name.name, "userId");
+          assert_eq!(event.fields[1].name.name, "timestamp");
+    }
+
+    #[test]
+    fn test_parse_actors_block() {
+        let content = r#"
+            file_id: 0xeeeeeeeeeeeeeeee;
+            actors {
+                $description("System actors");
+                actor User @id(0) {
+                    $type("role");
+                };
+                actor ExternalApi @id(1) {
+                    $type("system");
+                    $description("Third-party API");
+                }
+            }
+        "#;
+        let result = parse_ssot_content(content, None);
+        println!("Parse result (actors): {:?}", result);
+         if let Err(e) = &result {
+            if let ParseError::PestError(pe) = e {
+                eprintln!("Pest Error Details:\n{}", pe);
+            }
+        }
+        assert!(result.is_ok());
+        let ast = result.unwrap();
+
+        let actors_block = ast.definitions.iter().find_map(|def| match def {
+            TopLevelDefinition::Actors(block) => Some(block),
+            _ => None,
+        }).expect("Actors block not found");
+
+        assert_eq!(actors_block.annotations.len(), 1);
+        assert!(matches!(actors_block.annotations[0], Annotation::Description(_)));
+        assert_eq!(actors_block.definitions.len(), 2);
+
+        // Check Actor User
+        let actor_user = &actors_block.definitions[0];
+        assert_eq!(actor_user.name.name, "User");
+        assert_eq!(actor_user.id.value, 0);
+        assert_eq!(actor_user.annotations.len(), 1);
+        assert!(matches!(actor_user.annotations[0], Annotation::GenericKeyValue(id, _) if id.name == "type"));
+
+        // Check Actor ExternalApi
+        let actor_api = &actors_block.definitions[1];
+        assert_eq!(actor_api.name.name, "ExternalApi");
+        assert_eq!(actor_api.id.value, 1);
+        // Order of annotations might vary
+        assert_eq!(actor_api.annotations.len(), 2);
+        assert!(actor_api.annotations.iter().any(|a| matches!(a, Annotation::GenericKeyValue(id, _) if id.name == "type")));
+        assert!(actor_api.annotations.iter().any(|a| matches!(a, Annotation::Description(_))));
+    }
+
 } 
