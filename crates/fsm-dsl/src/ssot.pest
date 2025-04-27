@@ -183,9 +183,6 @@ on_error = { "onError" ~ ":" ~ invoke_transition_details ~ ";" } // Use detailed
 // Details for invoke transitions (target + optional actions/guards block)
 invoke_transition_details = { transition_target ~ transition_block? } // Reuse transition target and block rules
 
-// transition_ref = { identifier } // Placeholder: just the target state name for now - REMOVED
-object_literal = { "{" ~ annotation_args? ~ "}" } // Reuse annotation_args for key:value structure (basic)
-
 // --- State Invocation (Added) ---
 // invoke StateInvokeName @id(N) { src: invokes.DefinedInvokeName; input?: {...}; onDone?: ...; onError?: ... }
 state_invoke = { "invoke" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ state_invoke_body ~ ";" }
@@ -221,8 +218,6 @@ service_body = { "{" ~ service_element* ~ "}" }
 service_element = { annotation } // TODO: Add method overrides if needed later
 
 // Specific service annotations (can also be generic kv)
-protocol_annotation = { "$" ~ "protocol" ~ "(" ~ identifier ~ ")" ~ ";" }
-route_annotation = { "$" ~ "route" ~ "(" ~ annotation_args ~ ")" ~ ";" }
 implements_annotation = { "$" ~ "implements" ~ "(" ~ identifier ~ ")" ~ ";" }
 channel_annotation = { "$" ~ "channel" ~ "(" ~ identifier ~ ")" ~ ";" } // Added $channel annotation
 
@@ -251,10 +246,6 @@ actor_definition = { annotation* ~ "actor" ~ identifier ~ "@id(" ~ integer_liter
 actor_body = { "{" ~ annotation* ~ "}" } // Body mainly for annotations
 
 // --- Deployment Config Block Definitions (Added) ---
-deployment_config_block = { annotation* ~ "deployment_config" ~ "{" ~ deployment_item* ~ "}" }
-deployment_item = { environment_definition | infrastructure_definition | deployment_definition }
-
-// environment Name @id(N) extends Base { variables: {...}; $provider(...); ... };
 environment_definition = { annotation* ~ "environment" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ environment_extends? ~ environment_body ~ ";" }
 environment_extends = { "extends" ~ identifier }
 environment_body = { "{" ~ environment_element* ~ "}" }

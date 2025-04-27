@@ -1,7 +1,7 @@
 // Placeholder for the FSM DSL library implementation.
 
-pub mod parser;
 pub mod ast;
+pub mod parser;
 pub mod validation;
 // pub mod generator; // Uncomment when generator module is added
 
@@ -18,4 +18,4 @@ mod tests {
         let result = add(2, 2);
         assert_eq!(result, 4);
     }
-} 
+}
