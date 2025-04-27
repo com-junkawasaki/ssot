@@ -1,8 +1,9 @@
+#![allow(dead_code, unused_variables)] // Allow unused for now
 use crate::ast::SsotAst;
-use std::collections::{HashMap, HashSet};
+use strum_macros::Display;
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Hash, Display)]
 pub enum SymbolKind {
     Type,
     TypeId,
@@ -18,24 +19,24 @@ pub enum SymbolKind {
     Event, // Maybe group under CommunicationItem?
     Machine,
     State,
-    StateId, // Added for state IDs
+    StateId,  // Added for state IDs
     RegionId, // Added for region IDs
     Action,
     ActionId, // Added for action IDs
     Guard,
     GuardId, // Added for guard IDs
     Invoke,
-    InvokeId, // Added for invoke IDs
-    ContextFieldId, // Added for context field IDs
-    TransitionId, // Added for transition IDs
+    InvokeId,         // Added for invoke IDs
+    ContextFieldId,   // Added for context field IDs
+    TransitionId,     // Added for transition IDs
     DeploymentTarget, // Generic for Env/Infra/Deploy
     DeploymentItemId, // Added for Env/Infra/Deploy IDs
-    // ... other kinds as needed
+                      // ... other kinds as needed
 }
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum ValidationError {
-    #[error(\"Validation skipped: Not implemented\")]
+    #[error("Validation skipped: Not implemented")]
     NotImplemented,
     // Define other minimal error variants if needed for basic checks later
 }

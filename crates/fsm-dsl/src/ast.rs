@@ -103,7 +103,7 @@ pub enum Annotation {
 
 // --- Definitions ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FieldDefinition {
     pub name: Identifier,
     pub type_spec: TypeSpecifier,
@@ -112,7 +112,7 @@ pub struct FieldDefinition {
     // pub span: Span<'static>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -123,7 +123,7 @@ pub struct StructDefinition {
 
 // --- Enum Definitions (Added) ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EnumVariant {
     pub name: Identifier,
     pub id: NumericId,
@@ -131,7 +131,7 @@ pub struct EnumVariant {
     // pub span: Span<'static>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EnumDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -142,7 +142,7 @@ pub struct EnumDefinition {
 
 // --- Type Definitions (Updated) ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeDefinition {
     Struct(StructDefinition),
     Enum(EnumDefinition), // Added Enum variant
@@ -150,11 +150,10 @@ pub enum TypeDefinition {
 
 // --- Top-Level Blocks ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypesBlock {
     pub definitions: Vec<TypeDefinition>,
     pub annotations: Vec<Annotation>,
-    // pub span: Span<'static>,
 }
 
 // TODO: Define other blocks (ServicesBlock, MachinesBlock, etc.)
@@ -546,6 +545,22 @@ pub struct SsotAst {
     pub source_path: Option<PathBuf>,
     // Store comments or other non-semantic elements if needed
     // pub comments: Vec<CommentSpan>,
+}
+
+// Placeholder definitions - TODO: Define based on grammar
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ProtocolDefinition {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ChannelDefinition {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EventDefinition {
+    pub name: String,
 }
 
 #[cfg(test)]
