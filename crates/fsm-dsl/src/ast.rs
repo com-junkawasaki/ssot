@@ -28,7 +28,7 @@ pub struct NumericId {
 
 // --- Type Specifiers (Updated) ---
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeSpecifier {
     Simple(Identifier),
     List(Box<TypeSpecifier>),     // Added: list<T>
@@ -40,7 +40,7 @@ pub enum TypeSpecifier {
 // --- Annotations (Updated) ---
 
 // Represents a value within an annotation's arguments
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AnnotationValue {
     String(String),
     Integer(i64),  // Using i64 for flexibility, could use specific types
@@ -51,20 +51,20 @@ pub enum AnnotationValue {
 }
 
 // Represents a single key-value argument in an annotation
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Argument {
     pub key: Identifier,
     pub value: AnnotationValue,
 }
 
 // Specific struct for $communicatesWith for clarity
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CommunicatesWithArgs {
     pub service: Identifier,
     pub protocol: Identifier,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Annotation {
     // Documentation & Metadata
     Description(String),
@@ -161,13 +161,13 @@ pub struct TypesBlock {
 
 // --- File Structure ---
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FileId {
     pub value: u64, // Store the hex value as u64
                     // pub span: Span<'static>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImportStatement {
     pub path: String, // The path string literal
                       // pub span: Span<'static>,
@@ -175,7 +175,7 @@ pub struct ImportStatement {
 
 // --- Actor Definitions (Added) ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ActorDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -184,7 +184,7 @@ pub struct ActorDefinition {
 
 // --- Placeholder Blocks (Added) ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ActorsBlock {
     // TODO: Define ActorDefinition
     // pub definitions: Vec<ActorDefinition>,
@@ -192,13 +192,13 @@ pub struct ActorsBlock {
     pub definitions: Vec<ActorDefinition>, // Added definitions field
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CommunicationBlock {
     pub definitions: Vec<CommunicationItem>, // Added definitions field
     pub annotations: Vec<Annotation>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ServicesBlock {
     pub definitions: Vec<ServiceItem>, // Added definitions field
     pub annotations: Vec<Annotation>,
@@ -206,7 +206,7 @@ pub struct ServicesBlock {
 
 // --- Machine Definitions (Basic) ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MachineDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -220,7 +220,7 @@ pub struct MachineDefinition {
                                        // TODO: Add fields for initial_state: Option<Identifier>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MachinesBlock {
     pub definitions: Vec<MachineDefinition>,
     pub annotations: Vec<Annotation>,
@@ -229,13 +229,13 @@ pub struct MachinesBlock {
 // --- Deployment Config Definitions (Added) ---
 
 // Represents a generic key-value attribute found in infra/deployment bodies
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AttributeDefinition {
     pub key: Identifier,
     pub value: AnnotationValue,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EnvironmentDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -244,7 +244,7 @@ pub struct EnvironmentDefinition {
     pub variables: Option<Vec<Argument>>, // Reuse Argument for { key: value }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InfrastructureDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -253,7 +253,7 @@ pub struct InfrastructureDefinition {
     pub attributes: Vec<AttributeDefinition>, // Store key-value attributes
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DeploymentDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -265,14 +265,14 @@ pub struct DeploymentDefinition {
     pub other_attributes: Vec<AttributeDefinition>, // For misc attributes like replicas, strategy
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DeploymentItem {
     Environment(EnvironmentDefinition),
     Infrastructure(InfrastructureDefinition),
     Deployment(DeploymentDefinition),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DeploymentConfigBlock {
     // TODO: Define EnvironmentDefinition, InfrastructureDefinition, DeploymentDefinition
     // pub definitions: Vec<DeploymentItem>,
@@ -282,7 +282,7 @@ pub struct DeploymentConfigBlock {
 
 // --- Machine Context Definitions (Added) ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ContextFieldDefinition {
     pub name: Identifier,
     pub type_spec: TypeSpecifier,
@@ -292,7 +292,7 @@ pub struct ContextFieldDefinition {
     // pub default_value: Option<AnnotationValue>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ContextDefinition {
     pub id: NumericId,
     pub fields: Vec<ContextFieldDefinition>,
@@ -301,14 +301,14 @@ pub struct ContextDefinition {
 
 // --- State Machine States Definitions (Added) ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TransitionTarget {
     State(Identifier),
     CurrentHistory,               // .history
     QualifiedHistory(Identifier), // ParentState.history
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TransitionDefinition {
     pub event: Identifier,
     pub target: TransitionTarget, // Updated target type
@@ -320,7 +320,7 @@ pub struct TransitionDefinition {
                                   // pub allowed_actors: Vec<Identifier>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StateDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -344,7 +344,7 @@ pub struct StateDefinition {
     pub is_parallel: bool, // Added parallel flag
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StatesBlock {
     pub id: NumericId,
     pub states: Vec<StateDefinition>,
@@ -353,7 +353,7 @@ pub struct StatesBlock {
 
 // --- Action/Guard Definitions (Added) ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ActionDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -361,14 +361,14 @@ pub struct ActionDefinition {
     // TODO: Add parameters or implementation details later
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ActionsBlock {
     pub id: NumericId,
     pub definitions: Vec<ActionDefinition>,
     pub annotations: Vec<Annotation>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GuardDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -376,7 +376,7 @@ pub struct GuardDefinition {
     // TODO: Add expression or condition details later
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GuardsBlock {
     pub id: NumericId,
     pub definitions: Vec<GuardDefinition>,
@@ -385,7 +385,7 @@ pub struct GuardsBlock {
 
 // --- Invoke Definitions (Added) ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum InvokeSource {
     ServiceMethod(Identifier, Identifier), // ServiceName, MethodName
     Literal(String),                       // String literal for function/promise name
@@ -403,7 +403,7 @@ pub struct InvokeTransitionTarget {
     pub annotations: Vec<Annotation>, // Added annotations
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InvokeDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -422,7 +422,7 @@ pub struct InvokesBlock {
 }
 
 // Represents an invoke call within a state, referencing a definition
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StateInvokeDefinition {
     pub name: Identifier, // Name of the invoke instance within the state
     pub id: NumericId,
@@ -435,7 +435,7 @@ pub struct StateInvokeDefinition {
 
 // --- Delayed Transitions (Added) ---
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TimeUnit {
     Milliseconds,
     Seconds,
@@ -443,13 +443,13 @@ pub enum TimeUnit {
     Hours,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Duration {
     pub value: u64,
     pub unit: TimeUnit,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AfterTransitionDefinition {
     pub delay: Duration,
     pub id: NumericId,
@@ -460,7 +460,7 @@ pub struct AfterTransitionDefinition {
 }
 
 // --- TopLevelDefinition (Updated) ---
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TopLevelDefinition {
     Types(TypesBlock),
     Actors(ActorsBlock),
@@ -473,13 +473,13 @@ pub enum TopLevelDefinition {
 
 // --- History State Definition (Added) ---
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HistoryType {
     Shallow,
     Deep,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HistoryDefinition {
     pub history_type: HistoryType,
     pub id: NumericId,
@@ -488,7 +488,7 @@ pub struct HistoryDefinition {
 
 // --- Service Definitions (Added) ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParameterDefinition {
     pub name: Identifier,
     pub type_spec: TypeSpecifier,
@@ -496,7 +496,7 @@ pub struct ParameterDefinition {
     pub annotations: Vec<Annotation>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MethodDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -506,7 +506,7 @@ pub struct MethodDefinition {
     pub body_annotations: Vec<Annotation>, // Annotations inside optional {} body
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InterfaceDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -514,7 +514,7 @@ pub struct InterfaceDefinition {
     pub methods: Vec<MethodDefinition>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ServiceDefinition {
     pub name: Identifier,
     pub id: NumericId,
@@ -523,13 +523,13 @@ pub struct ServiceDefinition {
                                       // Note: $implements is stored in annotations Vec
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ServiceItem {
     Interface(InterfaceDefinition),
     Service(ServiceDefinition),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CommunicationItem {
     Protocol(ProtocolDefinition),
     Channel(ChannelDefinition),
@@ -537,7 +537,7 @@ pub enum CommunicationItem {
 }
 
 /// Represents the entire parsed content of a .ssot file.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SsotAst {
     pub file_id: Option<FileId>,
     pub imports: Vec<ImportStatement>,
@@ -555,7 +555,9 @@ mod tests {
 
     // Helper to create Identifier
     fn ident(name: &str) -> Identifier {
-        Identifier { name: name.to_string() }
+        Identifier {
+            name: name.to_string(),
+        }
     }
 
     // Helper to create NumericId
@@ -618,11 +620,22 @@ mod tests {
         );
 
         assert_eq!(simple, TypeSpecifier::Simple(ident("u32")));
-        assert_eq!(list_of_simple, TypeSpecifier::List(Box::new(TypeSpecifier::Simple(ident("u32")))));
-        assert_eq!(optional_list, TypeSpecifier::Optional(Box::new(TypeSpecifier::List(Box::new(TypeSpecifier::Simple(ident("u32")))))));
-        assert_eq!(map_type, TypeSpecifier::Map(
-            Box::new(TypeSpecifier::Simple(ident("string"))),
-            Box::new(TypeSpecifier::Simple(ident("u32"))),
-        ));
+        assert_eq!(
+            list_of_simple,
+            TypeSpecifier::List(Box::new(TypeSpecifier::Simple(ident("u32"))))
+        );
+        assert_eq!(
+            optional_list,
+            TypeSpecifier::Optional(Box::new(TypeSpecifier::List(Box::new(
+                TypeSpecifier::Simple(ident("u32"))
+            ))))
+        );
+        assert_eq!(
+            map_type,
+            TypeSpecifier::Map(
+                Box::new(TypeSpecifier::Simple(ident("string"))),
+                Box::new(TypeSpecifier::Simple(ident("u32"))),
+            )
+        );
     }
 }
