@@ -659,42 +659,94 @@ impl SymbolTable {
         self.register(name, kind, Some(id_value), Some(machine_scope), errors);
     }
 
-    /// Checks for unused definitions in the symbol table and reports them as validation errors.
+    /// Checks for unused action, guard, and invoke definitions within each machine scope.
     fn check_unused_definitions(&self) -> Vec<ValidationError> {
         let mut errors = Vec::new();
 
-        // Check each machine's definitions
-        for (machine_name, machine) in &self.machines {
-            // Check unused actions
-            for action in &machine.actions {
-                if !self.is_action_used(machine_name, action) {
-                    errors.push(ValidationError::UnusedDefinition {
-                        kind: "action".to_string(),
-                        name: action.clone(),
-                        scope: machine_name.clone(),
-                    });
+        // Iterate through all registered scopes
+        for (scope_name, scope_map) in &self.scoped_symbols {
+            // Skip global scope, only check machine scopes
+            if scope_name == Self::GLOBAL_SCOPE {
+                // Check for unused global types, services, actors etc. if needed
+                for (symbol_name, symbol_info) in scope_map {
+                    match symbol_info.kind {
+                        SymbolKind::Type(_) => {
+                            if !self.referenced_types.contains(symbol_name) {
+                                // errors.push(ValidationError::UnusedDefinition { ... });
+                                // Decide if unused global types are an error
+                            }
+                        }
+                        SymbolKind::Service | SymbolKind::Operation => {
+                            if !self.referenced_services.contains(symbol_name) {
+                                // errors.push(ValidationError::UnusedDefinition { ... });
+                            }
+                        }
+                        SymbolKind::Actor => {
+                            if !self.referenced_actors.contains(symbol_name) {
+                                // errors.push(ValidationError::UnusedDefinition { ... });
+                            }
+                        }
+                        SymbolKind::Channel => {
+                            if !self.referenced_channels.contains(symbol_name) {
+                                // errors.push(ValidationError::UnusedDefinition { ... });
+                            }
+                        }
+                        SymbolKind::Protocol => {
+                            if !self.referenced_protocols.contains(symbol_name) {
+                                // errors.push(ValidationError::UnusedDefinition { ... });
+                            }
+                        }
+                        _ => {} // Ignore other global kinds for now
+                    }
+                }
+                continue; // Move to the next scope
+            }
+
+            // Assume other scopes are machine scopes
+            let machine_name = scope_name; // Scope name is the machine name
+
+            // Check unused actions in this machine scope
+            if let Some(defined_actions) = self.scoped_symbols.get(machine_name) {
+                for (action_name, symbol_info) in defined_actions {
+                    if symbol_info.kind == SymbolKind::Action {
+                        if !self.is_action_used(machine_name, action_name) {
+                            errors.push(ValidationError::UnusedDefinition {
+                                kind: "Action".to_string(),
+                                name: action_name.clone(),
+                                scope: machine_name.clone(),
+                            });
+                        }
+                    }
                 }
             }
 
-            // Check unused guards
-            for guard in &machine.guards {
-                if !self.is_guard_used(machine_name, guard) {
-                    errors.push(ValidationError::UnusedDefinition {
-                        kind: "guard".to_string(),
-                        name: guard.clone(),
-                        scope: machine_name.clone(),
-                    });
+            // Check unused guards in this machine scope
+            if let Some(defined_guards) = self.scoped_symbols.get(machine_name) {
+                for (guard_name, symbol_info) in defined_guards {
+                    if symbol_info.kind == SymbolKind::Guard {
+                        if !self.is_guard_used(machine_name, guard_name) {
+                            errors.push(ValidationError::UnusedDefinition {
+                                kind: "Guard".to_string(),
+                                name: guard_name.clone(),
+                                scope: machine_name.clone(),
+                            });
+                        }
+                    }
                 }
             }
 
-            // Check unused invokes
-            for invoke in &machine.invokes {
-                if !self.is_invoke_used(machine_name, invoke) {
-                    errors.push(ValidationError::UnusedDefinition {
-                        kind: "invoke".to_string(),
-                        name: invoke.clone(),
-                        scope: machine_name.clone(),
-                    });
+            // Check unused invokes in this machine scope
+            if let Some(defined_invokes) = self.scoped_symbols.get(machine_name) {
+                for (invoke_name, symbol_info) in defined_invokes {
+                    if symbol_info.kind == SymbolKind::Invoke {
+                        if !self.is_invoke_used(machine_name, invoke_name) {
+                            errors.push(ValidationError::UnusedDefinition {
+                                kind: "Invoke".to_string(),
+                                name: invoke_name.clone(),
+                                scope: machine_name.clone(),
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -702,50 +754,25 @@ impl SymbolTable {
         errors
     }
 
+    // Helper to check if an action is referenced within a machine scope
     fn is_action_used(&self, machine_name: &str, action: &str) -> bool {
-        if let Some(machine) = self.machines.get(machine_name) {
-            for state in &machine.states {
-                // Check entry actions
-                if state.entry.contains(action) {
-                    return true;
-                }
-                // Check exit actions
-                if state.exit.contains(action) {
-                    return true;
-                }
-                // Check transition actions
-                for transition in &state.transitions {
-                    if transition.actions.contains(action) {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
+        self.referenced_actions
+            .get(machine_name)
+            .map_or(false, |refs| refs.contains(action))
     }
 
+    // Helper to check if a guard is referenced within a machine scope
     fn is_guard_used(&self, machine_name: &str, guard: &str) -> bool {
-        if let Some(machine) = self.machines.get(machine_name) {
-            for state in &machine.states {
-                for transition in &state.transitions {
-                    if transition.guard.as_ref().map_or(false, |g| g == guard) {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
+        self.referenced_guards
+            .get(machine_name)
+            .map_or(false, |refs| refs.contains(guard))
     }
 
+    // Helper to check if an invoke is referenced within a machine scope
     fn is_invoke_used(&self, machine_name: &str, invoke: &str) -> bool {
-        if let Some(machine) = self.machines.get(machine_name) {
-            for state in &machine.states {
-                if state.invoke.as_ref().map_or(false, |i| i == invoke) {
-                    return true;
-                }
-            }
-        }
-        false
+        self.referenced_invokes
+            .get(machine_name)
+            .map_or(false, |refs| refs.contains(invoke))
     }
 
     /// Marks a type as referenced
@@ -812,20 +839,8 @@ impl SymbolTable {
     ) -> Result<(), Vec<ValidationError>> {
         let mut errors = Vec::new();
 
-        // Validate states
-        self.validate_states(machine, &mut errors);
-
-        // Validate transitions
-        self.validate_transitions(machine, &mut errors);
-
         // Validate actions
         self.validate_actions(machine, &mut errors);
-
-        // Validate guards
-        self.validate_guards(machine, &mut errors);
-
-        // Validate invokes
-        self.validate_invokes(machine, &mut errors);
 
         // Check for unused definitions
         self.check_unused_definitions();
@@ -834,80 +849,6 @@ impl SymbolTable {
             Ok(())
         } else {
             Err(errors)
-        }
-    }
-
-    fn validate_states(&self, machine: &StateMachine, errors: &mut Vec<ValidationError>) {
-        let mut visited_states = HashSet::new();
-        let mut state_stack = vec![&machine.initial_state];
-
-        while let Some(state) = state_stack.pop() {
-            if !visited_states.insert(state) {
-                continue;
-            }
-
-            // Validate transitions from this state
-            if let Some(transitions) = machine.transitions.get(state) {
-                for transition in transitions {
-                    if !machine.states.contains(&transition.target) {
-                        errors.push(ValidationError::UndefinedReference {
-                            kind: "State".to_string(),
-                            name: transition.target.clone(),
-                            scope: format!("Machine '{}'", machine.name),
-                        });
-                    } else {
-                        state_stack.push(&transition.target);
-                    }
-                }
-            }
-        }
-    }
-
-    fn validate_transitions(&self, machine: &StateMachine, errors: &mut Vec<ValidationError>) {
-        for (from_state, transitions) in &machine.transitions {
-            for transition in transitions {
-                // Validate that the target state exists
-                if !machine.states.contains(&transition.target) {
-                    errors.push(ValidationError::InvalidStateTransition {
-                        machine_name: machine.name.clone(),
-                        from_state: from_state.clone(),
-                        to_state: transition.target.clone(),
-                    });
-                }
-
-                // Validate event type if specified
-                if let Some(ref event_type) = transition.event_type {
-                    if !self.is_valid_event_type(event_type) {
-                        errors.push(ValidationError::InvalidEventType {
-                            machine_name: machine.name.clone(),
-                            event_name: transition.event.clone(),
-                            expected_type: event_type.clone(),
-                        });
-                    }
-                }
-
-                // Validate guards
-                for guard in &transition.guards {
-                    if !self.is_guard_defined(guard, &machine.name) {
-                        errors.push(ValidationError::UndefinedReference {
-                            kind: "Guard".to_string(),
-                            name: guard.clone(),
-                            scope: format!("Machine '{}'", machine.name),
-                        });
-                    }
-                }
-
-                // Validate actions
-                for action in &transition.actions {
-                    if !self.is_action_defined(action, &machine.name) {
-                        errors.push(ValidationError::UndefinedReference {
-                            kind: "Action".to_string(),
-                            name: action.clone(),
-                            scope: format!("Machine '{}'", machine.name),
-                        });
-                    }
-                }
-            }
         }
     }
 
@@ -921,45 +862,6 @@ impl SymbolTable {
                 });
             }
         }
-    }
-
-    fn validate_guards(&mut self, machine: &StateMachine, errors: &mut Vec<ValidationError>) {
-        for guard in &machine.guards {
-            if self.is_guard_defined(guard, &machine.name) {
-                errors.push(ValidationError::DuplicateDefinition {
-                    kind: "Guard".to_string(),
-                    name: guard.clone(),
-                    scope: format!("Machine '{}'", machine.name),
-                });
-            }
-        }
-    }
-
-    fn validate_invokes(&mut self, machine: &StateMachine, errors: &mut Vec<ValidationError>) {
-        let mut visited = HashSet::new();
-        for invoke in &machine.invokes {
-            if !visited.insert(invoke) {
-                errors.push(ValidationError::DuplicateDefinition {
-                    kind: "Invoke".to_string(),
-                    name: invoke.clone(),
-                    scope: format!("Machine '{}'", machine.name),
-                });
-            }
-
-            if !self.is_invoke_defined(invoke, &machine.name) {
-                errors.push(ValidationError::UndefinedReference {
-                    kind: "Invoke".to_string(),
-                    name: invoke.clone(),
-                    scope: format!("Machine '{}'", machine.name),
-                });
-            }
-        }
-    }
-
-    fn is_valid_event_type(&self, event_type: &str) -> bool {
-        // Add your event type validation logic here
-        // For example, check if it's a valid type in your type system
-        true // Placeholder implementation
     }
 
     fn is_guard_defined(&self, guard: &str, machine_name: &str) -> bool {
@@ -990,7 +892,7 @@ pub fn validate_ast(ast: &SsotAst) -> Result<(), Vec<ValidationError>> {
     collect_definitions(ast, &mut symbol_table, &mut errors);
 
     // --- Pass 2: Validate references and structure ---
-    validate_references(ast, &symbol_table, &mut errors);
+    validate_references(ast, &mut symbol_table, &mut errors);
 
     // --- Pass 3: Check for unused definitions ---
     symbol_table.check_unused_definitions();
@@ -1227,7 +1129,7 @@ fn collect_states_definitions(
 /// Pass 2: Traverses the AST again, validating references against the symbol table.
 fn validate_references(
     ast: &SsotAst,
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
     errors: &mut Vec<ValidationError>,
 ) {
     // TODO: Validate imports if/when implemented
@@ -1257,7 +1159,7 @@ fn validate_references(
 
 fn validate_types_block_refs(
     block: &TypesBlock,
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
     errors: &mut Vec<ValidationError>,
 ) {
     for type_def in &block.definitions {
@@ -1402,7 +1304,7 @@ fn validate_services_block_refs(
 
 fn validate_communication_block_refs(
     block: &CommunicationBlock,
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
     errors: &mut Vec<ValidationError>,
 ) {
     for item in &block.definitions {
@@ -1423,7 +1325,12 @@ fn validate_communication_block_refs(
                 let event_name = &event.name.name;
                 for annotation in &event.annotations {
                     if let Annotation::Channel(chan_ident) = annotation {
-                        symbol_table.lookup_channel(&chan_ident.name, event_name, errors);
+                        if symbol_table
+                            .lookup_channel(&chan_ident.name, event_name, errors)
+                            .is_some()
+                        {
+                            symbol_table.mark_channel_referenced(&chan_ident.name);
+                        }
                     }
                 }
             }
@@ -1433,7 +1340,7 @@ fn validate_communication_block_refs(
 
 fn validate_machines_block_refs(
     block: &MachinesBlock,
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
     errors: &mut Vec<ValidationError>,
 ) {
     for machine_def in &block.definitions {
@@ -1445,7 +1352,7 @@ fn validate_machines_block_refs(
 fn validate_machine_refs(
     machine_def: &MachineDefinition,
     current_path: &[String],
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
     errors: &mut Vec<ValidationError>,
 ) {
     let machine_scope = &machine_def.name.name;
@@ -1469,19 +1376,33 @@ fn validate_machine_refs(
         );
     }
 
-    // TODO: Validate machine-level annotations ($initial)
-    // Integrate initial state check here:
+    // Validate machine-level annotations ($initial)
     validate_initial_state_marker(machine_def, symbol_table, errors);
 
-    // TODO: Validate invoke sources (Service.Method, MachineName, etc.)
-    // TODO: Validate invoke input/onDone/onError references
+    // Validate actions, guards, invokes
+    if let Some(actions) = &machine_def.actions {
+        for action in &actions.definitions {
+            // No external refs in action def itself? Maybe later for external scripts.
+        }
+    }
+    if let Some(guards) = &machine_def.guards {
+        for guard in &guards.definitions {
+            // No external refs in guard def itself? Maybe later for external scripts.
+        }
+    }
+    if let Some(invokes) = &machine_def.invokes {
+        for invoke in &invokes.definitions {
+            validate_invoke_source(&invoke.src, machine_scope, symbol_table, errors);
+            // TODO: Validate invoke input/onDone/onError references
+        }
+    }
 }
 
 fn validate_states_block_refs(
     states_block: &StatesBlock,
     current_path: &[String],
     machine_scope: &str,
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
     errors: &mut Vec<ValidationError>,
 ) {
     for state_def in &states_block.states {
@@ -1493,308 +1414,412 @@ fn validate_state_refs(
     state_def: &StateDefinition,
     current_path: &[String],
     machine_scope: &str,
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
     errors: &mut Vec<ValidationError>,
 ) {
     let mut new_path = current_path.to_vec();
     new_path.push(state_def.name.name.clone());
-    let current_path = &new_path; // Shadow with the new extended path
+
+    // Validate entry/exit actions
+    for action_ref in &state_def.entry_actions {
+        if symbol_table
+            .lookup_action(&action_ref.name, machine_scope, errors)
+            .is_some()
+        {
+            symbol_table.mark_action_referenced(machine_scope, &action_ref.name);
+        }
+    }
+    for action_ref in &state_def.exit_actions {
+        if symbol_table
+            .lookup_action(&action_ref.name, machine_scope, errors)
+            .is_some()
+        {
+            symbol_table.mark_action_referenced(machine_scope, &action_ref.name);
+        }
+    }
 
     // Validate transitions
     for transition in &state_def.transitions {
-        validate_transition_refs(
-            transition,
-            current_path,
-            machine_scope,
-            symbol_table,
-            errors,
-        );
-    }
-
-    // Validate onEntry/onExit actions
-    for action_ident in &state_def.on_entry {
-        symbol_table.lookup_action(&action_ident.name, machine_scope, errors);
-    }
-    for action_ident in &state_def.on_exit {
-        symbol_table.lookup_action(&action_ident.name, machine_scope, errors);
-    }
-
-    // Validate state-local invokes
-    for invoke in &state_def.invokes {
-        // Validate the referenced invoke definition
-        symbol_table.lookup_invoke(&invoke.src_ref.name, machine_scope, errors);
-        // TODO: Validate input mapping types
-        // TODO: Validate onDone/onError transition targets/actions/guards
-        if let Some(target) = &invoke.on_done {
-            validate_invoke_transition_target(
-                target,
-                current_path,
-                machine_scope,
-                symbol_table,
-                errors,
-            );
-        }
-        if let Some(target) = &invoke.on_error {
-            validate_invoke_transition_target(
-                target,
-                current_path,
-                machine_scope,
-                symbol_table,
-                errors,
-            );
-        }
+        validate_transition_refs(transition, &new_path, machine_scope, symbol_table, errors);
     }
 
     // Validate after transitions
     for after_transition in &state_def.after_transitions {
         validate_after_transition_refs(
             after_transition,
-            current_path,
+            &new_path,
             machine_scope,
             symbol_table,
             errors,
         );
     }
 
-    // Validate history state definition
-    if let Some(history) = &state_def.history {
-        // Default target must be a valid state in the *current* composite state's scope
-        // This requires knowing the parent state, which isn't easily available here.
-        // Might need to pass down scope information or do this check differently.
-        // For now, just check if it exists in the machine scope.
-        symbol_table.lookup_state(&history.default_target.name, machine_scope, errors);
+    // Validate invokes
+    for invoke in &state_def.invokes {
+        // Assuming StateInvokeDefinition has a ref to the global invoke definition by name
+        if symbol_table
+            .lookup_invoke(&invoke.target.name, machine_scope, errors)
+            .is_some()
+        {
+            symbol_table.mark_invoke_referenced(machine_scope, &invoke.target.name);
+        }
+        // TODO: Validate onDone/onError targets within the invoke if they exist
+        if let Some(on_done) = &invoke.on_done {
+            validate_invoke_transition_target(
+                &on_done,
+                &new_path,
+                machine_scope,
+                symbol_table,
+                errors,
+            );
+        }
+        if let Some(on_error) = &invoke.on_error {
+            validate_invoke_transition_target(
+                &on_error,
+                &new_path,
+                machine_scope,
+                symbol_table,
+                errors,
+            );
+        }
     }
 
-    // Recursively validate nested states/regions
-    for region in &state_def.regions {
-        validate_states_block_refs(region, current_path, machine_scope, symbol_table, errors);
+    // Validate nested states
+    if let Some(nested_states) = &state_def.states {
+        validate_states_block_refs(
+            nested_states,
+            &new_path,
+            machine_scope,
+            symbol_table,
+            errors,
+        );
     }
 
-    // TODO: Validate state annotations ($initial, $final, $parallel)
-    // Integrate structural checks like parallel state requires regions?
+    // TODO: Validate state annotations ($initial, $history, etc.)
 }
 
 fn validate_transition_refs(
     transition: &TransitionDefinition,
     current_path: &[String],
     machine_scope: &str,
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
     errors: &mut Vec<ValidationError>,
 ) {
-    let current_state_name = current_path.last().cloned().unwrap_or_default(); // Get current state name for error reporting
-
-    // Validate target state
-    match &transition.target {
-        TransitionTarget::State(target_ident) => {
-            symbol_table.lookup_state(&target_ident.name, machine_scope, errors);
-        }
-        TransitionTarget::CurrentHistory => {
-            if current_path.len() <= 1 {
-                // Only machine scope, not inside a state
-                errors.push(ValidationError::InvalidHistoryTargetUsage {
-                    target_name: ".history".to_string(),
-                    current_state_name: current_state_name,
-                    machine_name: machine_scope.to_string(),
-                });
-            }
-            // TODO: Further check if the *parent* state actually defines a history state.
-        }
-        TransitionTarget::QualifiedHistory(parent_ident) => {
-            if current_path.len() <= 1 || !current_path.contains(&parent_ident.name) {
-                errors.push(ValidationError::InvalidHistoryTargetUsage {
-                    target_name: format!("{}.history", parent_ident.name),
-                    current_state_name: current_state_name,
-                    machine_name: machine_scope.to_string(),
-                });
-            }
-            // TODO: Check if the state identified by parent_ident actually defines a history state.
+    // Validate guard
+    if let Some(guard_ref) = &transition.guard {
+        if symbol_table
+            .lookup_guard(&guard_ref.name, machine_scope, errors)
+            .is_some()
+        {
+            symbol_table.mark_guard_referenced(machine_scope, &guard_ref.name);
         }
     }
 
     // Validate actions
-    for action_ident in &transition.actions {
-        symbol_table.lookup_action(&action_ident.name, machine_scope, errors);
+    for action_ref in &transition.actions {
+        if symbol_table
+            .lookup_action(&action_ref.name, machine_scope, errors)
+            .is_some()
+        {
+            symbol_table.mark_action_referenced(machine_scope, &action_ref.name);
+        }
     }
 
-    // Validate guards
-    for guard_ident in &transition.guards {
-        symbol_table.lookup_guard(&guard_ident.name, machine_scope, errors);
-    }
-
-    // Validate $allowedActors references
-    let element_name = format!(
-        "Transition on event '{}' in state '{}'",
-        transition.event.name,
-        current_path.last().cloned().unwrap_or_default()
+    // Validate target state(s)
+    validate_transition_target(
+        &transition.target,
+        current_path,
+        machine_scope,
+        symbol_table,
+        errors,
     );
-    for annotation in &transition.annotations {
-        // TODO: Need specific Annotation variants like AllowedActors(Vec<Identifier>)
-        // if let Annotation::AllowedActors(actor_idents) = annotation {
-        //     for actor_ident in actor_idents {
-        //          symbol_table.lookup_actor(&actor_ident.name, &element_name, errors);
-        //     }
-        // }
-    }
 }
 
 fn validate_after_transition_refs(
     after_transition: &AfterTransitionDefinition,
     current_path: &[String],
     machine_scope: &str,
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
     errors: &mut Vec<ValidationError>,
 ) {
-    let current_state_name = current_path.last().cloned().unwrap_or_default();
-    // Validate target state (similar to regular transition)
-    match &after_transition.target {
-        TransitionTarget::State(target_ident) => {
-            symbol_table.lookup_state(&target_ident.name, machine_scope, errors);
+    // Validate guard
+    if let Some(guard_ref) = &after_transition.guard {
+        if symbol_table
+            .lookup_guard(&guard_ref.name, machine_scope, errors)
+            .is_some()
+        {
+            symbol_table.mark_guard_referenced(machine_scope, &guard_ref.name);
         }
-        TransitionTarget::CurrentHistory => {
-            if current_path.len() <= 1 {
-                errors.push(ValidationError::InvalidHistoryTargetUsage {
-                    target_name: ".history".to_string(),
-                    current_state_name: current_state_name,
-                    machine_name: machine_scope.to_string(),
-                });
-            }
-            // TODO: Check parent history definition
-        }
-        TransitionTarget::QualifiedHistory(parent_ident) => {
-            if current_path.len() <= 1 || !current_path.contains(&parent_ident.name) {
-                errors.push(ValidationError::InvalidHistoryTargetUsage {
-                    target_name: format!("{}.history", parent_ident.name),
-                    current_state_name: current_state_name,
-                    machine_name: machine_scope.to_string(),
-                });
-            }
-            // TODO: Check parent history definition
-        }
-    }
-    // Validate actions
-    for action_ident in &after_transition.actions {
-        symbol_table.lookup_action(&action_ident.name, machine_scope, errors);
-    }
-    // Validate guards
-    for guard_ident in &after_transition.guards {
-        symbol_table.lookup_guard(&guard_ident.name, machine_scope, errors);
     }
 
-    // TODO: Validate $allowedActors if applicable to after transitions?
+    // Validate actions
+    for action_ref in &after_transition.actions {
+        if symbol_table
+            .lookup_action(&action_ref.name, machine_scope, errors)
+            .is_some()
+        {
+            symbol_table.mark_action_referenced(machine_scope, &action_ref.name);
+        }
+    }
+
+    // Validate target state(s)
+    validate_transition_target(
+        &after_transition.target,
+        current_path,
+        machine_scope,
+        symbol_table,
+        errors,
+    );
+}
+
+fn validate_transition_target(
+    target: &TransitionTarget,
+    current_path: &[String],
+    machine_scope: &str,
+    symbol_table: &mut SymbolTable,
+    errors: &mut Vec<ValidationError>,
+) {
+    match target {
+        TransitionTarget::State(target_ident) => {
+            // Simple state target: look up relative to current state or machine root
+            // Need to resolve target_ident.name which could be absolute (Machine.State) or relative (Sibling, .Child, #Id)
+            // TODO: Implement proper state target resolution logic using current_path and symbol_table
+            if symbol_table
+                .lookup_state(&target_ident.name, machine_scope, errors)
+                .is_none()
+            {
+                // Error already added by lookup_state
+            }
+            // Mark state referenced? Or rely on transition definition?
+            // Let's assume lookup is enough for now, marking happens during collection? No, mark needed.
+            // Need a way to mark states similar to actions/guards. Add `mark_state_referenced`?
+            // For now, let's skip marking states as referenced via transitions.
+        }
+        TransitionTarget::Multiple(targets) => {
+            for target_ident in targets {
+                // TODO: Implement proper state target resolution logic
+                if symbol_table
+                    .lookup_state(&target_ident.name, machine_scope, errors)
+                    .is_none()
+                {
+                    // Error already added
+                }
+                // Skip marking for now
+            }
+        }
+        TransitionTarget::QualifiedHistory(hist_target) => {
+            // Target like StateName.history or .history (shallow)
+            // TODO: Implement proper history target resolution and validation
+            if hist_target.name == ".history" {
+                // Shallow history, validate context (must be in composite state)
+            } else {
+                // Deep history, validate StateName exists and is composite/parallel
+                let state_name = hist_target.name.strip_suffix(".history");
+                if let Some(parent_state_name) = state_name {
+                    if symbol_table
+                        .lookup_state(parent_state_name, machine_scope, errors)
+                        .is_none()
+                    {
+                        // Error added
+                    }
+                    // Need to check if parent_state is composite/parallel - requires AST access?
+                } else {
+                    // Invalid format? Add error
+                }
+            }
+        }
+    }
 }
 
 fn validate_invoke_transition_target(
     target: &InvokeTransitionTarget,
     current_path: &[String],
     machine_scope: &str,
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
     errors: &mut Vec<ValidationError>,
 ) {
-    let current_state_name = current_path.last().cloned().unwrap_or_default();
-    // Validate target state (similar to regular transition)
-    match &target.target {
-        TransitionTarget::State(target_ident) => {
-            symbol_table.lookup_state(&target_ident.name, machine_scope, errors);
+    // Validate guard
+    if let Some(guard_ref) = &target.guard {
+        if symbol_table
+            .lookup_guard(&guard_ref.name, machine_scope, errors)
+            .is_some()
+        {
+            symbol_table.mark_guard_referenced(machine_scope, &guard_ref.name);
         }
-        TransitionTarget::CurrentHistory => {
-            if current_path.len() <= 1 {
-                errors.push(ValidationError::InvalidHistoryTargetUsage {
-                    target_name: ".history".to_string(),
-                    current_state_name: current_state_name,
-                    machine_name: machine_scope.to_string(),
-                });
-            }
-            // TODO: Check parent history definition
-        }
-        TransitionTarget::QualifiedHistory(parent_ident) => {
-            if current_path.len() <= 1 || !current_path.contains(&parent_ident.name) {
-                errors.push(ValidationError::InvalidHistoryTargetUsage {
-                    target_name: format!("{}.history", parent_ident.name),
-                    current_state_name: current_state_name,
-                    machine_name: machine_scope.to_string(),
-                });
-            }
-            // TODO: Check parent history definition
-        }
-    }
-    // Validate actions
-    for action_ident in &target.actions {
-        symbol_table.lookup_action(&action_ident.name, machine_scope, errors);
-    }
-    // Validate guards
-    for guard_ident in &target.guards {
-        symbol_table.lookup_guard(&guard_ident.name, machine_scope, errors);
     }
 
-    // TODO: Validate $allowedActors if applicable to invoke transitions?
+    // Validate actions
+    for action_ref in &target.actions {
+        if symbol_table
+            .lookup_action(&action_ref.name, machine_scope, errors)
+            .is_some()
+        {
+            symbol_table.mark_action_referenced(machine_scope, &action_ref.name);
+        }
+    }
+
+    // Validate target state(s)
+    validate_transition_target(
+        &target.target,
+        current_path,
+        machine_scope,
+        symbol_table,
+        errors,
+    );
 }
 
 fn validate_deployment_block_refs(
     block: &DeploymentConfigBlock,
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
     errors: &mut Vec<ValidationError>,
 ) {
-    for item in &block.definitions {
-        match item {
-            DeploymentItem::Environment(env) => {
-                // TODO: Validate extends reference
+    for target_env in &block.target_environments {
+        // Validate infra references if applicable
+    }
+    for target_infra in &block.target_infrastructure {
+        // Validate types if applicable
+    }
+    for deployable in &block.deployables {
+        // Lookup the actor/service being deployed
+        match &deployable.item {
+            DeployableItem::Actor(ident) => {
+                if symbol_table
+                    .lookup_actor(&ident.name, &deployable.name.name, errors)
+                    .is_some()
+                {
+                    symbol_table.mark_actor_referenced(&ident.name);
+                }
             }
-            DeploymentItem::Infrastructure(inf) => {
-                // TODO: Validate extends reference
-            }
-            DeploymentItem::Deployment(dep) => {
-                // TODO: Validate targetEnvironment reference
-                // TODO: Validate targetInfrastructure references (name and type)
-                // TODO: Validate deployable reference (Service or Machine)
+            DeployableItem::Service(ident) => {
+                if symbol_table
+                    .lookup_service_or_interface(&ident.name, &deployable.name.name, errors)
+                    .is_some()
+                {
+                    symbol_table.mark_service_referenced(&ident.name);
+                }
             }
         }
+        // Validate config type references
+        if let Some(config) = &deployable.config {
+            // Assuming config is a map or similar, validate its type refs if needed
+        }
     }
+    // Validate top-level attributes/annotations if needed
 }
 
-// Helper function to integrate initial state check into Pass 2
 fn validate_initial_state_marker(
     machine_def: &MachineDefinition,
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
     errors: &mut Vec<ValidationError>,
 ) {
-    let machine_name = &machine_def.name.name;
-    let machine_scope = machine_name;
-    let mut initial_state_name: Option<String> = None;
     let mut initial_state_count = 0;
+    let mut initial_state_name = None;
 
-    // Find $initial annotation on the machine block
+    // Check top-level machine annotation
     for annotation in &machine_def.annotations {
-        if let Annotation::Initial = annotation {
-            // The DSL spec says $initial(StateName), need parser adjustment?
-            // For now, assume $initial on the machine means we look for it on child states.
-            // Or better: $initial(StateName) on machine points directly.
-            // Let's assume the grammar puts $initial(StateName) on machine.
-            // *** TODO: This part needs clarification based on parser implementation ***
-            // If $initial(StateName) exists on machine, validate that StateName exists.
+        if let Annotation::Initial(ident) = annotation {
+            initial_state_count += 1;
+            initial_state_name = Some(ident.name.clone());
         }
     }
 
-    // Find $initial annotation on direct child states
+    // Check states block annotations (should not be here ideally)
     if let Some(states_block) = &machine_def.states {
-        for state_def in &states_block.states {
-            if state_def.is_initial {
-                initial_state_count += 1;
-                initial_state_name = Some(state_def.name.name.clone());
-                // Check if this state actually exists in the symbol table for this scope
-                // (Should always exist if Pass 1 worked, but good sanity check)
-                symbol_table.lookup_state(&state_def.name.name, machine_scope, errors);
+        for annotation in &states_block.annotations {
+            // if let Annotation::Initial(ident) = annotation { // Annotation::Initial is not on StatesBlock
+            //     initial_state_count += 1;
+            //     initial_state_name = Some(ident.name.clone());
+            // }
+        }
+
+        // Check individual state annotations
+        for state in &states_block.states {
+            // Recursive check needed if initial can be nested
+            fn find_initial_in_state(
+                state: &StateDefinition,
+                count: &mut usize,
+                name: &mut Option<String>,
+            ) {
+                for annotation in &state.annotations {
+                    if let Annotation::Initial(ident) = annotation {
+                        *count += 1;
+                        *name = Some(ident.name.clone()); // Use state name for error reporting? Or target name? Target name.
+                    }
+                }
+                if let Some(nested_states) = &state.states {
+                    for nested_state in &nested_states.states {
+                        find_initial_in_state(nested_state, count, name);
+                    }
+                }
             }
+            find_initial_in_state(state, &mut initial_state_count, &mut initial_state_name);
         }
     }
 
     if initial_state_count != 1 {
         errors.push(ValidationError::MissingOrMultipleInitialStates {
-            machine_name: machine_name.clone(),
+            machine_name: machine_def.name.name.clone(),
             count: initial_state_count,
         });
+    } else if let Some(name) = initial_state_name {
+        // Validate that the named initial state actually exists
+        if symbol_table
+            .lookup_state(&name, &machine_def.name.name, errors)
+            .is_none()
+        {
+            // Error already added by lookup_state
+        }
+        // Mark state referenced? See comment in validate_transition_target
     }
+}
 
-    // TODO: Similar checks for initial states within composite states.
+// Added helper function
+fn validate_invoke_source(
+    source: &InvokeSource,
+    machine_scope: &str,
+    symbol_table: &mut SymbolTable,
+    errors: &mut Vec<ValidationError>,
+) {
+    match source {
+        InvokeSource::Machine(ident) => {
+            // Check if the machine name exists (it should be the current machine or another?)
+            // Assuming invokes only target things *within* the same definition for now.
+            // Cross-machine invokes would need global lookup.
+            if symbol_table.lookup(&ident.name, Some("global")).is_none() {
+                errors.push(ValidationError::UndefinedReference {
+                    kind: "Machine".to_string(),
+                    name: ident.name.clone(),
+                    scope: machine_scope.to_string(),
+                });
+            }
+            // Mark machine referenced? Probably not needed for self-invocation.
+        }
+        InvokeSource::Service { service, operation } => {
+            // Lookup service and operation
+            if let Some(_service_info) =
+                symbol_table.lookup_service_or_interface(&service.name, machine_scope, errors)
+            {
+                // lookup does not need mut
+                symbol_table.mark_service_referenced(&service.name); // Mark needs mut
+                                                                     // Now check if the operation exists within that service/interface
+                                                                     // This requires accessing the AST definition of the service/interface, which SymbolTable doesn't store directly.
+                                                                     // TODO: Enhance SymbolTable or pass AST access to validate operations.
+                                                                     // For now, just mark service as referenced.
+                                                                     // symbol_table.lookup_operation(&operation.name, &service.name, errors); // Hypothetical
+            }
+        }
+        InvokeSource::Actor(ident) => {
+            if let Some(_actor_info) = symbol_table.lookup_actor(&ident.name, machine_scope, errors)
+            {
+                // lookup does not need mut
+                symbol_table.mark_actor_referenced(&ident.name); // Mark needs mut
+            }
+        }
+        InvokeSource::External(_) => {
+            // Assume external source (e.g., URL, lambda ARN) is valid for now.
+            // Could add regex validation later based on annotation hints.
+        } // Potentially other sources like InvokeSource::Callback, InvokeSource::Promise
+    }
 }
 
 fn validate_actors_block_refs(
@@ -1803,33 +1828,14 @@ fn validate_actors_block_refs(
     errors: &mut Vec<ValidationError>,
 ) {
     for actor in &block.definitions {
-        // Validate actor service reference
-        if let Some(service_ident) = &actor.service {
-            if symbol_table
-                .lookup_service_or_interface(&service_ident.name, &actor.name.name, errors)
-                .is_some()
-            {
-                symbol_table.mark_service_referenced(&service_ident.name);
-            }
-        }
-
-        // Validate actor annotations
         for annotation in &actor.annotations {
             match annotation {
-                Annotation::CommunicatesWith(target_actor, protocol) => {
-                    if symbol_table
-                        .lookup_actor(&target_actor.name, &actor.name.name, errors)
-                        .is_some()
-                    {
-                        symbol_table.mark_actor_referenced(&target_actor.name);
-                    }
-                    if symbol_table
-                        .lookup_protocol(&protocol.name, &actor.name.name, errors)
-                        .is_some()
-                    {
-                        symbol_table.mark_protocol_referenced(&protocol.name);
+                Annotation::Type(type_ident) => {
+                    if symbol_table.lookup_type(&type_ident.name, errors).is_some() {
+                        symbol_table.mark_type_referenced(&type_ident.name);
                     }
                 }
+                // Potentially others like $communicatesWith
                 _ => {}
             }
         }
@@ -1842,35 +1848,63 @@ fn validate_channels_block_refs(
     errors: &mut Vec<ValidationError>,
 ) {
     for channel in &block.definitions {
-        // Validate source actor reference
-        if symbol_table
-            .lookup_actor(&channel.source.name, &channel.name.name, errors)
-            .is_some()
-        {
-            symbol_table.mark_actor_referenced(&channel.source.name);
-        }
+        validate_communication_item_refs(channel, symbol_table, errors);
+    }
+}
 
-        // Validate target actor reference
-        if symbol_table
-            .lookup_actor(&channel.target.name, &channel.name.name, errors)
-            .is_some()
-        {
-            symbol_table.mark_actor_referenced(&channel.target.name);
+// Helper for common validation in communication items (Channels, Events)
+fn validate_communication_item_refs(
+    item: &CommunicationItem, // Assuming Channel and Event structures become variants of this
+    symbol_table: &mut SymbolTable, // Changed to &mut
+    errors: &mut Vec<ValidationError>,
+) {
+    let (item_name, annotations, fields_opt) = match item {
+        CommunicationItem::Channel(chan) => {
+            (&chan.name.name, &chan.annotations, Some(&chan.parameters))
+        } // Assuming parameters is Vec<FieldDefinition>
+        CommunicationItem::Event(event) => {
+            (&event.name.name, &event.annotations, Some(&event.fields))
         }
+        CommunicationItem::Protocol(_) => return, // Protocols don't have refs in this way
+    };
 
-        // Validate protocol reference
-        if let Some(protocol_ident) = &channel.protocol {
-            if symbol_table
-                .lookup_protocol(&protocol_ident.name, &channel.name.name, errors)
-                .is_some()
-            {
-                symbol_table.mark_protocol_referenced(&protocol_ident.name);
+    // Validate fields/parameters type specifiers
+    if let Some(fields) = fields_opt {
+        for field in fields {
+            validate_type_specifier(&field.type_spec, symbol_table, errors);
+        }
+    }
+
+    // Validate annotations like $protocol, $actor, etc.
+    for annotation in annotations {
+        match annotation {
+            Annotation::Protocol(proto_ident) => {
+                if symbol_table
+                    .lookup_protocol(&proto_ident.name, item_name, errors)
+                    .is_some()
+                {
+                    symbol_table.mark_protocol_referenced(&proto_ident.name);
+                }
             }
-        }
-
-        // Validate message types
-        for message in &channel.messages {
-            validate_type_specifier(&message.type_spec, symbol_table, errors);
+            Annotation::Actor(actor_ident) => {
+                if symbol_table
+                    .lookup_actor(&actor_ident.name, item_name, errors)
+                    .is_some()
+                {
+                    symbol_table.mark_actor_referenced(&actor_ident.name);
+                }
+            }
+            Annotation::Channel(chan_ident) => {
+                // For Events referencing Channels
+                if symbol_table
+                    .lookup_channel(&chan_ident.name, item_name, errors)
+                    .is_some()
+                {
+                    symbol_table.mark_channel_referenced(&chan_ident.name);
+                }
+            }
+            // TODO: Handle $communicatesWith if added to channels/events
+            _ => {}
         }
     }
 }
