@@ -104,7 +104,7 @@ states_definition = { annotation* ~ "states" ~ "@id(" ~ integer_literal ~ ")" ~ 
 state_definition = { annotation* ~ "state" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ state_element* ~ "}" }
 
 // Placeholder for elements inside a state block
-state_element = { initial_annotation | final_annotation | parallel_annotation | on_entry | on_exit | on_transition | after_transition | state_invoke | states_definition | history_definition } // Added parallel flag
+state_element = { initial_annotation | final_annotation | parallel_annotation | on_entry | on_exit | on_transition | after_transition | state_invoke | states_definition | history_definition }
 
 // Basic event transition
 on_transition = { "on" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ transition_details ~ ";" }
@@ -117,7 +117,15 @@ on_entry = { "onEntry" ~ "{" ~ action_ref* ~ "}" ~ ";" }
 on_exit = { "onExit" ~ "{" ~ action_ref* ~ "}" ~ ";" }
 
 // Details following the transition keyword
-transition_details = { "transition" ~ identifier ~ transition_block? }
+transition_details = { "transition" ~ transition_target ~ transition_block? }
+
+// Target of a transition (StateName, .history, Parent.history)
+transition_target = { qualified_history_target | current_history_target | state_name_target }
+state_name_target = { identifier }
+current_history_target = { "." ~ "history" }
+qualified_history_target = { identifier ~ "." ~ "history" }
+
+// Details of the transition (actions, guards)
 transition_block = { "{" ~ (action_ref | guard_ref)* ~ "}" }
 action_ref = { "action" ~ identifier ~ ";" } // Assuming actions are predefined identifiers for now
 guard_ref = { "guard" ~ identifier ~ ";" }  // Assuming guards are predefined identifiers for now
@@ -143,13 +151,18 @@ invoke_body = { "{" ~ invoke_src ~ invoke_param* ~ "}" }
 invoke_src = { "src" ~ ":" ~ (service_method_ref | string_literal | identifier) ~ ";" } // Allow identifier for MachineName
 service_method_ref = { identifier ~ "." ~ identifier } 
 
-// Other invoke parameters (input, onDone, onError) - Very basic placeholders for now
+// Other invoke parameters (input, onDone, onError)
 invoke_param = { (input_mapping | on_done | on_error) }
 input_mapping = { "input" ~ ":" ~ object_literal ~ ";" } // Placeholder: simple object literal
-on_done = { "onDone" ~ ":" ~ transition_ref ~ ";" } // Placeholder: references a transition (needs defining) 
-on_error = { "onError" ~ ":" ~ transition_ref ~ ";" } // Placeholder: references a transition
+// on_done = { "onDone" ~ ":" ~ transition_ref ~ ";" } // Placeholder: references a transition (needs defining) 
+// on_error = { "onError" ~ ":" ~ transition_ref ~ ";" } // Placeholder: references a transition
+on_done = { "onDone" ~ ":" ~ invoke_transition_details ~ ";" } // Use detailed structure
+on_error = { "onError" ~ ":" ~ invoke_transition_details ~ ";" } // Use detailed structure
 
-transition_ref = { identifier } // Placeholder: just the target state name for now
+// Details for invoke transitions (target + optional actions/guards block)
+invoke_transition_details = { transition_target ~ transition_block? } // Reuse transition target and block rules
+
+// transition_ref = { identifier } // Placeholder: just the target state name for now - REMOVED
 object_literal = { "{" ~ annotation_args? ~ "}" } // Reuse annotation_args for key:value structure (basic)
 
 // --- State Invocation (Added) ---

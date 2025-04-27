@@ -1,4 +1,4 @@
-use crate::ast::{Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition, ActionsBlock, ActionDefinition, GuardsBlock, GuardDefinition, InvokesBlock, InvokeDefinition, InvokeSource, StateInvokeDefinition, InvokeTransitionTarget, Duration, TimeUnit, AfterTransitionDefinition, HistoryDefinition, HistoryType, ServicesBlock, ServiceItem, InterfaceDefinition, MethodDefinition, ParameterDefinition, ServiceDefinition, CommunicationBlock, CommunicationItem, ProtocolDefinition, ChannelDefinition, EventDefinition, ActorsBlock, ActorDefinition, DeploymentConfigBlock, DeploymentItem, EnvironmentDefinition, InfrastructureDefinition, DeploymentDefinition, AttributeDefinition};
+use crate::ast::{Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition, ActionsBlock, ActionDefinition, GuardsBlock, GuardDefinition, InvokesBlock, InvokeDefinition, InvokeSource, StateInvokeDefinition, InvokeTransitionTarget, Duration, TimeUnit, AfterTransitionDefinition, HistoryDefinition, HistoryType, ServicesBlock, ServiceItem, InterfaceDefinition, MethodDefinition, ParameterDefinition, ServiceDefinition, CommunicationBlock, CommunicationItem, ProtocolDefinition, ChannelDefinition, EventDefinition, ActorsBlock, ActorDefinition, DeploymentConfigBlock, DeploymentItem, EnvironmentDefinition, InfrastructureDefinition, DeploymentDefinition, AttributeDefinition, TransitionTarget};
 use pest::Parser;
 use pest_derive::Parser;
 use pest::iterators::{Pair, Pairs};
@@ -602,7 +602,7 @@ fn parse_state_definition(pair: Pair<Rule>) -> ParseResult<StateDefinition> {
     let mut on_entry_actions = Vec::new();
     let mut on_exit_actions = Vec::new();
     let mut after_transitions = Vec::new();
-    let mut nested_states: Option<Box<StatesBlock>> = None;
+    let mut regions: Vec<StatesBlock> = Vec::new(); // Changed to Vec for regions
     let mut history: Option<HistoryDefinition> = None;
     let mut is_initial = false;
     let mut is_final = false;
@@ -647,12 +647,14 @@ fn parse_state_definition(pair: Pair<Rule>) -> ParseResult<StateDefinition> {
                     Rule::on_transition => transitions.push(parse_on_transition(element_pair)?),
                     Rule::after_transition => after_transitions.push(parse_after_transition(element_pair)?),
                     Rule::state_invoke => invokes.push(parse_state_invoke(element_pair)?),
-                    Rule::states_definition => {
-                        if nested_states.is_some() {
-                            eprintln!("Warning: Duplicate nested states definition found within state '{}', ignoring subsequent.", name.as_ref().map(|n| n.name.as_str()).unwrap_or("unknown"));
-                        } else {
-                            nested_states = Some(Box::new(parse_states_definition(element_pair)?));
-                        }
+                    Rule::states_definition => { // Changed case for states_definition
+                        // Allow multiple states blocks (regions)
+                        regions.push(parse_states_definition(element_pair)?);
+                        // if nested_states.is_some() {
+                        //     eprintln!("Warning: Duplicate nested states definition found within state '{}', ignoring subsequent.", name.as_ref().map(|n| n.name.as_str()).unwrap_or("unknown"));
+                        // } else {
+                        //     nested_states = Some(Box::new(parse_states_definition(element_pair)?));
+                        // }
                     }
                     Rule::history_definition => {
                         if history.is_some() {
@@ -681,7 +683,7 @@ fn parse_state_definition(pair: Pair<Rule>) -> ParseResult<StateDefinition> {
         on_entry: on_entry_actions,
         on_exit: on_exit_actions,
         after_transitions,
-        nested_states,
+        regions, // Use regions field
         history,
         is_initial,
         is_final,
@@ -698,7 +700,7 @@ fn parse_on_transition(pair: Pair<Rule>) -> ParseResult<TransitionDefinition> {
     let mut inner_pairs = pair.into_inner();
     let mut event: Option<Identifier> = None;
     let mut id: Option<NumericId> = None;
-    let mut target: Option<Identifier> = None;
+    let mut target: Option<TransitionTarget> = None; // Updated type
     let mut actions = Vec::new(); // Added
     let mut guards = Vec::new();  // Added
 
@@ -726,16 +728,13 @@ fn parse_on_transition(pair: Pair<Rule>) -> ParseResult<TransitionDefinition> {
                 let mut details_pairs = inner_pairs.next().unwrap().into_inner();
                 while let Some(dp) = details_pairs.peek() {
                     match dp.as_rule() {
-                        Rule::identifier => { // This must be the target state
-                            if target.is_none() {
-                                target = Some(parse_identifier(details_pairs.next().unwrap())?);
-                            } else {
-                                // Skip keyword "transition"
-                                if details_pairs.peek().unwrap().as_str() != "transition" {
-                                    eprintln!("Warning: Skipping unexpected identifier inside transition_details: {:?}", details_pairs.peek().unwrap().as_str());
-                                }
-                                details_pairs.next();
-                            }
+                        Rule::transition_target => { // Use the new rule
+                             if target.is_none() {
+                                 target = Some(parse_transition_target(details_pairs.next().unwrap())?);
+                             } else {
+                                 eprintln!("Warning: Duplicate transition target found?");
+                                 details_pairs.next(); // Consume unexpected target
+                             }
                         }
                         Rule::transition_block => { // Parse actions and guards
                             let block_pair = details_pairs.next().unwrap();
@@ -1588,7 +1587,7 @@ pub fn parse_ssot_file<P: AsRef<Path>>(path: P) -> ParseResult<SsotAst> {
 mod tests {
     use super::*;
     
-    use crate::ast::{TypeDefinition, Annotation, TypeSpecifier, InvokeSource, Duration, TimeUnit, HistoryType, ServiceItem, CommunicationItem, ActorsBlock, ActorDefinition, DeploymentItem, DeploymentConfigBlock}; // Ensure needed types are imported
+    use crate::ast::{TypeDefinition, Annotation, TypeSpecifier, InvokeSource, Duration, TimeUnit, HistoryType, ServiceItem, CommunicationItem, ActorsBlock, ActorDefinition, DeploymentItem, DeploymentConfigBlock, TransitionTarget}; // Ensure needed types are imported
     use pretty_assertions::assert_eq;
 
     // Helper to create simple Identifier
@@ -1849,51 +1848,28 @@ mod tests {
         let content = r#"
             machines {
                 machine ParallelMachine @id(0) {
-                    $description("A machine with parallel states");
-                    context @id(0) {
-                        counter: u32 @id(0) { $default(0); };
-                        userId: string @id(1);
-                    }
-                    actions @id(1) {
-                        increment @id(0);
-                        logEntry @id(1);
-                    }
-                    guards @id(2) {
-                        isZero @id(0);
-                    }
-                    invokes @id(3) {
-                        invoke fetchUser @id(0) { src: UserService.fetchProfile; };
-                        invoke backgroundTask @id(1) { 
-                            src: "someTask";
-                            onDone: Done;
-                            onError: Failed;
-                        };
-                    }
-                    states @id(4) {
-                        $initial;
-                        state Idle @id(0) {
-                            on INCREMENT @id(0) transition Processing { action: increment; };
-                        }
-                        state Loading @id(1) {
-                           invoke LoadData @id(0) {
-                                src: invokes.fetchUser;
-                                input: { id: "ctx.userId" };
-                                onDone: Idle;
-                                onError: Failed;
-                           };
-                        }
-                        state Processing @id(2) {
-                            $final;
-                            on COMPLETE @id(0) transition Idle { guard: isZero; action: logEntry; };
-                        }
-                         state Failed @id(3) { }
-                         state Done @id(4) { }
+                    states @id(0) {
+                         state ParallelRoot @id(6) { // Added parallel state example
+                            $parallel;
+                            states @id(0) { // Region 1
+                                state Region1A @id(0) {
+                                     on EV1 @id(0) transition Region1B;
+                                }
+                                state Region1B @id(1) {}
+                            }
+                            states @id(1) { // Region 2
+                                state Region2X @id(0) {
+                                     on EV2 @id(0) transition Region2Y;
+                                }
+                                state Region2Y @id(1) {}
+                            }
+                         }
                     }
                 }
             }
         "#;
         let result = parse_ssot_content(content, None);
-        println!("Parse result: {:?}", result);
+        println!("Parse result (parallel): {:?}", result);
         if let Err(e) = &result {
             if let ParseError::PestError(pe) = e {
                 eprintln!("Pest Error Details:\n{}", pe);
@@ -1902,73 +1878,42 @@ mod tests {
         assert!(result.is_ok());
         let ast = result.unwrap();
 
-        assert_eq!(ast.definitions.len(), 1);
-        match &ast.definitions[0] {
-            TopLevelDefinition::Machines(machines_block) => {
-                 assert_eq!(machines_block.definitions.len(), 1);
-                 let machine = &machines_block.definitions[0];
-                 assert_eq!(machine.name.name, "ParallelMachine");
-                 assert!(machine.context.is_some());
-                 assert!(machine.actions.is_some());
-                 assert!(machine.guards.is_some());
-                 assert!(machine.invokes.is_some());
-                 assert!(machine.states.is_some());
-
-                 let invokes = machine.invokes.as_ref().unwrap();
-                 assert_eq!(invokes.definitions.len(), 2);
-                 assert_eq!(invokes.definitions[0].name.name, "fetchUser");
-                 match &invokes.definitions[0].src {
-                     InvokeSource::ServiceMethod(s, m) => {
-                         assert_eq!(s.name, "UserService");
-                         assert_eq!(m.name, "fetchProfile");
-                     }
-                     _ => panic!("Expected ServiceMethod source")
-                 }
-                  assert_eq!(invokes.definitions[1].name.name, "backgroundTask");
-                 match &invokes.definitions[1].src {
-                     InvokeSource::Literal(s) => assert_eq!(s, "someTask"),
-                     _ => panic!("Expected Literal source")
-                 }
-                 assert!(invokes.definitions[1].on_done.is_some());
-                 assert_eq!(invokes.definitions[1].on_done.as_ref().unwrap().target_state.name, "Done");
-                 assert!(invokes.definitions[1].on_error.is_some());
-                 assert_eq!(invokes.definitions[1].on_error.as_ref().unwrap().target_state.name, "Failed");
-
-                 let states_block = machine.states.as_ref().unwrap();
-                 assert_eq!(states_block.states.len(), 5);
-
-                 let idle_state = &states_block.states[0];
-                 assert!(idle_state.invokes.is_empty());
-
-                  let loading_state = &states_block.states[1];
-                  assert!(!loading_state.is_initial);
-                  assert!(!loading_state.is_final);
-                  assert_eq!(loading_state.transitions.len(), 0);
-                  assert_eq!(loading_state.invokes.len(), 1);
-                  let state_invoke = &loading_state.invokes[0];
-                  assert_eq!(state_invoke.name.name, "LoadData");
-                  assert_eq!(state_invoke.src_ref.name, "fetchUser");
-                  assert!(state_invoke.input_mapping.is_some());
-                  assert_eq!(state_invoke.input_mapping.as_ref().unwrap().len(), 1);
-                  assert_eq!(state_invoke.input_mapping.as_ref().unwrap()[0].key.name, "id");
-                  if let AnnotationValue::String(s) = &state_invoke.input_mapping.as_ref().unwrap()[0].value {
-                      assert_eq!(s, "ctx.userId");
-                  } else {
-                       panic!("Expected string value for input mapping");
-                  }
-                  assert!(state_invoke.on_done.is_some());
-                  assert_eq!(state_invoke.on_done.as_ref().unwrap().target_state.name, "Idle");
-                  assert!(state_invoke.on_error.is_some());
-                  assert_eq!(state_invoke.on_error.as_ref().unwrap().target_state.name, "Failed");
-
-                  let processing_state = &states_block.states[2];
-                   assert!(processing_state.is_final);
-
-                  assert!(states_block.states.iter().any(|s| s.name.name == "Failed"));
-                  assert!(states_block.states.iter().any(|s| s.name.name == "Done"));
-            }
+        let machine = match &ast.definitions[0] {
+            TopLevelDefinition::Machines(m) => &m.definitions[0],
             _ => panic!("Expected Machines block"),
-        }
+        };
+        let states_block = machine.states.as_ref().unwrap();
+        let parallel_state = states_block.states.iter().find(|s| s.name.name == "ParallelRoot").unwrap();
+
+        assert!(parallel_state.is_parallel); // Check parallel flag
+        assert_eq!(parallel_state.regions.len(), 2); // Check number of regions parsed
+
+        // Check Region 1
+        let region1 = &parallel_state.regions[0];
+        assert_eq!(region1.id.value, 0);
+        assert_eq!(region1.states.len(), 2);
+        assert_eq!(region1.states[0].name.name, "Region1A");
+        assert_eq!(region1.states[1].name.name, "Region1B");
+
+         // Check Region 2
+        let region2 = &parallel_state.regions[1];
+        assert_eq!(region2.id.value, 1);
+        assert_eq!(region2.states.len(), 2);
+        assert_eq!(region2.states[0].name.name, "Region2X");
+        assert_eq!(region2.states[1].name.name, "Region2Y");
+
+        // // Check ParallelRoot state
+        // let parallel_state = states_block.states.iter().find(|s| s.name.name == "ParallelRoot").unwrap();
+        // assert!(parallel_state.is_parallel); // Check parallel flag
+        // assert!(!parallel_state.is_initial);
+        // assert!(!parallel_state.is_final);
+        // assert!(parallel_state.nested_states.is_none()); // $parallel state itself doesn't have one nested block, structure differs
+        // // TODO: Update parser/AST to handle multiple nested 'states' blocks for parallel regions if needed, or adjust assertion based on actual structure.
+        // // Current grammar/parser likely puts only the *last* 'states' block in nested_states.
+        // // For parallel, we might need Vec<StatesBlock> in the AST or a different parsing approach.
+
+        // // Check Failed and Done states exist
+        // assert!(states_block.states.iter().any(|s| s.name.name == "Failed"));
     }
 
     #[test]

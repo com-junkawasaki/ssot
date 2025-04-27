@@ -277,9 +277,16 @@ pub struct ContextDefinition {
 // --- State Machine States Definitions (Added) ---
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum TransitionTarget {
+    State(Identifier),
+    CurrentHistory, // .history
+    QualifiedHistory(Identifier), // ParentState.history
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct TransitionDefinition {
     pub event: Identifier,
-    pub target: Identifier, // Simple target state name for now
+    pub target: TransitionTarget, // Updated target type
     pub id: NumericId,
     pub annotations: Vec<Annotation>, // Although grammar doesn't explicitly show annotations here yet
     // TODO: Add fields for actions, guards, allowed_actors
@@ -301,8 +308,8 @@ pub struct StateDefinition {
     pub on_exit: Vec<Identifier>,  // Added onExit actions
     pub after_transitions: Vec<AfterTransitionDefinition>, // Added after transitions
     // pub history: Option<HistoryDefinition>,
-    pub nested_states: Option<Box<StatesBlock>>, // Added nested states
     pub history: Option<HistoryDefinition>, // Added history state definition
+    pub regions: Vec<StatesBlock>, // Replaced nested_states for parallel regions
     // pub initial_state: Option<Identifier>, // Redundant if using $initial annotation
     // pub is_final: bool, // Redundant if using $final annotation
     // pub is_parallel: bool,
@@ -365,8 +372,10 @@ pub enum InvokeSource {
 // For now, just storing the target state identifier
 #[derive(Debug, Clone, PartialEq)]
 pub struct InvokeTransitionTarget {
-    pub target_state: Identifier, 
+    pub target: TransitionTarget, // Updated target type
     // TODO: Add actions, guards later if needed for invoke transitions
+    pub actions: Vec<Identifier>, // Added actions for invoke transition
+    pub guards: Vec<Identifier>,  // Added guards for invoke transition
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -419,7 +428,7 @@ pub struct Duration {
 pub struct AfterTransitionDefinition {
     pub delay: Duration,
     pub id: NumericId,
-    pub target: Identifier,
+    pub target: TransitionTarget, // Updated target type
     pub annotations: Vec<Annotation>, // Add if grammar allows annotations here later
     pub actions: Vec<Identifier>,
     pub guards: Vec<Identifier>,
