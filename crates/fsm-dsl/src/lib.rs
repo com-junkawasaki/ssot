@@ -2,6 +2,7 @@
 
 pub mod parser;
 pub mod ast;
+pub mod validation;
 // pub mod generator; // Uncomment when generator module is added
 
 pub fn add(left: usize, right: usize) -> usize {

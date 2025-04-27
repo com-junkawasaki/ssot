@@ -22,32 +22,35 @@ This crate is a library for parsing the state machine description language (DSL)
     -   `communication {}`
     -   `services {}`
     -   `machines {}`
-    -   `deployment_config {}` (ブロック認識のみ、中身は未実装)
+    -   `deployment_config {}`
 -   `types {}` ブロックの詳細な解析:
     -   `struct` 定義 (フィールド、ID、アノテーション付き)
     -   `enum` 定義 (バリアント、ID、アノテーション付き)
-    -   型指定子: 単純型 (例: `string`), `list<T>`, `optional<T>`
+    -   型指定子: 単純型 (例: `string`), `list<T>`, `optional<T>`, `map<K, V>`
     -   アノテーション:
         -   `$description("...")`
-        -   `$validate(...)` (キー: 値形式の引数 - 文字列/整数)
-        -   `$db(...)` (キー: 値形式の引数 - 文字列/整数)
-        -   `$meta(...)` (キー: 値形式の引数 - 文字列/整数)
+        -   `$validate(...)` (キー: 値形式 - 文字列/整数/真偽値/リスト/オブジェクト)
+        -   `$db(...)` (キー: 値形式 - 文字列/整数/真偽値/リスト/オブジェクト)
+        -   `$meta(...)` (キー: 値形式 - 文字列/整数/真偽値/リスト/オブジェクト)
         -   `$genericFlag;`
         -   `$genericKeyValue("...")`
+        -   `$implements(Name)`
+        -   `$channel(Name)`
 -   `machines {}` ブロックの詳細な解析:
     -   `machine` 定義
     -   `context` 定義 (フィールド、`$default` はアノテーションとして取得)
     -   `actions {}` ブロックと `action` 定義
     -   `guards {}` ブロックと `guard` 定義
-    -   `invokes {}` ブロックと `invoke` 定義 (src: Service.Method | "literal" | MachineName, onDone/onError ターゲット状態)
+    -   `invokes {}` ブロックと `invoke` 定義 (src: Service.Method | "literal" | MachineName, onDone/onError ターゲット+アクション/ガード)
     -   `states {}` ブロックと `state` 定義
         -   イベント遷移 (`on EVENT ...`)
         -   遅延遷移 (`after DURATION ...`)
-        -   状態内 `invoke` 呼び出し (src: invokes.Name, input マッピング(基本), onDone/onError ターゲット状態)
+        -   状態内 `invoke` 呼び出し (src: invokes.Name, input マッピング(基本), onDone/onError ターゲット+アクション/ガード)
         -   状態内アクション (`onEntry`, `onExit`)
         -   状態フラグ (`$initial`, `$final`, `$parallel`)
-        -   ネスト状態 (`state` 内の `states {}`)
+        -   ネスト状態/リージョン (`state` 内の `states {}`)
         -   履歴状態 (`history shallow|deep ... target ...`)
+        -   遷移ターゲット (`StateName`, `.history`, `Parent.history`)
         -   遷移ブロック内のアクション/ガード参照 (`action NAME;`, `guard NAME;`)
 -   `services {}` ブロックの解析:
     -   `interface` 定義
@@ -59,28 +62,29 @@ This crate is a library for parsing the state machine description language (DSL)
     -   `event` 定義 (フィールドリスト, `$channel` アノテーション)
 -   `actors {}` ブロックの解析:
     -   `actor` 定義 (アノテーション含む)
+-   `deployment_config {}` ブロックの解析:
+    -   `environment` 定義 (`extends`, `variables`)
+    -   `infrastructure` 定義 (`extends`, 属性)
+    -   `deployment` 定義 (`targetEnvironment`, `targetInfrastructure`, `deployable`, `config`, 属性)
 -   基本的なテストケースによる実装済み部分の検証。
 
 ## 今後のロードマップ
 
-1.  **`deployment_config` ブロックの実装:**
-    -   `environment`, `infrastructure`, `deployment` 定義の詳細な解析。
-2.  **高度な型/アノテーション値のサポート:**
-    -   `map<K, V>` 型指定子。
-    -   アノテーション値としての `boolean`, `list`, `object` (ネスト構造、例: `$db(policies: [...])`, `$validate` の複雑なルール)。
-    -   Channel パラメータの型パース。
-3.  **ステートマシン機能の強化:**
-    -   並列状態 (`$parallel`) のリージョン（複数の `states` ブロック）のパースとAST表現。
-    -   遷移ターゲットの拡張 (`.history`, 相対パスなど)。
-    -   Invoke 詳細の強化 (`input` の詳細なマッピング、`onDone`/`onError` でのアクション/ガード実行)。
-4.  **参照解決とバリデーション:**
-    -   型名、サービス名、アクション/ガード/インボーク名などの参照解決。
-    -   インポートされたファイル間の名前解決。
-    -   IDのスコープ内一意性などのバリデーション。
+1.  **参照解決とバリデーション (最優先):**
+    -   型名、サービス名、状態名、アクション/ガード/インボーク名などの参照がAST内に存在するか検証。
+    -   インポートされたファイル間の名前解決（基本的な仕組み）。
+    -   IDのスコープ内一意性チェック。
+    -   ステートマシンの構造的バリデーション（例: 初期状態の存在確認、遷移ターゲットの妥当性）。
     -   循環依存の検出。
-5.  **エラー報告の改善:** より詳細で位置情報に基づいたエラーメッセージ。
-6.  **テストカバレッジの向上:** 特にエッジケース、複雑な組み合わせ、未実装部分のテストを追加。
-7.  **(任意) コードジェネレーターの追加:** AST から Rust コードや他の形式 (Mermaid, PlantUML など) を生成する機能。
+2.  **エラー報告の改善 (高優先度):**
+    -   パースエラーおよびバリデーションエラー発生時に、ファイル名、行番号、列番号、具体的なエラー内容を含む詳細なメッセージを出力。
+3.  **高度な機能の詳細実装 (中優先度):**
+    -   Channel パラメータの型パース。
+    -   アノテーション値としての `map<K, V>` サポート。
+    -   Invoke の `input` マッピングの詳細化。
+    -   並列状態リージョンのAST表現とハンドリングの改善。
+4.  **テストカバレッジの向上 (中優先度):** 特にエッジケース、複雑な組み合わせ、バリデーションロジックに関するテストを追加。
+5.  **(任意) コードジェネレーターの追加 (低優先度):** AST から Rust コードや他の形式 (Mermaid, PlantUML など) を生成する機能。
 
 ## 使用例
 
