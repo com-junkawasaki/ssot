@@ -329,6 +329,52 @@ deployment_config {
 
 } # end deployment_config block
 
+# ==========================================
+#  Dependencies Definition Block (NEW)
+# ==========================================
+dependencies {
+  $description("Defines project dependencies for different targets (e.g., Rust crates, Node.js packages). Codegen tools can use this to generate/update manifest files like Cargo.toml or package.json. Note: Managing existing manifest files requires careful merging strategies by the code generator to avoid data loss.");
+
+  # --- Rust Dependencies ---
+  rust "crates/web" @id(0) { # Target: Rust crate at path 'crates/web'
+    $description("Dependencies for the main web service crate.");
+
+    # Format: dependency_name @id(integer) { version: "...", features?: [...], ... }
+    actix_web @id(0) { version: "4.10.x"; }
+    sea_orm @id(1) {
+      version: "1.1.x";
+      features: ["runtime-tokio-rustls", "sqlx-postgres"];
+      $meta(reason: "Required for database access and web framework integration.");
+    }
+    serde @id(2) { version: "1.0"; features: ["derive"]; }
+    # Example of a path dependency
+    local_utils @id(3) { path: "../utils"; }
+    # Example of a git dependency
+    some_git_dep @id(4) { git: "https://github.com/example/repo.git", branch: "main"; }
+  }
+
+  rust "crates/cli" @id(1) { # Target: Rust crate at path 'crates/cli'
+    clap @id(0) { version: "4.5"; features: ["derive"]; }
+    tokio @id(1) { version: "1"; features: ["full"]; }
+  }
+
+  # --- Node.js Dependencies ---
+  nodejs "frontend" @id(2) { # Target: Node.js package at path 'frontend'
+    $description("Dependencies for the Next.js frontend package.");
+
+    # Format: dependency_name @id(integer) { version: "...", dev?: true }
+    next @id(0) { version: "^15.0.0"; }
+    react @id(1) { version: "18.2.x"; }
+    tailwindcss @id(2) { version: "^3.3.0"; dev: true; } # Example dev dependency
+    typescript @id(3) { version: "5.x.x"; dev: true; }
+    zustand @id(4) { version: "4.3.x"; }
+  }
+
+  nodejs "workers/image-processor" @id(3) { # Target: Node.js package at path 'workers/image-processor'
+     sharp @id(0) { version: "^0.33.0"; }
+  }
+} # end dependencies block
+
 ## 2. Syntax Elements
 
 ### 2.1. Comments
@@ -530,13 +576,40 @@ deployment_config {
 - `deployment DeploymentName @id(...) { targetEnvironment: EnvName, targetInfrastructure: { name: InfraName, ... }, deployable: ServiceOrMachineName, replicas?: int, strategy?: "...", config?: {key: value}, $description(...), $meta(...) }`
 - Links deployables to environments and infrastructure.
 
+### 2.19. Dependencies Definition (`dependencies`) (NEW)
+- Defined as a top-level block.
+- `dependencies { ... }`
+- Contains target-specific dependency blocks (e.g., `rust`, `nodejs`).
+
+### 2.20. Target Dependency Block (within `dependencies`) (NEW)
+- `rust "path/to/crate" @id(...) { ... }`
+- `nodejs "path/to/package" @id(...) { ... }`
+- Specifies the target type (`rust`, `nodejs`, potentially others) and the relative path to the crate/package root directory containing the manifest file (`Cargo.toml`, `package.json`).
+- Contains individual dependency entries.
+
+### 2.21. Dependency Entry (within target block) (NEW)
+- `dependency_name @id(...) { version: "...", [attributes...] }`
+- `dependency_name`: The name of the library/package.
+- `@id`: Unique ID within the parent target block.
+- `version: "version_string"`: **Required.** Specifies the version requirement (e.g., `"1.0.0"`, `"~2.1"`, `"4.x"`, `"latest"`). The interpretation depends on the target package manager.
+- **Common Attributes:**
+    - `dev: true`: Marks as a development dependency (e.g., `devDependencies` in `package.json`, `[dev-dependencies]` in `Cargo.toml`).
+    - `$description("text")`: Optional description.
+    - `$meta(...)`: Generic metadata.
+- **Rust Specific Attributes:**
+    - `features: ["feat1", "feat2"]`: List of Cargo features to enable.
+    - `path: "relative/path/to/local/crate"`: Specifies a local path dependency.
+    - `git: "url"`: Specifies a git repository URL. Can be combined with `branch`, `tag`, or `rev`.
+- **Node.js Specific Attributes:**
+    - (Potentially others like `peer`, `optional` if needed, mirroring `package.json` fields).
+
 ## 3. IDs (`@id`) (Summary)
 - Use `@0x...` for the unique file ID.
-- Use `@id(integer)` starting from 0 and unique within their immediate scope (block, struct fields, machine states, etc.).
+- Use `@id(integer)` starting from 0 and unique within their immediate scope (block, struct fields, machine states, **dependencies block**, **target dependency block**, **dependency entry**, etc.).
 - Do not reuse or reorder IDs once assigned to maintain stability.
 
 ## 4. Key Concepts Added/Enhanced
-- **Block Structure:** Recommended organization using `types {}`, `services {}`, etc.
+- **Block Structure:** Recommended organization using `types {}`, `services {}`, `dependencies {}`, etc.
 - **Naming Conventions:** Explicitly defined.
 - **ID Scopes:** Clarified rules for `@id` uniqueness.
 - **DB Mapping:** Details on `type` mapping and SQL expression caveats added. `$db` examples enhanced.
@@ -546,6 +619,7 @@ deployment_config {
 - **Metadata:** `$meta` examples shown for various elements.
 - **Actor Modeling:** `actor` element defines interacting entities. The `$allowedActors` annotation on transitions specifies which actors are permitted to trigger them, enabling access control modeling at the transition level.
 - **Infrastructure & Deployment:** `environment`, `infrastructure`, `deployment` for IaC.
+- **Dependency Management:** Added `dependencies` block to declare project dependencies for different targets, enabling potential generation/update of manifest files (`Cargo.toml`, `package.json`).
 
 ## 5. Potential Future Extensions (Considerations)
 
@@ -614,4 +688,11 @@ This DSL provides a strong foundation. Future versions or tooling could explore 
     - Possible events: `post_parse`, `pre_validate`, `post_validate`, `pre_codegen`, `post_codegen`.
     - Tooling would execute the specified script/command at the designated lifecycle stage, potentially passing context information.
 
-These extensions aim to make the SSOT DSL an even more comprehensive and powerful tool for model-driven development, covering aspects from detailed logic and data to testing, security, and deployment integration. Integrating these would require careful consideration of syntax clarity and tooling complexity.
+### 5.x. Enhanced Dependency Management Integration
+- **Goal:** Improve the interaction between the DSL definition and the native package manifest files.
+- **Proposal:**
+    - Define clearer strategies or provide tool configuration for how code generators should **merge** DSL dependency definitions into existing `Cargo.toml` or `package.json` files, preserving manually added dependencies, comments, and other configurations where possible.
+    - Explore mechanisms for **two-way synchronization** or consistency checks between the `.ssot` file and the native manifest files, potentially warning the user about discrepancies found after running `cargo add` or `npm install`.
+    - Consider adding support for specifying dependency **resolution strategies** or overrides directly in the DSL, although this treads carefully into the domain of native package managers.
+
+These extensions aim to make the SSOT DSL an even more comprehensive and powerful tool for model-driven development, covering aspects from detailed logic and data to testing, security, deployment, and now dependency management integration. Integrating these would require careful consideration of syntax clarity and tooling complexity.
