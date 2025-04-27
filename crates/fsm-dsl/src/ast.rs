@@ -35,7 +35,8 @@ pub enum TypeSpecifier {
 pub enum AnnotationValue {
     String(String),
     Integer(i64), // Using i64 for flexibility, could use specific types
-    // TODO: Add Boolean(bool), List(Vec<AnnotationValue>), Object(Vec<Argument>)
+    Boolean(bool), // Added boolean value
+    // TODO: Add List(Vec<AnnotationValue>), Object(Vec<Argument>)
 }
 
 // Represents a single key-value argument in an annotation

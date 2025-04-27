@@ -81,8 +81,8 @@ annotation_args = { annotation_arg ~ ("," ~ annotation_arg)* }
 annotation_arg = { identifier ~ ":" ~ annotation_value }
 
 // Updated annotation values (needs expansion for bool, list, object)
-annotation_value = _{ string_literal | integer_literal } // TODO: | boolean_literal | list_literal | object_literal
-// boolean_literal = { "true" | "false" }
+annotation_value = _{ string_literal | integer_literal | boolean_literal } // TODO: | list_literal | object_literal
+boolean_literal = { "true" | "false" }
 // list_literal = { "[" ~ annotation_value ~ ("," ~ annotation_value)* ~ "]" }
 // object_literal = { "{" ~ annotation_args? ~ "}" } // For nested structures like foreignKey or policies
 

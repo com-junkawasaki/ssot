@@ -890,7 +890,11 @@ fn parse_annotation_value(pair: Pair<Rule>) -> ParseResult<AnnotationValue> {
             let int_val = inner.as_str().parse::<i64>()?;
             Ok(AnnotationValue::Integer(int_val))
         }
-        // TODO: Add boolean_literal, list_literal, object_literal when grammar/AST support them
+        Rule::boolean_literal => { // Added boolean case
+            let bool_val = inner.as_str().parse::<bool>().map_err(|e| ParseError::InvalidInput { message: format!("Invalid boolean value: {}", e) })?;
+            Ok(AnnotationValue::Boolean(bool_val))
+        }
+        // TODO: Add list_literal, object_literal when grammar/AST support them
         rule => Err(ParseError::UnexpectedRule { expected: Rule::string_literal /* or others */, found: rule })
     }
 }
@@ -2267,6 +2271,78 @@ mod tests {
          assert_eq!(dep_live.other_attributes[0].key.name, "replicas");
          assert_eq!(dep_live.annotations.len(), 1);
          assert!(matches!(dep_live.annotations[0], Annotation::GenericKeyValue(id, _) if id.name == "strategy"));
+    }
+
+    #[test]
+    fn test_parse_annotations() { // New test specific to annotations
+        let content = r#"
+            file_id: 0xaaaaaaaaaaaaaaaa;
+            types {
+                 struct AnnotatedStruct @id(0) {
+                     $description("A struct with various annotations.");
+                     field1: string @id(0) { $validate(required: true, maxLength: 100); };
+                     field2: i32 @id(1) { $db(index: true); };
+                     field3: bool @id(2) { $meta(defaultValue: false, uiHint: "toggle"); };
+                     $customFlag; // Generic flag
+                     $outputDir("/generated"); // Generic KV
+                 }
+            }
+        "#;
+        let result = parse_ssot_content(content, None);
+        println!("Parse result (annotations): {:?}", result);
+        if let Err(e) = &result {
+            if let ParseError::PestError(pe) = e {
+                eprintln!("Pest Error Details:\n{}", pe);
+            }
+        }
+        assert!(result.is_ok());
+        let ast = result.unwrap();
+
+        let types_block = ast.definitions.iter().find_map(|def| match def {
+            TopLevelDefinition::Types(block) => Some(block),
+            _ => None,
+        }).expect("Types block not found");
+
+        let struct_def = match &types_block.definitions[0] {
+            TypeDefinition::Struct(s) => s,
+            _ => panic!("Expected StructDefinition")
+        };
+
+        assert_eq!(struct_def.annotations.len(), 3); // $description, $customFlag, $outputDir
+        assert!(matches!(struct_def.annotations[0], Annotation::Description(_)));
+        assert!(matches!(struct_def.annotations[1], Annotation::GenericFlag(id) if id.name == "customFlag"));
+        assert!(matches!(struct_def.annotations[2], Annotation::GenericKeyValue(id, val) if id.name == "outputDir" && val == "/generated"));
+
+        // Check field1 annotations ($validate)
+        let field1 = &struct_def.fields[0];
+        assert_eq!(field1.annotations.len(), 1);
+        if let Annotation::Validate(args) = &field1.annotations[0] {
+             assert_eq!(args.len(), 2);
+             assert_eq!(args[0].key.name, "required");
+             assert_eq!(args[0].value, AnnotationValue::Boolean(true)); // Check boolean true
+             assert_eq!(args[1].key.name, "maxLength");
+             assert_eq!(args[1].value, AnnotationValue::Integer(100));
+        } else { panic!("Expected Validate annotation"); }
+
+        // Check field2 annotations ($db)
+        let field2 = &struct_def.fields[1];
+        assert_eq!(field2.annotations.len(), 1);
+        if let Annotation::Db(args) = &field2.annotations[0] {
+             assert_eq!(args.len(), 1);
+             assert_eq!(args[0].key.name, "index");
+             assert_eq!(args[0].value, AnnotationValue::Boolean(true)); // Check boolean true
+        } else { panic!("Expected Db annotation"); }
+
+        // Check field3 annotations ($meta)
+        let field3 = &struct_def.fields[2];
+        assert_eq!(field3.annotations.len(), 1);
+        if let Annotation::Meta(args) = &field3.annotations[0] {
+            assert_eq!(args.len(), 2);
+            assert_eq!(args[0].key.name, "defaultValue");
+            assert_eq!(args[0].value, AnnotationValue::Boolean(false)); // Check boolean false
+             assert_eq!(args[1].key.name, "uiHint");
+             assert!(matches!(args[1].value, AnnotationValue::String(_)));
+        } else { panic!("Expected Meta annotation"); }
     }
 
 } 
