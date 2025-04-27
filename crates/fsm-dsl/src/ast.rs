@@ -110,7 +110,7 @@ pub enum TypeDefinition {
 
 // --- Top-Level Blocks ---
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TypesBlock {
     pub definitions: Vec<TypeDefinition>,
     pub annotations: Vec<Annotation>,
@@ -136,21 +136,21 @@ pub struct ImportStatement {
 
 // --- Placeholder Blocks (Added) ---
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ActorsBlock {
     // TODO: Define ActorDefinition
     // pub definitions: Vec<ActorDefinition>,
     pub annotations: Vec<Annotation>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CommunicationBlock {
     // TODO: Define ProtocolDefinition, ChannelDefinition, EventDefinition
     // pub definitions: Vec<CommunicationItem>,
     pub annotations: Vec<Annotation>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ServicesBlock {
     // TODO: Define InterfaceDefinition, ServiceDefinition
     // pub definitions: Vec<ServiceItem>,
@@ -159,27 +159,27 @@ pub struct ServicesBlock {
 
 // --- Machine Definitions (Basic) ---
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MachineDefinition {
     pub name: Identifier,
     pub id: NumericId,
     pub annotations: Vec<Annotation>,
-    pub context: Option<ContextDefinition>, // Added context field
-    // TODO: Add fields for states, initial, actions, guards, invokes
-    // pub states: Option<StatesBlock>,
+    pub context: Option<ContextDefinition>,
+    pub states: Option<StatesBlock>, // Added states field
+    // TODO: Add fields for initial, actions, guards, invokes
     // pub actions: Option<ActionsBlock>,
     // pub guards: Option<GuardsBlock>,
     // pub invokes: Option<InvokesBlock>,
     // pub initial_state: Option<Identifier>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MachinesBlock {
     pub definitions: Vec<MachineDefinition>,
     pub annotations: Vec<Annotation>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DeploymentConfigBlock {
     // TODO: Define EnvironmentDefinition, InfrastructureDefinition, DeploymentDefinition
     // pub definitions: Vec<DeploymentItem>,
@@ -205,6 +205,44 @@ pub struct ContextDefinition {
     pub annotations: Vec<Annotation>,
 }
 
+// --- State Machine States Definitions (Added) ---
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransitionDefinition {
+    pub event: Identifier,
+    pub target: Identifier, // Simple target state name for now
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>, // Although grammar doesn't explicitly show annotations here yet
+    // TODO: Add fields for actions, guards, allowed_actors
+    pub actions: Vec<Identifier>, // Added: List of action identifiers
+    pub guards: Vec<Identifier>,  // Added: List of guard identifiers
+    // pub allowed_actors: Vec<Identifier>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
+    pub transitions: Vec<TransitionDefinition>,
+    // TODO: Add fields for on_entry, on_exit, invokes, nested_states, history, initial, final, parallel
+    // pub on_entry: Vec<Identifier>,
+    // pub on_exit: Vec<Identifier>,
+    // pub invokes: Vec<InvokeDefinition>,
+    // pub nested_states: Option<StatesBlock>,
+    // pub history: Option<HistoryDefinition>,
+    // pub initial_state: Option<Identifier>,
+    // pub is_final: bool,
+    // pub is_parallel: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatesBlock {
+    pub id: NumericId,
+    pub states: Vec<StateDefinition>,
+    pub annotations: Vec<Annotation>,
+}
+
 // --- TopLevelDefinition (Updated) ---
 #[derive(Debug, Clone, PartialEq)]
 pub enum TopLevelDefinition {
@@ -219,7 +257,7 @@ pub enum TopLevelDefinition {
 
 
 /// Represents the entire parsed content of a .ssot file.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SsotAst {
     pub file_id: Option<FileId>,
     pub imports: Vec<ImportStatement>,

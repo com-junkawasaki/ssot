@@ -2,7 +2,8 @@
 
 use crate::get_simple_ident;
 use crate::{find_annotation_value, CodegenError};
-use fsm_dsl::ast::{AnnotationValue, FieldDef, FieldType, StateMachine, TransitionElement};
+use fsm_dsl::ast::{AnnotationValue, SsotAst, MachineDefinition, TopLevelDefinition, TypeDefinition, StructDefinition, EnumDefinition, EnumVariant, FieldDefinition, TypeSpecifier, Annotation, Argument, NumericId, Identifier, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition};
+// use fsm_dsl::ast::{AnnotationValue, FieldDef, FieldType, StateMachine, TransitionElement}; // Original line commented out
 use std::fmt::Write;
 
 // Helper to map DSL FieldType to SCXML data type string (approximations)

@@ -2,11 +2,11 @@ use fsm_dsl::ast::{
     // Import directly from the ast module
     Annotation,
     AnnotationValue,
-    FieldType,
-    QualifiedIdent,
-    SsotFile, // Import SsotFile to access file_id
-    StateMachine,
-    TransitionElement,
+    // FieldType, // Removed - Replace with actual types if needed
+    // QualifiedIdent, // Removed - Likely replaced by simple Identifier
+    // SsotFile, // Removed - Use SsotAst directly
+    // StateMachine, // Removed - Use MachineDefinition directly
+    // TransitionElement, // Removed - Integrated into TransitionDefinition
 };
 use proc_macro2::{Ident as TokenIdent, TokenStream};
 use quote::{format_ident, quote};

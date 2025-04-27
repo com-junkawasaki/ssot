@@ -1,4 +1,4 @@
-"""// Placeholder for the FSM DSL library implementation.
+// Placeholder for the FSM DSL library implementation.
 
 pub mod parser;
 pub mod ast;
@@ -17,5 +17,4 @@ mod tests {
         let result = add(2, 2);
         assert_eq!(result, 4);
     }
-}
-"" 
+} 

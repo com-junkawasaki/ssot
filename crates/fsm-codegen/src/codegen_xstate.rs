@@ -1,7 +1,8 @@
 //! XState machine definition generation logic.
 
 use crate::{find_annotation_value, get_simple_ident, CodegenError};
-use fsm_dsl::ast::{AnnotationValue, FieldDef, FieldType, StateMachine, TransitionElement};
+use fsm_dsl::ast::{AnnotationValue, SsotAst, MachineDefinition, TopLevelDefinition, TypeDefinition, StructDefinition, EnumDefinition, EnumVariant, FieldDefinition, TypeSpecifier, Annotation, Argument, NumericId, Identifier, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition};
+// use fsm_dsl::ast::{AnnotationValue, FieldDef, FieldType, StateMachine, TransitionElement}; // Original line commented out
 use heck::ToUpperCamelCase; // For event type casing if needed
 use std::fmt::Write; // For efficient string building
 

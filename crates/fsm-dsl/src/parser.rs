@@ -1,4 +1,4 @@
-use crate::ast::{self, Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition};
+use crate::ast::{self, Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition};
 use pest::Parser;
 use pest_derive::Parser;
 use pest::iterators::{Pair, Pairs};
@@ -37,7 +37,9 @@ pub fn parse_ssot_content(content: &str, source_path: Option<PathBuf>) -> ParseR
 
     let mut ast = SsotAst {
         source_path,
-        ..Default::default()
+        file_id: None,
+        imports: Vec::new(),
+        definitions: Vec::new(),
     };
 
     let file_pair = pairs.peek().ok_or_else(|| ParseError::InvalidInput { message: "Empty input".to_string() })?;
@@ -148,21 +150,22 @@ fn parse_types_block(pair: Pair<Rule>) -> ParseResult<TypesBlock> {
     }
     println!("Parsing types block: {}", pair.as_str()); // Debug print
 
-    let mut block = TypesBlock::default();
+    let mut annotations = Vec::new();
+    let mut definitions = Vec::new();
+
     for inner_pair in pair.into_inner() {
         match inner_pair.as_rule() {
             Rule::annotation => {
-                block.annotations.push(parse_annotation(inner_pair)?);
+                annotations.push(parse_annotation(inner_pair)?);
             }
             Rule::type_definition => {
-                 // The type_definition rule itself is silent (_), so we need to look at its inner content.
                  let definition_pair = inner_pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty type_definition rule".to_string() })?;
                  match definition_pair.as_rule() {
                      Rule::struct_definition => {
-                         block.definitions.push(TypeDefinition::Struct(parse_struct_definition(definition_pair)?));
+                         definitions.push(TypeDefinition::Struct(parse_struct_definition(definition_pair)?));
                      }
                      Rule::enum_definition => {
-                         block.definitions.push(TypeDefinition::Enum(parse_enum_definition(definition_pair)?));
+                         definitions.push(TypeDefinition::Enum(parse_enum_definition(definition_pair)?));
                      }
                      rule => return Err(ParseError::UnexpectedRule { expected: Rule::struct_definition /* or enum */, found: rule })
                  }
@@ -173,7 +176,7 @@ fn parse_types_block(pair: Pair<Rule>) -> ParseResult<TypesBlock> {
             }
         }
     }
-    Ok(block)
+    Ok(TypesBlock { annotations, definitions })
 }
 
 fn parse_machines_block(pair: Pair<Rule>) -> ParseResult<MachinesBlock> {
@@ -182,21 +185,23 @@ fn parse_machines_block(pair: Pair<Rule>) -> ParseResult<MachinesBlock> {
     }
     println!("Parsing machines block: {}", pair.as_str());
 
-    let mut block = MachinesBlock::default();
+    let mut annotations = Vec::new();
+    let mut definitions = Vec::new();
+
     for inner_pair in pair.into_inner() {
         match inner_pair.as_rule() {
             Rule::annotation => {
-                block.annotations.push(parse_annotation(inner_pair)?);
+                annotations.push(parse_annotation(inner_pair)?);
             }
             Rule::machine_definition => {
-                block.definitions.push(parse_machine_definition(inner_pair)?);
+                definitions.push(parse_machine_definition(inner_pair)?);
             }
             rule => {
                 eprintln!("Warning: Skipping unexpected rule within machines_block: {:?}", rule);
             }
         }
     }
-    Ok(block)
+    Ok(MachinesBlock { annotations, definitions })
 }
 
 // --- Definition Parsing (Implementations & Stubs) --- 
@@ -394,6 +399,7 @@ fn parse_machine_definition(pair: Pair<Rule>) -> ParseResult<MachineDefinition> 
     let mut name: Option<Identifier> = None;
     let mut id: Option<NumericId> = None;
     let mut context: Option<ContextDefinition> = None;
+    let mut states: Option<StatesBlock> = None;
     // TODO: Add other machine elements (states, actions, etc.)
 
     while let Some(p) = inner_pairs.peek() {
@@ -405,7 +411,7 @@ fn parse_machine_definition(pair: Pair<Rule>) -> ParseResult<MachineDefinition> 
                 id = Some(parse_numeric_id(id_pair)?);
             }
             Rule::machine_element => {
-                let element_pair = inner_pairs.next().unwrap(); // Consume the machine_element pair
+                let element_pair = inner_pairs.next().unwrap();
                 let element_inner = element_pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty machine_element".to_string() })?;
                 match element_inner.as_rule() {
                     Rule::context_definition => {
@@ -415,7 +421,14 @@ fn parse_machine_definition(pair: Pair<Rule>) -> ParseResult<MachineDefinition> 
                              context = Some(parse_context_definition(element_inner)?);
                          }
                     }
-                    // TODO: Add cases for states_definition, actions_definition, etc.
+                    Rule::states_definition => {
+                        if states.is_some() {
+                             eprintln!("Warning: Duplicate states definition found, ignoring subsequent.");
+                         } else {
+                             states = Some(parse_states_definition(element_inner)?);
+                         }
+                    }
+                    // TODO: Add cases for actions_definition, etc.
                     rule => {
                         eprintln!("Skipping unimplemented machine_element: {:?}", rule);
                     }
@@ -429,8 +442,8 @@ fn parse_machine_definition(pair: Pair<Rule>) -> ParseResult<MachineDefinition> 
         name: name.ok_or(ParseError::MissingRule { expected: Rule::identifier })?,
         id: id.ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?,
         annotations,
-        context, // Added context
-        ..Default::default()
+        context,
+        states,
     })
 }
 
@@ -512,6 +525,148 @@ fn parse_context_field_definition(pair: Pair<Rule>) -> ParseResult<ContextFieldD
         type_spec: type_spec.unwrap(),
         id: id.unwrap(),
         annotations: [leading_annotations, annotations].concat(),
+    })
+}
+
+fn parse_states_definition(pair: Pair<Rule>) -> ParseResult<StatesBlock> {
+    if pair.as_rule() != Rule::states_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::states_definition, found: pair.as_rule() });
+    }
+    println!("Parsing states definition: {}", pair.as_str());
+
+    let mut inner_pairs = pair.into_inner();
+    let mut annotations = Vec::new();
+    let mut id: Option<NumericId> = None;
+    let mut states = Vec::new();
+
+    // Order: annotation*, "states", "@id(", integer_literal, ")", "{", state_definition*, "}" 
+    while let Some(p) = inner_pairs.peek() {
+        match p.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pairs.next().unwrap())?),
+            Rule::integer_literal => { // ID follows annotations and "states" keyword
+                 id = Some(parse_numeric_id(inner_pairs.next().unwrap())?);
+            }
+            Rule::state_definition => {
+                 states.push(parse_state_definition(inner_pairs.next().unwrap())?);
+            }
+            rule => return Err(ParseError::UnexpectedRule { expected: Rule::annotation /* or int or state */, found: rule })
+        }
+    }
+
+     Ok(StatesBlock {
+        id: id.ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?,
+        states,
+        annotations,
+    })
+}
+
+fn parse_state_definition(pair: Pair<Rule>) -> ParseResult<StateDefinition> {
+    if pair.as_rule() != Rule::state_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::state_definition, found: pair.as_rule() });
+    }
+    println!("Parsing state definition: {}", pair.as_str());
+
+    let mut inner_pairs = pair.into_inner();
+    let mut annotations = Vec::new();
+    let mut name: Option<Identifier> = None;
+    let mut id: Option<NumericId> = None;
+    let mut transitions = Vec::new();
+    // TODO: Parse other state elements
+
+    // Order: annotation*, "state", identifier, "@id(", integer_literal, ")", "{", state_element*, "}"
+    while let Some(p) = inner_pairs.peek() {
+         match p.as_rule() {
+             Rule::annotation => annotations.push(parse_annotation(inner_pairs.next().unwrap())?),
+             Rule::identifier => { // Name follows annotations and "state"
+                 name = Some(parse_identifier(inner_pairs.next().unwrap())?);
+                 // Expect ID
+                 let id_pair = inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?;
+                 id = Some(parse_numeric_id(id_pair)?);
+             }
+             Rule::state_element => {
+                let element_pair = inner_pairs.next().unwrap();
+                let element_inner = element_pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty state_element".to_string() })?;
+                 match element_inner.as_rule() {
+                     Rule::on_transition => {
+                         transitions.push(parse_on_transition(element_inner)?);
+                     }
+                     // TODO: Add cases for on_entry, on_exit, invoke, etc.
+                     rule => {
+                          eprintln!("Skipping unimplemented state_element: {:?}", rule);
+                     }
+                 }
+             }
+             rule => return Err(ParseError::UnexpectedRule { expected: Rule::annotation /* or ident or state_element */, found: rule })
+         }
+    }
+
+    Ok(StateDefinition {
+        name: name.ok_or(ParseError::MissingRule { expected: Rule::identifier })?,
+        id: id.ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?,
+        annotations,
+        transitions,
+    })
+}
+
+fn parse_on_transition(pair: Pair<Rule>) -> ParseResult<TransitionDefinition> {
+    if pair.as_rule() != Rule::on_transition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::on_transition, found: pair.as_rule() });
+    }
+    println!("Parsing on transition: {}", pair.as_str()); // Debug print
+
+    let mut inner_pairs = pair.into_inner();
+    let event = parse_identifier(inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::identifier })?)?;
+    let id = parse_numeric_id(inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?)?;
+
+    let details_pair = inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::transition_details })?;
+    if details_pair.as_rule() != Rule::transition_details {
+         return Err(ParseError::UnexpectedRule { expected: Rule::transition_details, found: details_pair.as_rule() });
+    }
+
+    let mut details_inner = details_pair.into_inner();
+    let target = parse_identifier(details_inner.next().ok_or(ParseError::MissingRule { expected: Rule::identifier })?)?; // Expect 'identifier' for target
+
+    // --- Start parsing optional transition block ---
+    let mut actions = Vec::new();
+    let mut guards = Vec::new();
+
+    // Check if transition_block exists
+    if let Some(block_pair) = details_inner.next() {
+        if block_pair.as_rule() != Rule::transition_block {
+            return Err(ParseError::UnexpectedRule { expected: Rule::transition_block, found: block_pair.as_rule() });
+        }
+        // Iterate inside the block { ... }
+        for item_pair in block_pair.into_inner() {
+            match item_pair.as_rule() {
+                Rule::action_ref => {
+                    // action_ref = { "action" ~ identifier ~ ";" }
+                    let action_id = parse_identifier(item_pair.into_inner().next().ok_or(ParseError::MissingRule { expected: Rule::identifier })?)?;
+                    actions.push(action_id);
+                }
+                Rule::guard_ref => {
+                     // guard_ref = { "guard" ~ identifier ~ ";" }
+                     let guard_id = parse_identifier(item_pair.into_inner().next().ok_or(ParseError::MissingRule { expected: Rule::identifier })?)?;
+                    guards.push(guard_id);
+                }
+                rule => return Err(ParseError::UnexpectedRule { expected: Rule::action_ref /* or guard_ref */, found: rule }),
+            }
+        }
+    }
+    // --- End parsing optional transition block ---
+
+    // Check if there are any unexpected pairs left in on_transition
+    if inner_pairs.next().is_some() {
+         eprintln!("Warning: Unexpected extra tokens found after transition details in 'on {}'", event.name);
+    }
+
+
+    Ok(TransitionDefinition {
+        event,
+        target,
+        id,
+        annotations: vec![], // TODO: Parse annotations if they become possible here
+        actions, // Assign parsed actions
+        guards,  // Assign parsed guards
     })
 }
 
@@ -678,7 +833,8 @@ pub fn parse_ssot_file<P: AsRef<Path>>(path: P) -> ParseResult<SsotAst> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{self, TypeDefinition, Annotation, TypeSpecifier};
+    use super::Rule;
+    use crate::ast::{self, TypeDefinition, Annotation, TypeSpecifier, StatesBlock, StateDefinition, ContextDefinition, MachineDefinition};
     use pretty_assertions::assert_eq;
 
     // Helper to create simple Identifier
@@ -804,6 +960,113 @@ mod tests {
                 }
             }
             _ => panic!("Expected TopLevelDefinition::Types"),
+        }
+    }
+
+    #[test]
+    fn test_parse_simple_machines_block() {
+        let content = r#"
+            @0x1;
+            machines {
+                machine MyMachine @id(10) {
+                    context @id(11) {
+                        counter: int @id(12);
+                    }
+                    states @id(13) {
+                        state Idle @id(14) {
+                            on START @id(15) transition Active; # Simple transition
+                        }
+                        state Active @id(16) {
+                            on STOP @id(17) transition Idle {
+                                action resetCounter;
+                                guard canStop;
+                                action notifyStop; # Multiple actions/guards
+                            };
+                            on INTERNAL @id(18) transition Active {
+                                guard isCounterHigh; # Only guard
+                            };
+                             on ANOTHER @id(19) transition Idle {
+                                action doSomething; # Only action
+                            };
+                        }
+                    }
+                }
+            }
+        "#;
+
+        let result = parse_ssot_content(content, None);
+        assert!(result.is_ok(), "Parsing failed: {:?}", result.err());
+        let ast = result.unwrap();
+
+        assert_eq!(ast.definitions.len(), 1);
+
+        match &ast.definitions[0] {
+            TopLevelDefinition::Machines(machines_block) => {
+                assert_eq!(machines_block.definitions.len(), 1);
+                let machine = &machines_block.definitions[0];
+
+                assert_eq!(machine.name, ident("MyMachine"));
+                assert_eq!(machine.id, num_id(10));
+
+                // Check context (basic check)
+                assert!(machine.context.is_some());
+                if let Some(ctx) = &machine.context {
+                     assert_eq!(ctx.id, num_id(11));
+                     assert_eq!(ctx.fields.len(), 1);
+                     assert_eq!(ctx.fields[0].name, ident("counter"));
+                }
+
+
+                // Check states block
+                assert!(machine.states.is_some());
+                if let Some(states_block) = &machine.states {
+                    assert_eq!(states_block.id, num_id(13));
+                    assert_eq!(states_block.states.len(), 2);
+
+                    // State: Idle
+                    let idle_state = &states_block.states[0];
+                    assert_eq!(idle_state.name, ident("Idle"));
+                    assert_eq!(idle_state.id, num_id(14));
+                    assert_eq!(idle_state.transitions.len(), 1);
+                    let idle_trans = &idle_state.transitions[0];
+                    assert_eq!(idle_trans.event, ident("START"));
+                    assert_eq!(idle_trans.id, num_id(15));
+                    assert_eq!(idle_trans.target, ident("Active"));
+                    assert!(idle_trans.actions.is_empty()); // No actions/guards
+                    assert!(idle_trans.guards.is_empty());
+
+                    // State: Active
+                    let active_state = &states_block.states[1];
+                    assert_eq!(active_state.name, ident("Active"));
+                    assert_eq!(active_state.id, num_id(16));
+                    assert_eq!(active_state.transitions.len(), 3);
+
+                    // Transition 1: STOP
+                    let stop_trans = &active_state.transitions[0];
+                    assert_eq!(stop_trans.event, ident("STOP"));
+                     assert_eq!(stop_trans.id, num_id(17));
+                    assert_eq!(stop_trans.target, ident("Idle"));
+                    assert_eq!(stop_trans.actions, vec![ident("resetCounter"), ident("notifyStop")]);
+                    assert_eq!(stop_trans.guards, vec![ident("canStop")]);
+
+                    // Transition 2: INTERNAL
+                     let internal_trans = &active_state.transitions[1];
+                    assert_eq!(internal_trans.event, ident("INTERNAL"));
+                    assert_eq!(internal_trans.id, num_id(18));
+                    assert_eq!(internal_trans.target, ident("Active"));
+                    assert!(internal_trans.actions.is_empty());
+                    assert_eq!(internal_trans.guards, vec![ident("isCounterHigh")]);
+
+                     // Transition 3: ANOTHER
+                     let another_trans = &active_state.transitions[2];
+                    assert_eq!(another_trans.event, ident("ANOTHER"));
+                    assert_eq!(another_trans.id, num_id(19));
+                    assert_eq!(another_trans.target, ident("Idle"));
+                    assert_eq!(another_trans.actions, vec![ident("doSomething")]);
+                    assert!(another_trans.guards.is_empty());
+                }
+            }
+            _ => panic!("Expected TopLevelDefinition::Machines"),
         }
     }
 

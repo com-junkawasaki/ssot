@@ -27,11 +27,11 @@ import_statement = { "import" ~ string_literal ~ ";" }
 types_block = { annotation* ~ "types" ~ "{" ~ type_definition* ~ "}" }
 type_definition = _{ struct_definition | enum_definition }
 
-actors_block = { annotation* ~ "actors" ~ "{" ~ /* TODO: actor_definition* */ ~ "}" } // Placeholder
-communication_block = { annotation* ~ "communication" ~ "{" ~ /* TODO: communication_definition* */ ~ "}" } // Placeholder
-services_block = { annotation* ~ "services" ~ "{" ~ /* TODO: service_definition* */ ~ "}" } // Placeholder
+actors_block = { annotation* ~ "actors" ~ "{" ~ "}" } // TODO: actor_definition* Placeholder
+communication_block = { annotation* ~ "communication" ~ "{" ~ "}" } // TODO: communication_definition* Placeholder
+services_block = { annotation* ~ "services" ~ "{" ~ "}" } // TODO: service_definition* Placeholder
 machines_block = { annotation* ~ "machines" ~ "{" ~ machine_definition* ~ "}" }
-deployment_config_block = { annotation* ~ "deployment_config" ~ "{" ~ /* TODO: deployment_definition* */ ~ "}" } // Placeholder
+deployment_config_block = { annotation* ~ "deployment_config" ~ "{" ~ "}" } // TODO: deployment_definition* Placeholder
 
 // --- Type Definitions ---
 
@@ -63,7 +63,7 @@ annotation_args = { annotation_arg ~ ("," ~ annotation_arg)* }
 annotation_arg = { identifier ~ ":" ~ annotation_value }
 
 // Updated annotation values (needs expansion for bool, list, object)
-annotation_value = _{ string_literal | integer_literal /* | boolean_literal | list_literal | object_literal */ }
+annotation_value = _{ string_literal | integer_literal } // TODO: | boolean_literal | list_literal | object_literal
 // boolean_literal = { "true" | "false" }
 // list_literal = { "[" ~ annotation_value ~ ("," ~ annotation_value)* ~ "]" }
 // object_literal = { "{" ~ annotation_args? ~ "}" } // For nested structures like foreignKey or policies
@@ -72,11 +72,29 @@ annotation_value = _{ string_literal | integer_literal /* | boolean_literal | li
 
 machine_definition = { annotation* ~ "machine" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ machine_element* ~ "}" }
 // Updated placeholder for elements inside a machine block
-machine_element = { context_definition /* | states_definition | actions_definition | guards_definition | invokes_definition | initial_annotation etc. */ }
+machine_element = { context_definition | states_definition } // TODO: | actions_definition | guards_definition | invokes_definition | initial_annotation etc.
 
 context_definition = { annotation* ~ "context" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ context_field_definition* ~ "}" }
 // Context fields are similar to struct fields, but might have $default
 context_field_definition = { annotation* ~ identifier ~ ":" ~ type_specifier ~ "@id(" ~ integer_literal ~ ")" ~ annotation* ~ ";" }
+
+// --- State Machine States Definitions (Added) ---
+
+states_definition = { annotation* ~ "states" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ state_definition* ~ "}" }
+
+state_definition = { annotation* ~ "state" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ state_element* ~ "}" }
+
+// Placeholder for elements inside a state block
+state_element = { on_transition } // TODO: | on_entry | on_exit | invoke | nested_states | history etc.
+
+// Basic event transition
+on_transition = { "on" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ transition_details ~ ";" }
+
+// Details following the transition keyword
+transition_details = { "transition" ~ identifier ~ transition_block? }
+transition_block = { "{" ~ (action_ref | guard_ref)* ~ "}" }
+action_ref = { "action" ~ identifier ~ ";" } // Assuming actions are predefined identifiers for now
+guard_ref = { "guard" ~ identifier ~ ";" }  // Assuming guards are predefined identifiers for now
 
 // TODO: Add rules for all other elements from DSL.md:
 // - enums, machines, services, interfaces, protocols, actors, channels, events
