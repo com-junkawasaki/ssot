@@ -113,48 +113,48 @@ The DSL definition, parsing, and validation components are well-developed. The m
 
 ## Roadmap / Future Enhancements
 
-The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not just for FSM logic, but for related concerns across distributed systems. Key development areas include:
+The vision is to evolve `.ssot` into a comprehensive Single Source of Truth. The immediate priority is to ensure the core tooling (validation, code generation) fully supports the currently defined DSL specification (see `crates/fsm-dsl/README.md`).
 
-**Near-Term Focus (Core Functionality & Refinement):**
+**Near-Term Focus (Implement Defined DSL & Core Tooling):**
 
-*   **DSL Improvements & Validation:**
-    *   ✅ **Implemented:** Basic ID/Name validation, Initial/Parallel/History state structure checks.
-    *   🔜 **Next:**
-        *   **More Validation:** Unused definition checks (actions, guards), detailed transition target validation, type checking for actions/guards/invokes, refine annotation handling (required, value types).
-        *   Implement entry/exit actions, hierarchical state refinements, advanced annotations (`$deprecated`).
-        *   Support for multi-file/directory projects (imports, discovery, configuration).
-        *   Explicit output file mapping and manifest generation.
-*   **Code Generation Enhancements (Rust, Cap'n Proto, TypeScript):**
-    *   Update generators to utilize fully validated AST/SymbolTable information.
-    *   Generate skeleton `guard`/`action` functions (Rust).
-    *   Improved hierarchical state machine generation.
-    *   Generate Cap'n Proto interfaces and basic client/server stubs.
-*   **Developer Experience & Tooling:**
-    *   Better error messages and diagnostics (leveraging validation results).
-    *   Source map generation (linking generated code back to `.ssot`).
-    *   Enhanced automated testing (especially for `build.rs` and generation edge cases).
-    *   Explore alternative Rust integration via procedural macro (`#[state_machine(...)]`).
+*   **Validation Enhancements (High Priority):**
+    *   Implement **full name resolution** across imports and scopes for all referenced types, services, actors, states, actions, guards, invokes, channels, etc.
+    *   Implement comprehensive **type checking** for context variables, action/guard/method parameters & return types, invoke input/output mappings.
+    *   Validate **all annotation types** (`$db`, `$validate`, `$route`, `$allowedActors`, etc.) for correct arguments and structure based on the DSL spec.
+    *   Perform detailed **structural validation** for all DSL blocks (e.g., ensure `$implements` refers to a defined `interface`, `invoke` sources are valid, transition targets exist, deployment targets resolve).
+    *   Add checks for **unused definitions** (actions, guards, invokes, etc.).
+    *   Detect **circular dependencies** in imports and potentially service/machine extensions.
+    *   Improve **error reporting** with precise location info (file, line, column) and clear messages for all validation errors.
+*   **Code Generation Implementation (High Priority - `fsm-codegen`):**
+    *   **Rust:** Generate code for *all* defined AST elements: actions, guards, invokes (with `onDone`/`onError`), context manipulation, parallel/history states, services, communication (basic stubs), deployment config (structs/enums). Generate skeleton functions/traits for user implementation.
+    *   **Cap'n Proto:** Generate schemas reflecting *all* defined types, services (interfaces), communication patterns (events), and machine structures.
+    *   **TypeScript:** Generate types/interfaces for *all* defined DSL elements for frontend/backend integration.
+    *   Ensure generators utilize fully validated AST/SymbolTable information.
+    *   Implement documentation generation (`$description`) for all targets consistently.
+*   **Testing & DX:**
+    *   Significantly increase **test coverage** for the parser, validator (covering all new checks), and *each* code generator (Rust, Capnp, TS) with complex DSL examples.
+    *   Implement **source mapping** (optional) to link generated code back to `.ssot` files.
 
-**Mid-Term Goals (Expanding Scope & Integrations):**
+**Mid-Term Goals (Expand DSL & Integrations):**
 
-*   **Expanded SSOT Scope (Initial Steps):**
-    *   Define basic distributed system components/services.
-    *   Specify inter-service communication patterns (initially focusing on Cap'n Proto RPC/messaging).
-*   **Expanded Target Formats & Integrations (Core Formats):**
+*   **DSL Evolution (Based on `crates/fsm-dsl/README.md` Future Extensions):**
+    *   Explore standardized error handling framework (`errors {}` block, `Result<>` types).
+    *   Consider integrated test definitions (`tests {}` block, mocking).
+    *   Refine generator configuration (`$rust_out(...) config {}`).
+    *   Investigate explicit namespacing/modules.
+    *   Explore enhanced security policy definitions (`security {}` block, `$auth`).
+*   **Expanded Target Formats (Core):**
     *   Visualizations (Mermaid, Graphviz DOT).
-    *   Integration with common schema formats: JSON Schema, Zod Schemas.
-    *   Integration with common API formats: OpenAPI, AsyncAPI.
-    *   Integration with common DB Schema definitions (SQL DDL, potentially Prisma/Drizzle).
-*   **Project-Specific Generation (Examples):**
-    *   Generate basic Next.js routing (`app/` router), database migrations (SQL diffs).
+    *   Schema Formats (JSON Schema, Zod).
+    *   API Formats (OpenAPI, AsyncAPI).
+    *   DB Schema Definitions (SQL DDL, potentially Prisma/Drizzle - leveraging `$db` annotations).
+*   **Tooling:**
+    *   Support for multi-file/directory projects (imports, discovery).
+    *   Explicit output file mapping and manifest generation.
+    *   Explore alternative Rust integration (e.g., procedural macro).
 
 **Long-Term Vision (Comprehensive SSOT & Ecosystem):**
 
-*   **Full SSOT Scope:**
-    *   Comprehensive Infrastructure Configuration definition (IaC targets like Terraform, CDK).
-    *   Detailed integration definitions: Routing, UI/UX mapping, API calls, authorization, testing (BDD), observability, configuration/feature flags, compliance/auditing, formal verification/simulation.
-*   **Broader Integrations:**
-    *   Support for more standard formats: Requirements (ReqIF), Process/Architecture (BPMN, ArchiMate), System Modeling (UML/SysML), other Data/API/DB formats.
-    *   Deeper platform/framework integration (e.g., `fly.toml`, `vercel.json`, Docker, K8s manifest generation).
-*   **Advanced Tooling:**
-    *   Mature tooling for managing complex multi-file/directory `.ssot` projects.
+*   **Full SSOT Scope:** IaC (Terraform, CDK), UI/UX mapping, Testing (BDD), Observability, Compliance, Formal Verification.
+*   **Broader Integrations:** ReqIF, BPMN, ArchiMate, UML/SysML, etc.
+*   **Advanced Tooling:** Mature multi-file project management.
