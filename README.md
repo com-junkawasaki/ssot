@@ -95,40 +95,46 @@ This project is organized as a Cargo workspace:
 
 The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not just for FSM logic, but for related concerns across distributed systems. Key development areas include:
 
-*   **DSL Improvements & Validation:** Enhance the `.ssot` language expressiveness, validation, and structure.
+**Near-Term Focus (Core Functionality & Refinement):**
+
+*   **DSL Improvements & Validation:**
     *   ✅ **Implemented:** Basic ID/Name validation, Initial/Parallel/History state structure checks.
     *   🔜 **Next:**
-        *   **More Validation:** Unused definition checks (actions, guards), more detailed transition target validation (e.g., disallow transitions *to* parent states from children?), type checking for actions/guards/invokes if parameters are added.
-        *   Implement remaining top-level blocks (Services, Communication, Actors, Deployment) in the parser and validator.
-        *   Refine annotation handling and validation (e.g., required annotations, value types).
-        *   Entry/exit actions, hierarchical states, advanced annotations (`$deprecated`).
-        *   Support for multi-file/directory projects (imports, discovery, config).
+        *   **More Validation:** Unused definition checks (actions, guards), detailed transition target validation, type checking for actions/guards/invokes, refine annotation handling (required, value types).
+        *   Implement entry/exit actions, hierarchical state refinements, advanced annotations (`$deprecated`).
+        *   Support for multi-file/directory projects (imports, discovery, configuration).
         *   Explicit output file mapping and manifest generation.
-
-*   **Expanded SSOT Scope:** Define more system aspects within the DSL.
-    *   Distributed system components/services definition.
-    *   Inter-service communication specification (RPC, messaging, default to Cap'n Proto).
-    *   Infrastructure Configuration: Definition of deployment environments, infrastructure resources (compute, database, network), and deployment strategies.
-    *   Integration with related concerns: Routing, UI/UX mapping, API calls, authorization, testing (BDD), observability (logging/monitoring), configuration/feature flags, compliance/auditing, formal verification/simulation.
-
-*   **Code Generation Enhancements:** Refine existing generators and add new capabilities.
-    *   Update generators to utilize validated AST/SymbolTable information.
+*   **Code Generation Enhancements (Rust, Cap'n Proto, TypeScript):**
+    *   Update generators to utilize fully validated AST/SymbolTable information.
     *   Generate skeleton `guard`/`action` functions (Rust).
     *   Improved hierarchical state machine generation.
-    *   Generate Cap'n Proto interfaces and client/server stubs.
-    *   IaC Generation: Generate configurations for tools like Terraform, CDK, Pulumi, Kubernetes manifests from `environment`, `infrastructure`, and `deployment` definitions.
-
-*   **Expanded Target Formats & Integrations:** Support more output types and standard formats.
-    *   Visualizations (Mermaid, Graphviz DOT), advanced documentation (state tables, sequence diagrams).
-    *   Integration with standard formats: Requirements (ReqIF), Process/Architecture (BPMN, ArchiMate), System Modeling (UML/SysML), Data/Schema (JSON Schema, Protobuf, Avro, Zod Schemas, etc.), API/Interface (OpenAPI, gRPC, GraphQL, AsyncAPI), DB Schema (SQL, Prisma, Drizzle, Liquibase, etc.).
-
-*   **Project-Specific Generation:** Tailor output for specific frameworks and platforms.
-    *   Generate Next.js routing (`app/` router), database migrations (SQL diffs), platform configs (`fly.toml`, `vercel.json`), deployment hints (Docker, K8s).
-    *   Implement target-based orchestration (e.g., `nextjs` target triggers Rust, TS, routing, DB migration generation).
-
-*   **Developer Experience & Tooling:** Improve usability, diagnostics, and integration.
-    *   Better error messages and diagnostics (leverage validation results).
+    *   Generate Cap'n Proto interfaces and basic client/server stubs.
+*   **Developer Experience & Tooling:**
+    *   Better error messages and diagnostics (leveraging validation results).
     *   Source map generation (linking generated code back to `.ssot`).
     *   Enhanced automated testing (especially for `build.rs` and generation edge cases).
-    *   Alternative Rust integration via procedural macro (`#[state_machine(...)]`).
-    *   Improved tooling for multi-file/directory `.ssot` projects.
+    *   Explore alternative Rust integration via procedural macro (`#[state_machine(...)]`).
+
+**Mid-Term Goals (Expanding Scope & Integrations):**
+
+*   **Expanded SSOT Scope (Initial Steps):**
+    *   Define basic distributed system components/services.
+    *   Specify inter-service communication patterns (initially focusing on Cap'n Proto RPC/messaging).
+*   **Expanded Target Formats & Integrations (Core Formats):**
+    *   Visualizations (Mermaid, Graphviz DOT).
+    *   Integration with common schema formats: JSON Schema, Zod Schemas.
+    *   Integration with common API formats: OpenAPI, AsyncAPI.
+    *   Integration with common DB Schema definitions (SQL DDL, potentially Prisma/Drizzle).
+*   **Project-Specific Generation (Examples):**
+    *   Generate basic Next.js routing (`app/` router), database migrations (SQL diffs).
+
+**Long-Term Vision (Comprehensive SSOT & Ecosystem):**
+
+*   **Full SSOT Scope:**
+    *   Comprehensive Infrastructure Configuration definition (IaC targets like Terraform, CDK).
+    *   Detailed integration definitions: Routing, UI/UX mapping, API calls, authorization, testing (BDD), observability, configuration/feature flags, compliance/auditing, formal verification/simulation.
+*   **Broader Integrations:**
+    *   Support for more standard formats: Requirements (ReqIF), Process/Architecture (BPMN, ArchiMate), System Modeling (UML/SysML), other Data/API/DB formats.
+    *   Deeper platform/framework integration (e.g., `fly.toml`, `vercel.json`, Docker, K8s manifest generation).
+*   **Advanced Tooling:**
+    *   Mature tooling for managing complex multi-file/directory `.ssot` projects.
