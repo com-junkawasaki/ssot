@@ -610,6 +610,7 @@ fn parse_state_definition(pair: Pair<Rule>) -> ParseResult<StateDefinition> {
     let mut history: Option<HistoryDefinition> = None;
     let mut is_initial = false;
     let mut is_final = false;
+    let mut is_parallel = false;
 
     // Order: annotation*, "state", identifier, "@id(", int, ")", "{", state_element*, "}"
      while let Some(p) = inner_pairs.peek() {
@@ -620,6 +621,7 @@ fn parse_state_definition(pair: Pair<Rule>) -> ParseResult<StateDefinition> {
                  match annotation {
                      Annotation::Initial => is_initial = true,
                      Annotation::Final => is_final = true,
+                     Annotation::Parallel => is_parallel = true,
                      _ => {} // Keep other annotations as well
                  }
                  annotations.push(annotation);
@@ -643,6 +645,7 @@ fn parse_state_definition(pair: Pair<Rule>) -> ParseResult<StateDefinition> {
                  match element_pair.as_rule() {
                     Rule::initial_annotation => { is_initial = true; annotations.push(Annotation::Initial); }
                     Rule::final_annotation => { is_final = true; annotations.push(Annotation::Final); }
+                    Rule::parallel_annotation => { is_parallel = true; annotations.push(Annotation::Parallel); }
                     Rule::on_entry => on_entry_actions = parse_on_entry(element_pair)?,
                     Rule::on_exit => on_exit_actions = parse_on_exit(element_pair)?,
                     Rule::on_transition => transitions.push(parse_on_transition(element_pair)?),
@@ -686,6 +689,7 @@ fn parse_state_definition(pair: Pair<Rule>) -> ParseResult<StateDefinition> {
         history,
         is_initial,
         is_final,
+        is_parallel,
     })
 }
 
@@ -823,6 +827,7 @@ fn parse_annotation(pair: Pair<Rule>) -> ParseResult<Annotation> {
         // Handle specific flags added for states
         Rule::initial_annotation => Ok(Annotation::Initial),
         Rule::final_annotation => Ok(Annotation::Final),
+        Rule::parallel_annotation => Ok(Annotation::Parallel),
         rule => Err(ParseError::UnexpectedRule { expected: Rule::description_annotation /* or others */, found: rule }),
     }
 }
@@ -1214,5 +1219,132 @@ mod tests {
         assert!(result.is_err());
         // More specific error checking could be added here if needed
         // e.g., assert!(matches!(result.err().unwrap(), ParseError::PestError(_)));
+    }
+
+    #[test]
+    fn test_parse_parallel_state() {
+        let content = r#"
+            machines {
+                machine ParallelMachine @id(0) {
+                    $description("A machine with parallel states");
+                    context @id(0) {
+                        counter: u32 @id(0) { $default(0); };
+                        userId: string @id(1);
+                    }
+                    actions @id(1) {
+                        increment @id(0);
+                        logEntry @id(1);
+                    }
+                    guards @id(2) {
+                        isZero @id(0);
+                    }
+                    invokes @id(3) {
+                        invoke fetchUser @id(0) { src: UserService.fetchProfile; };
+                        invoke backgroundTask @id(1) { 
+                            src: "someTask";
+                            onDone: Done;
+                            onError: Failed;
+                        };
+                    }
+                    states @id(4) {
+                        $initial;
+                        state Idle @id(0) {
+                            on INCREMENT @id(0) transition Processing { action: increment; };
+                        }
+                        state Loading @id(1) {
+                           invoke LoadData @id(0) {
+                                src: invokes.fetchUser;
+                                input: { id: "ctx.userId" };
+                                onDone: Idle;
+                                onError: Failed;
+                           };
+                        }
+                        state Processing @id(2) {
+                            $final;
+                            on COMPLETE @id(0) transition Idle { guard: isZero; action: logEntry; };
+                        }
+                         state Failed @id(3) { }
+                         state Done @id(4) { }
+                    }
+                }
+            }
+        "#;
+        let result = parse_ssot_content(content, None);
+        println!("Parse result: {:?}", result);
+        if let Err(e) = &result {
+            if let ParseError::PestError(pe) = e {
+                eprintln!("Pest Error Details:\n{}", pe);
+            }
+        }
+        assert!(result.is_ok());
+        let ast = result.unwrap();
+
+        assert_eq!(ast.definitions.len(), 1);
+        match &ast.definitions[0] {
+            TopLevelDefinition::Machines(machines_block) => {
+                 assert_eq!(machines_block.definitions.len(), 1);
+                 let machine = &machines_block.definitions[0];
+                 assert_eq!(machine.name.name, "ParallelMachine");
+                 assert!(machine.context.is_some());
+                 assert!(machine.actions.is_some());
+                 assert!(machine.guards.is_some());
+                 assert!(machine.invokes.is_some());
+                 assert!(machine.states.is_some());
+
+                 let invokes = machine.invokes.as_ref().unwrap();
+                 assert_eq!(invokes.definitions.len(), 2);
+                 assert_eq!(invokes.definitions[0].name.name, "fetchUser");
+                 match &invokes.definitions[0].src {
+                     InvokeSource::ServiceMethod(s, m) => {
+                         assert_eq!(s.name, "UserService");
+                         assert_eq!(m.name, "fetchProfile");
+                     }
+                     _ => panic!("Expected ServiceMethod source")
+                 }
+                  assert_eq!(invokes.definitions[1].name.name, "backgroundTask");
+                 match &invokes.definitions[1].src {
+                     InvokeSource::Literal(s) => assert_eq!(s, "someTask"),
+                     _ => panic!("Expected Literal source")
+                 }
+                 assert!(invokes.definitions[1].on_done.is_some());
+                 assert_eq!(invokes.definitions[1].on_done.as_ref().unwrap().target_state.name, "Done");
+                 assert!(invokes.definitions[1].on_error.is_some());
+                 assert_eq!(invokes.definitions[1].on_error.as_ref().unwrap().target_state.name, "Failed");
+
+                 let states_block = machine.states.as_ref().unwrap();
+                 assert_eq!(states_block.states.len(), 5);
+
+                 let idle_state = &states_block.states[0];
+                 assert!(idle_state.invokes.is_empty());
+
+                  let loading_state = &states_block.states[1];
+                  assert!(!loading_state.is_initial);
+                  assert!(!loading_state.is_final);
+                  assert_eq!(loading_state.transitions.len(), 0);
+                  assert_eq!(loading_state.invokes.len(), 1);
+                  let state_invoke = &loading_state.invokes[0];
+                  assert_eq!(state_invoke.name.name, "LoadData");
+                  assert_eq!(state_invoke.src_ref.name, "fetchUser");
+                  assert!(state_invoke.input_mapping.is_some());
+                  assert_eq!(state_invoke.input_mapping.as_ref().unwrap().len(), 1);
+                  assert_eq!(state_invoke.input_mapping.as_ref().unwrap()[0].key.name, "id");
+                  if let AnnotationValue::String(s) = &state_invoke.input_mapping.as_ref().unwrap()[0].value {
+                      assert_eq!(s, "ctx.userId");
+                  } else {
+                       panic!("Expected string value for input mapping");
+                  }
+                  assert!(state_invoke.on_done.is_some());
+                  assert_eq!(state_invoke.on_done.as_ref().unwrap().target_state.name, "Idle");
+                  assert!(state_invoke.on_error.is_some());
+                  assert_eq!(state_invoke.on_error.as_ref().unwrap().target_state.name, "Failed");
+
+                  let processing_state = &states_block.states[2];
+                   assert!(processing_state.is_final);
+
+                  assert!(states_block.states.iter().any(|s| s.name.name == "Failed"));
+                  assert!(states_block.states.iter().any(|s| s.name.name == "Done"));
+            }
+            _ => panic!("Expected Machines block"),
+        }
     }
 } 

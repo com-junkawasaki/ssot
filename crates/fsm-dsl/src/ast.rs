@@ -61,6 +61,7 @@ pub enum Annotation {
     // Add specific annotations related to state machine structure
     Initial, // $initial;
     Final,   // $final;
+    Parallel, // $parallel;
 }
 
 // --- Definitions ---
@@ -243,6 +244,7 @@ pub struct StateDefinition {
     // Helper flags derived from annotations for easier access
     pub is_initial: bool,
     pub is_final: bool,
+    pub is_parallel: bool, // Added parallel flag
 }
 
 #[derive(Debug, Clone, PartialEq)]
