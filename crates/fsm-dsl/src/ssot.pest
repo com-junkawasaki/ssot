@@ -82,10 +82,10 @@ annotation_args = { annotation_arg ~ ("," ~ annotation_arg)* }
 annotation_arg = { identifier ~ ":" ~ annotation_value }
 
 // Updated annotation values (needs expansion for bool, list, object)
-annotation_value = _{ string_literal | integer_literal | boolean_literal } // TODO: | list_literal | object_literal
+annotation_value = _{ string_literal | integer_literal | boolean_literal | list_literal | object_literal } // Added list and object
 boolean_literal = { "true" | "false" }
-// list_literal = { "[" ~ annotation_value ~ ("," ~ annotation_value)* ~ "]" }
-// object_literal = { "{" ~ annotation_args? ~ "}" } // For nested structures like foreignKey or policies
+list_literal = { "[" ~ (annotation_value ~ ("," ~ annotation_value)*)? ~ "]" } // Added list literal rule (allows empty list)
+object_literal = { "{" ~ annotation_args? ~ "}" } // Reuse annotation_args for key:value structure (basic)
 
 // --- Machine Definitions (Basic) ---
 

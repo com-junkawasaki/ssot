@@ -894,6 +894,22 @@ fn parse_annotation_value(pair: Pair<Rule>) -> ParseResult<AnnotationValue> {
             let bool_val = inner.as_str().parse::<bool>().map_err(|e| ParseError::InvalidInput { message: format!("Invalid boolean value: {}", e) })?;
             Ok(AnnotationValue::Boolean(bool_val))
         }
+        Rule::list_literal => { // Added list case
+             let mut values = Vec::new();
+             // Iterate through the inner annotation_value pairs within the [ ... ]
+             for val_pair in inner.into_inner() {
+                if val_pair.as_rule() == Rule::annotation_value {
+                     values.push(parse_annotation_value(val_pair)?);
+                }
+                 // Skip commas and brackets implicitly handled by pest
+             }
+             Ok(AnnotationValue::List(values))
+        }
+        Rule::object_literal => { // Added object case
+            // The inner part of object_literal should match annotation_args rule structure
+            let args = parse_annotation_args(inner.into_inner())?;
+             Ok(AnnotationValue::Object(args))
+        }
         // TODO: Add list_literal, object_literal when grammar/AST support them
         rule => Err(ParseError::UnexpectedRule { expected: Rule::string_literal /* or others */, found: rule })
     }
@@ -2302,8 +2318,8 @@ mod tests {
             types {
                  struct AnnotatedStruct @id(0) {
                      $description("A struct with various annotations.");
-                     field1: string @id(0) { $validate(required: true, maxLength: 100); };
-                     field2: i32 @id(1) { $db(index: true); };
+                     field1: string @id(0) { $validate(required: true, tags: ["user", "profile"]); }; // List value
+                     field2: i32 @id(1) { $db(index: true, options: { fast: true }); }; // Object value
                      field3: bool @id(2) { $meta(defaultValue: false, uiHint: "toggle"); };
                      $customFlag; // Generic flag
                      $outputDir("/generated"); // Generic KV
@@ -2342,17 +2358,27 @@ mod tests {
              assert_eq!(args.len(), 2);
              assert_eq!(args[0].key.name, "required");
              assert_eq!(args[0].value, AnnotationValue::Boolean(true)); // Check boolean true
-             assert_eq!(args[1].key.name, "maxLength");
-             assert_eq!(args[1].value, AnnotationValue::Integer(100));
+             assert_eq!(args[1].key.name, "tags");
+             if let AnnotationValue::List(list) = &args[1].value { // Check list value
+                  assert_eq!(list.len(), 2);
+                  assert_eq!(list[0], AnnotationValue::String("user".to_string()));
+                  assert_eq!(list[1], AnnotationValue::String("profile".to_string()));
+             } else { panic!("Expected List value for tags"); }
         } else { panic!("Expected Validate annotation"); }
 
         // Check field2 annotations ($db)
         let field2 = &struct_def.fields[1];
         assert_eq!(field2.annotations.len(), 1);
         if let Annotation::Db(args) = &field2.annotations[0] {
-             assert_eq!(args.len(), 1);
+             assert_eq!(args.len(), 2);
              assert_eq!(args[0].key.name, "index");
              assert_eq!(args[0].value, AnnotationValue::Boolean(true)); // Check boolean true
+             assert_eq!(args[1].key.name, "options");
+             if let AnnotationValue::Object(obj_args) = &args[1].value { // Check object value
+                 assert_eq!(obj_args.len(), 1);
+                 assert_eq!(obj_args[0].key.name, "fast");
+                 assert_eq!(obj_args[0].value, AnnotationValue::Boolean(true));
+             } else { panic!("Expected Object value for options"); }
         } else { panic!("Expected Db annotation"); }
 
         // Check field3 annotations ($meta)

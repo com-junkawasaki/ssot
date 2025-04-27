@@ -38,6 +38,8 @@ pub enum AnnotationValue {
     Integer(i64), // Using i64 for flexibility, could use specific types
     Boolean(bool), // Added boolean value
     // TODO: Add List(Vec<AnnotationValue>), Object(Vec<Argument>)
+    List(Vec<AnnotationValue>), // Added list value
+    Object(Vec<Argument>),     // Added object value (key-value pairs)
 }
 
 // Represents a single key-value argument in an annotation
