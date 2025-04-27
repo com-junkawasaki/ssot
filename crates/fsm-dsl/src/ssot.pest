@@ -64,7 +64,11 @@ optional_type = { "optional" ~ "<" ~ type_specifier ~ ">" }
 map_type = { "map" ~ "<" ~ type_specifier ~ "," ~ type_specifier ~ ">" }
 
 // Updated annotation rules
-annotation = _{ description_annotation | validate_annotation | db_annotation | meta_annotation | generic_kv_annotation | generic_flag_annotation | implements_annotation | channel_annotation }
+annotation = _{ description_annotation | validate_annotation | db_annotation | meta_annotation
+             | generic_kv_annotation | generic_flag_annotation | implements_annotation
+             | channel_annotation | initial_annotation | final_annotation | parallel_annotation
+             | allowed_actors_annotation | protocol_annotation | communicates_with_annotation
+             | publishes_annotation | subscribes_annotation | route_annotation | output_directive_annotation }
 
 description_annotation = { "$" ~ ("description") ~ "(" ~ string_literal ~ ")" ~ ";" }
 validate_annotation = { "$" ~ ("validate") ~ "(" ~ annotation_args? ~ ")" ~ ";" }
@@ -73,11 +77,11 @@ meta_annotation = { "$" ~ ("meta") ~ "(" ~ annotation_args? ~ ")" ~ ";" }
 generic_kv_annotation = { "$" ~ identifier ~ "(" ~ annotation_value ~ ")" }
 generic_flag_annotation = { "$" ~ identifier ~ ";" }
 // Add specific flag annotations for states
-initial_annotation = { "$" ~ "initial" ~ ";" }
+initial_annotation = { "$" ~ "initial" ~ "(" ~ identifier ~ ")" ~ ";" }
 final_annotation = { "$" ~ "final" ~ ";" }
 parallel_annotation = { "$" ~ "parallel" ~ ";" } // Added parallel flag
 
-// Rule for key-value arguments inside annotations like $validate, $db, $meta
+// Rule for key-value arguments inside annotations like $validate, $db, $meta, $route
 annotation_args = { annotation_arg ~ ("," ~ annotation_arg)* }
 annotation_arg = { identifier ~ ":" ~ annotation_value }
 
@@ -86,6 +90,23 @@ annotation_value = _{ string_literal | integer_literal | boolean_literal | list_
 boolean_literal = { "true" | "false" }
 list_literal = { "[" ~ (annotation_value ~ ("," ~ annotation_value)*)? ~ "]" } // Added list literal rule (allows empty list)
 object_literal = { "{" ~ annotation_args? ~ "}" } // Reuse annotation_args for key:value structure (basic)
+
+// --- New Specific Annotation Rules ---
+allowed_actors_annotation = { "$" ~ "allowedActors" ~ "(" ~ identifier_list ~ ")" ~ ";" }
+identifier_list = { identifier ~ ("," ~ identifier)* } // Helper rule for list of identifiers
+
+protocol_annotation = { "$" ~ "protocol" ~ "(" ~ identifier ~ ")" ~ ";" }
+
+communicates_with_annotation = { "$" ~ "communicatesWith" ~ "(" ~ identifier ~ "using" ~ identifier ~ ")" ~ ";" }
+
+publishes_annotation = { "$" ~ "publishes" ~ "(" ~ identifier ~ ")" ~ ";" }
+
+subscribes_annotation = { "$" ~ "subscribes" ~ "(" ~ identifier ~ ")" ~ ";" }
+
+route_annotation = { "$" ~ "route" ~ "(" ~ annotation_args ~ ")" ~ ";" } // Reuse annotation_args for key:value pairs
+
+// Output directive annotation, e.g., $rust_out("path");
+output_directive_annotation = { "$" ~ identifier ~ "_" ~ "out" ~ "(" ~ string_literal ~ ")" ~ ";" }
 
 // --- Machine Definitions (Basic) ---
 

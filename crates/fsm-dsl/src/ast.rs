@@ -49,27 +49,48 @@ pub struct Argument {
     pub value: AnnotationValue,
 }
 
+// Specific struct for $communicatesWith for clarity
+#[derive(Debug, Clone, PartialEq)]
+pub struct CommunicatesWithArgs {
+    pub service: Identifier,
+    pub protocol: Identifier,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Annotation {
+    // Documentation & Metadata
     Description(String),
-    // $validate(minLength: 3, pattern: "...")
-    Validate(Vec<Argument>),
-    // $db(table: "users", primaryKey: "id")
-    Db(Vec<Argument>),
-    // $meta(key: "value", other: 123)
-    Meta(Vec<Argument>),
-    // Generic annotations for less common/structured ones
-    GenericFlag(Identifier),             // Example: $final;
-    GenericKeyValue(Identifier, String), // Example: $rust_out("path") - Keep simple string value for now
-    // TODO: Consider if GenericKeyValue should use AnnotationValue
-    // Add specific annotations related to state machine structure
-    Initial, // $initial;
+    Meta(Vec<Argument>), // $meta(key: value, ...)
+
+    // Validation & Data Mapping
+    Validate(Vec<Argument>), // $validate(rule: value, ...)
+    Db(Vec<Argument>), // $db(table: "...", column: "...", ...)
+
+    // Output / Code Generation Directives
+    OutputDirective { directive: String, path: String }, // $rust_out("path"), $ts_out("path"), etc.
+
+    // State Machine Structure
+    InitialState(Identifier), // $initial(StateName)
     Final,   // $final;
     Parallel, // $parallel;
-    // Service specific
-    Implements(Identifier), // $implements(InterfaceName);
-    // Communication specific
-    Channel(Identifier), // $channel(ChannelName);
+
+    // Service & Communication
+    Implements(Identifier), // $implements(InterfaceName)
+    Protocol(Identifier), // $protocol(ProtocolName)
+    CommunicatesWith(CommunicatesWithArgs), // $communicatesWith(Service using Protocol)
+    Publishes(Identifier), // $publishes(ChannelName)
+    Subscribes(Identifier), // $subscribes(ChannelName)
+    Route(Vec<Argument>), // $route(method: "POST", path: "/...")
+
+    // Event / Channel Association
+    Channel(Identifier), // $channel(ChannelName)
+
+    // Access Control
+    AllowedActors(Vec<Identifier>), // $allowedActors([Actor1, Actor2])
+
+    // Generic / Less Common Annotations (Consider removing if not needed)
+    GenericFlag(Identifier),             // Example: $someFlag;
+    GenericKeyValue(Identifier, String), // Example: $someKey("value")
 }
 
 // --- Definitions ---

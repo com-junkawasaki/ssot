@@ -1,4 +1,4 @@
-use crate::ast::{Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition, ActionsBlock, ActionDefinition, GuardsBlock, GuardDefinition, InvokesBlock, InvokeDefinition, InvokeSource, StateInvokeDefinition, InvokeTransitionTarget, Duration, TimeUnit, AfterTransitionDefinition, HistoryDefinition, HistoryType, ServicesBlock, ServiceItem, InterfaceDefinition, MethodDefinition, ParameterDefinition, ServiceDefinition, CommunicationBlock, CommunicationItem, ProtocolDefinition, ChannelDefinition, EventDefinition, ActorsBlock, ActorDefinition, DeploymentConfigBlock, DeploymentItem, EnvironmentDefinition, InfrastructureDefinition, DeploymentDefinition, AttributeDefinition, TransitionTarget};
+use crate::ast::{Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition, ActionsBlock, ActionDefinition, GuardsBlock, GuardDefinition, InvokesBlock, InvokeDefinition, InvokeSource, StateInvokeDefinition, InvokeTransitionTarget, Duration, TimeUnit, AfterTransitionDefinition, HistoryDefinition, HistoryType, ServicesBlock, ServiceItem, InterfaceDefinition, MethodDefinition, ParameterDefinition, ServiceDefinition, CommunicationBlock, CommunicationItem, ProtocolDefinition, ChannelDefinition, EventDefinition, ActorsBlock, ActorDefinition, DeploymentConfigBlock, DeploymentItem, EnvironmentDefinition, InfrastructureDefinition, DeploymentDefinition, AttributeDefinition, TransitionTarget, CommunicatesWithArgs};
 use pest::Parser;
 use pest_derive::Parser;
 use pest::iterators::{Pair, Pairs};
@@ -778,6 +778,25 @@ fn parse_on_transition(pair: Pair<Rule>) -> ParseResult<TransitionDefinition> {
 
 // --- Helper Functions (Implementations) ---
 
+// Helper to parse a list of identifiers, e.g., `[Actor1, Actor2]`
+fn parse_identifier_list(pair: Pair<Rule>) -> ParseResult<Vec<Identifier>> {
+    if pair.as_rule() != Rule::list_literal {
+        // Assuming the grammar uses a list_literal rule for the list of identifiers
+        return Err(ParseError::UnexpectedRule { expected: Rule::list_literal, found: pair.as_rule() });
+    }
+    let mut identifiers = Vec::new();
+    // Iterate through the inner pairs, which should be identifiers
+    for inner_pair in pair.into_inner() {
+        if inner_pair.as_rule() == Rule::identifier {
+             identifiers.push(parse_identifier(inner_pair)?);
+        } else {
+            // If anything other than an identifier is found inside the list, it's an error
+             return Err(ParseError::UnexpectedRule { expected: Rule::identifier, found: inner_pair.as_rule() });
+        }
+    }
+    Ok(identifiers)
+}
+
 fn parse_annotation(pair: Pair<Rule>) -> ParseResult<Annotation> {
      if pair.as_rule() != Rule::annotation {
         return Err(ParseError::UnexpectedRule { expected: Rule::annotation, found: pair.as_rule() });
@@ -820,7 +839,7 @@ fn parse_annotation(pair: Pair<Rule>) -> ParseResult<Annotation> {
             }
         }
         // Handle specific flags added for states
-        Rule::initial_annotation => Ok(Annotation::Initial),
+        Rule::initial_annotation => Ok(Annotation::InitialState(parse_identifier(inner_pair.into_inner().next().unwrap())?)), // Updated to parse identifier
         Rule::final_annotation => Ok(Annotation::Final),
         Rule::parallel_annotation => Ok(Annotation::Parallel),
         Rule::implements_annotation => { 
@@ -830,6 +849,34 @@ fn parse_annotation(pair: Pair<Rule>) -> ParseResult<Annotation> {
         Rule::channel_annotation => { // Added case for $channel
              let ident = parse_identifier(inner_pair.into_inner().next().unwrap())?;
              Ok(Annotation::Channel(ident))
+        }
+        Rule::protocol_annotation => { // Added case for $protocol
+             let ident = parse_identifier(inner_pair.into_inner().next().unwrap())?;
+             Ok(Annotation::Protocol(ident))
+        }
+        Rule::communicates_with_annotation => { // Added case for $communicatesWith
+            let mut inner = inner_pair.into_inner();
+            let service_ident = parse_identifier(inner.next().ok_or(ParseError::MissingRule{ expected: Rule::identifier })?)?;
+            let protocol_ident = parse_identifier(inner.next().ok_or(ParseError::MissingRule{ expected: Rule::identifier })?)?;
+            Ok(Annotation::CommunicatesWith(CommunicatesWithArgs { service: service_ident, protocol: protocol_ident }))
+        }
+        Rule::publishes_annotation => { // Added case for $publishes
+             let ident = parse_identifier(inner_pair.into_inner().next().unwrap())?;
+             Ok(Annotation::Publishes(ident))
+        }
+        Rule::subscribes_annotation => { // Added case for $subscribes
+             let ident = parse_identifier(inner_pair.into_inner().next().unwrap())?;
+             Ok(Annotation::Subscribes(ident))
+        }
+        Rule::route_annotation => { // Added case for $route
+            let args = parse_annotation_args(inner_pair.into_inner())?;
+            Ok(Annotation::Route(args))
+        }
+        Rule::allowed_actors_annotation => { // Added case for $allowedActors
+            // Assuming grammar is $allowedActors([Actor1, Actor2]) and list_literal rule is used
+            let list_pair = inner_pair.into_inner().next().ok_or(ParseError::MissingRule { expected: Rule::list_literal })?;
+             let actors = parse_identifier_list(list_pair)?;
+             Ok(Annotation::AllowedActors(actors))
         }
         rule => Err(ParseError::UnexpectedRule { expected: Rule::description_annotation /* or others */, found: rule }),
     }
@@ -850,7 +897,7 @@ fn parse_annotation_args(pairs: Pairs<Rule>) -> ParseResult<Vec<Argument>> {
             }
         } else if pair.as_rule() == Rule::annotation_arg { // Handle case where args isn't wrapped (e.g., single arg) 
              args.push(parse_annotation_arg(pair)?);
-        } else { 
+        } else {
              // This case might occur if the annotation call is empty: $validate()
              // Or if there's an unexpected token inside the parenthesis
             eprintln!("Warning: Unexpected rule while parsing annotation args: {:?}", pair.as_rule());
@@ -978,20 +1025,48 @@ fn parse_history_definition(pair: Pair<Rule>) -> ParseResult<HistoryDefinition> 
                 history_type = Some(match type_str {
                     "shallow" => HistoryType::Shallow,
                     "deep" => HistoryType::Deep,
-                    _ => return Err(ParseError::InvalidInput{ message: format!("Invalid history type: {}", type_str)}),
+                    _ => return Err(ParseError::InvalidInput { message: format!("Unknown history type: {}", type_str) }),
                 });
             }
-            Rule::integer_literal => id = Some(parse_numeric_id(inner_pairs.next().unwrap())?),
-            Rule::identifier => target = Some(parse_identifier(inner_pairs.next().unwrap())?),
-            _ => { inner_pairs.next(); } // Consume keywords "history", "target", @id, etc.
+            Rule::numeric_id => {
+                let id_pair = inner_pairs.next().unwrap(); // Consume the numeric_id pair
+                // We need to parse the actual integer value inside the @id()
+                let id_value_pair = id_pair.into_inner().next().ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?;
+                id = Some(parse_numeric_id(id_value_pair)?);
+            }
+            Rule::identifier => {
+                // This is the target state identifier
+                let target_pair = inner_pairs.next().unwrap(); // Consume the identifier pair
+                target = Some(parse_identifier(target_pair)?);
+            }
+            Rule::EOI | Rule::COMMENT | Rule::WHITESPACE => {
+                inner_pairs.next(); // consume and ignore
+            }
+            rule => return Err(ParseError::UnexpectedRule { expected: Rule::history_type /* or others */, found: rule }),
         }
     }
 
-    Ok(HistoryDefinition {
-        history_type: history_type.ok_or_else(|| ParseError::InvalidInput { message: "Missing history type".to_string() })?,
-        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing history id".to_string() })?,
-        default_target: target.ok_or_else(|| ParseError::InvalidInput { message: "Missing history default target".to_string() })?,
-    })
+    let history_type = history_type.ok_or(ParseError::MissingRule { expected: Rule::history_type })?;
+    let id = id.ok_or(ParseError::MissingRule { expected: Rule::numeric_id })?;
+     // target is optional based on AST, but grammar might require it. Assuming required for now.
+     let target = target.ok_or(ParseError::MissingRule { expected: Rule::identifier })?;
+
+    Ok(HistoryDefinition { history_type, id, target })
+}
+
+// --- Utility Functions ---
+
+// Helper to parse a list of identifiers separated by commas, typically within parentheses
+fn parse_identifier_list_in_parens(pair: Pair<Rule>) -> ParseResult<Vec<Identifier>> {
+    // Assuming the input `pair` corresponds to a rule like `( identifier, ... )`
+    let mut identifiers = Vec::new();
+    for inner_pair in pair.into_inner() {
+        // Skip commas and parentheses implicitly handled by pest
+        if inner_pair.as_rule() == Rule::identifier {
+            identifiers.push(parse_identifier(inner_pair)?);
+        }
+    }
+    Ok(identifiers)
 }
 
 // --- Service Block Parsing (Added) ---
