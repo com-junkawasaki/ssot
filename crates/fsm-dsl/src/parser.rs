@@ -1,4 +1,4 @@
-use crate::ast::{Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition};
+use crate::ast::{Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition, ActionsBlock, ActionDefinition, GuardsBlock, GuardDefinition, InvokesBlock, InvokeDefinition, InvokeSource, StateInvokeDefinition, InvokeTransitionTarget};
 use pest::Parser;
 use pest_derive::Parser;
 use pest::iterators::{Pair, Pairs};
@@ -425,50 +425,56 @@ fn parse_machine_definition(pair: Pair<Rule>) -> ParseResult<MachineDefinition> 
     let mut id: Option<NumericId> = None;
     let mut context: Option<ContextDefinition> = None;
     let mut states: Option<StatesBlock> = None;
-    // TODO: Add other machine elements (states, actions, etc.)
+    let mut actions: Option<ActionsBlock> = None;
+    let mut guards: Option<GuardsBlock> = None;
+    let mut invokes: Option<InvokesBlock> = None;
 
+    // Order based on grammar: annotation*, "machine", identifier, "@id(", int, ")", "{", machine_element*, "}"
     while let Some(p) = inner_pairs.peek() {
         match p.as_rule() {
             Rule::annotation => annotations.push(parse_annotation(inner_pairs.next().unwrap())?),
             Rule::identifier => {
-                name = Some(parse_identifier(inner_pairs.next().unwrap())?);
-                let id_pair = inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?;
-                id = Some(parse_numeric_id(id_pair)?);
-            }
-            Rule::machine_element => {
-                let element_pair = inner_pairs.next().unwrap();
-                let element_inner = element_pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty machine_element".to_string() })?;
-                match element_inner.as_rule() {
-                    Rule::context_definition => {
-                        if context.is_some() {
-                             eprintln!("Warning: Duplicate context definition found, ignoring subsequent.");
-                         } else {
-                             context = Some(parse_context_definition(element_inner)?);
-                         }
-                    }
-                    Rule::states_definition => {
-                        if states.is_some() {
-                             eprintln!("Warning: Duplicate states definition found, ignoring subsequent.");
-                         } else {
-                             states = Some(parse_states_definition(element_inner)?);
-                         }
-                    }
-                    // TODO: Add cases for actions_definition, etc.
-                    rule => {
-                        eprintln!("Skipping unimplemented machine_element: {:?}", rule);
-                    }
+                if name.is_none() { // First identifier is the name
+                     name = Some(parse_identifier(inner_pairs.next().unwrap())?);
+                } else {
+                     // Skip keywords like "machine"
+                     if inner_pairs.peek().unwrap().as_str() != "machine" {
+                         eprintln!("Warning: Skipping unexpected identifier inside machine definition: {:?}", inner_pairs.peek().unwrap().as_str());
+                     }
+                     inner_pairs.next(); // Consume the keyword or unexpected identifier
                 }
+            },
+            Rule::integer_literal => {
+                 id = Some(parse_numeric_id(inner_pairs.next().unwrap())?);
+            },
+            Rule::machine_element => {
+                let element_pair = inner_pairs.next().unwrap().into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty machine_element rule".to_string() })?;
+                 match element_pair.as_rule() {
+                     Rule::context_definition => context = Some(parse_context_definition(element_pair)?),
+                     Rule::states_definition => states = Some(parse_states_definition(element_pair)?),
+                     Rule::actions_definition => actions = Some(parse_actions_block(element_pair)?),
+                     Rule::guards_definition => guards = Some(parse_guards_block(element_pair)?),
+                     Rule::invokes_definition => invokes = Some(parse_invokes_block(element_pair)?),
+                     rule => {
+                        eprintln!("Warning: Skipping unexpected rule within machine_element: {:?}", rule);
+                    }
+                 }
             }
-            rule => return Err(ParseError::UnexpectedRule { expected: Rule::annotation /* or identifier or machine_element */, found: rule })
+             // Skip keywords and braces implicitly handled by Pest structure
+            _ => { inner_pairs.next(); } // Consume other pairs like keywords, braces, @id(,)
         }
     }
 
+
     Ok(MachineDefinition {
-        name: name.ok_or(ParseError::MissingRule { expected: Rule::identifier })?,
-        id: id.ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing machine name".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing machine id".to_string() })?,
         annotations,
         context,
         states,
+        actions,
+        guards,
+        invokes,
     })
 }
 
@@ -596,40 +602,69 @@ fn parse_state_definition(pair: Pair<Rule>) -> ParseResult<StateDefinition> {
     let mut name: Option<Identifier> = None;
     let mut id: Option<NumericId> = None;
     let mut transitions = Vec::new();
-    // TODO: Parse other state elements
+    let mut invokes = Vec::new();
+    let mut is_initial = false;
+    let mut is_final = false;
 
-    // Order: annotation*, "state", identifier, "@id(", integer_literal, ")", "{", state_element*, "}"
-    while let Some(p) = inner_pairs.peek() {
-         match p.as_rule() {
-             Rule::annotation => annotations.push(parse_annotation(inner_pairs.next().unwrap())?),
-             Rule::identifier => { // Name follows annotations and "state"
-                 name = Some(parse_identifier(inner_pairs.next().unwrap())?);
-                 // Expect ID
-                 let id_pair = inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?;
-                 id = Some(parse_numeric_id(id_pair)?);
-             }
-             Rule::state_element => {
-                let element_pair = inner_pairs.next().unwrap();
-                let element_inner = element_pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty state_element".to_string() })?;
-                 match element_inner.as_rule() {
-                     Rule::on_transition => {
-                         transitions.push(parse_on_transition(element_inner)?);
+    // Order: annotation*, "state", identifier, "@id(", int, ")", "{", state_element*, "}"
+     while let Some(p) = inner_pairs.peek() {
+        match p.as_rule() {
+            Rule::annotation => {
+                 let annotation = parse_annotation(inner_pairs.next().unwrap())?;
+                 // Check for specific state flags within general annotations
+                 match annotation {
+                     Annotation::Initial => is_initial = true,
+                     Annotation::Final => is_final = true,
+                     _ => {} // Keep other annotations as well
+                 }
+                 annotations.push(annotation);
+            }
+             Rule::identifier => {
+                 if name.is_none() { // First identifier is the name
+                      name = Some(parse_identifier(inner_pairs.next().unwrap())?);
+                 } else {
+                     // Skip keyword "state"
+                     if inner_pairs.peek().unwrap().as_str() != "state" {
+                          eprintln!("Warning: Skipping unexpected identifier inside state definition: {:?}", inner_pairs.peek().unwrap().as_str());
                      }
-                     // TODO: Add cases for on_entry, on_exit, invoke, etc.
+                     inner_pairs.next();
+                 }
+            },
+            Rule::integer_literal => {
+                id = Some(parse_numeric_id(inner_pairs.next().unwrap())?);
+            },
+            Rule::state_element => {
+                 let element_pair = inner_pairs.next().unwrap().into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty state_element rule".to_string() })?;
+                 match element_pair.as_rule() {
+                    Rule::initial_annotation => { // Handle $initial; rule
+                        is_initial = true;
+                        annotations.push(Annotation::Initial); // Add to AST as well
+                    }
+                    Rule::final_annotation => { // Handle $final; rule
+                        is_final = true;
+                        annotations.push(Annotation::Final); // Add to AST as well
+                    }
+                     Rule::on_transition => transitions.push(parse_on_transition(element_pair)?),
+                     Rule::state_invoke => invokes.push(parse_state_invoke(element_pair)?),
+                     // TODO: Handle on_entry, on_exit, invoke, nested_states, history etc.
                      rule => {
-                          eprintln!("Skipping unimplemented state_element: {:?}", rule);
+                         eprintln!("Warning: Skipping unexpected rule within state_element: {:?}", rule);
                      }
                  }
-             }
-             rule => return Err(ParseError::UnexpectedRule { expected: Rule::annotation /* or ident or state_element */, found: rule })
-         }
-    }
+            }
+            _ => { inner_pairs.next(); } // Consume other pairs
+        }
+     }
+
 
     Ok(StateDefinition {
-        name: name.ok_or(ParseError::MissingRule { expected: Rule::identifier })?,
-        id: id.ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing state name".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing state id".to_string() })?,
         annotations,
         transitions,
+        invokes,
+        is_initial,
+        is_final,
     })
 }
 
@@ -637,61 +672,87 @@ fn parse_on_transition(pair: Pair<Rule>) -> ParseResult<TransitionDefinition> {
     if pair.as_rule() != Rule::on_transition {
         return Err(ParseError::UnexpectedRule { expected: Rule::on_transition, found: pair.as_rule() });
     }
-    println!("Parsing on transition: {}", pair.as_str()); // Debug print
+     println!("Parsing on transition: {}", pair.as_str());
 
     let mut inner_pairs = pair.into_inner();
-    let event = parse_identifier(inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::identifier })?)?;
-    let id = parse_numeric_id(inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::integer_literal })?)?;
+    let mut event: Option<Identifier> = None;
+    let mut id: Option<NumericId> = None;
+    let mut target: Option<Identifier> = None;
+    let mut actions = Vec::new(); // Added
+    let mut guards = Vec::new();  // Added
 
-    let details_pair = inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::transition_details })?;
-    if details_pair.as_rule() != Rule::transition_details {
-         return Err(ParseError::UnexpectedRule { expected: Rule::transition_details, found: details_pair.as_rule() });
-    }
+    // Order: "on", identifier(event), "@id(", int, ")", transition_details, ";"
+    // transition_details: "transition", identifier(target), transition_block?
+    // transition_block: "{", (action_ref | guard_ref)*, "}"
 
-    let mut details_inner = details_pair.into_inner();
-    let target = parse_identifier(details_inner.next().ok_or(ParseError::MissingRule { expected: Rule::identifier })?)?; // Expect 'identifier' for target
-
-    // --- Start parsing optional transition block ---
-    let mut actions = Vec::new();
-    let mut guards = Vec::new();
-
-    // Check if transition_block exists
-    if let Some(block_pair) = details_inner.next() {
-        if block_pair.as_rule() != Rule::transition_block {
-            return Err(ParseError::UnexpectedRule { expected: Rule::transition_block, found: block_pair.as_rule() });
-        }
-        // Iterate inside the block { ... }
-        for item_pair in block_pair.into_inner() {
-            match item_pair.as_rule() {
-                Rule::action_ref => {
-                    // action_ref = { "action" ~ identifier ~ ";" }
-                    let action_id = parse_identifier(item_pair.into_inner().next().ok_or(ParseError::MissingRule { expected: Rule::identifier })?)?;
-                    actions.push(action_id);
+    while let Some(p) = inner_pairs.peek() {
+        match p.as_rule() {
+             Rule::identifier => {
+                let ident_pair = inner_pairs.next().unwrap();
+                 if event.is_none() { // First identifier is the event
+                     event = Some(parse_identifier(ident_pair)?);
+                 } else {
+                      // Skip keywords "on", "transition"
+                     if ident_pair.as_str() != "on" && ident_pair.as_str() != "transition" {
+                         eprintln!("Warning: Skipping unexpected identifier inside on_transition: {:?}", ident_pair.as_str());
+                     }
+                 }
+            },
+            Rule::integer_literal => {
+                 id = Some(parse_numeric_id(inner_pairs.next().unwrap())?);
+            },
+            Rule::transition_details => {
+                let mut details_pairs = inner_pairs.next().unwrap().into_inner();
+                while let Some(dp) = details_pairs.peek() {
+                    match dp.as_rule() {
+                        Rule::identifier => { // This must be the target state
+                            if target.is_none() {
+                                target = Some(parse_identifier(details_pairs.next().unwrap())?);
+                            } else {
+                                // Skip keyword "transition"
+                                if details_pairs.peek().unwrap().as_str() != "transition" {
+                                    eprintln!("Warning: Skipping unexpected identifier inside transition_details: {:?}", details_pairs.peek().unwrap().as_str());
+                                }
+                                details_pairs.next();
+                            }
+                        }
+                        Rule::transition_block => { // Parse actions and guards
+                            let block_pair = details_pairs.next().unwrap();
+                             println!("Parsing transition block: {}", block_pair.as_str());
+                            for item_pair in block_pair.into_inner() {
+                                match item_pair.as_rule() {
+                                    Rule::action_ref => {
+                                        let action_name = item_pair.into_inner().find(|p| p.as_rule() == Rule::identifier)
+                                            .ok_or_else(|| ParseError::InvalidInput { message: "Missing action name in action_ref".to_string() })?;
+                                        actions.push(parse_identifier(action_name)?);
+                                         println!("  Found action_ref: {}", actions.last().unwrap().name);
+                                    }
+                                    Rule::guard_ref => {
+                                        let guard_name = item_pair.into_inner().find(|p| p.as_rule() == Rule::identifier)
+                                             .ok_or_else(|| ParseError::InvalidInput { message: "Missing guard name in guard_ref".to_string() })?;
+                                        guards.push(parse_identifier(guard_name)?);
+                                        println!("  Found guard_ref: {}", guards.last().unwrap().name);
+                                    }
+                                    _ => { /* Skip other inner elements like braces */ }
+                                }
+                            }
+                        }
+                         _ => { details_pairs.next(); } // Consume other pairs like keywords
+                    }
                 }
-                Rule::guard_ref => {
-                     // guard_ref = { "guard" ~ identifier ~ ";" }
-                     let guard_id = parse_identifier(item_pair.into_inner().next().ok_or(ParseError::MissingRule { expected: Rule::identifier })?)?;
-                    guards.push(guard_id);
-                }
-                rule => return Err(ParseError::UnexpectedRule { expected: Rule::action_ref /* or guard_ref */, found: rule }),
             }
+             _ => { inner_pairs.next(); } // Consume other pairs like @id(,) and ;
         }
-    }
-    // --- End parsing optional transition block ---
-
-    // Check if there are any unexpected pairs left in on_transition
-    if inner_pairs.next().is_some() {
-         eprintln!("Warning: Unexpected extra tokens found after transition details in 'on {}'", event.name);
     }
 
 
     Ok(TransitionDefinition {
-        event,
-        target,
-        id,
-        annotations: vec![], // TODO: Parse annotations if they become possible here
-        actions, // Assign parsed actions
-        guards,  // Assign parsed guards
+        event: event.ok_or_else(|| ParseError::InvalidInput { message: "Missing event name in transition".to_string() })?,
+        target: target.ok_or_else(|| ParseError::InvalidInput { message: "Missing target state name in transition".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing id in transition".to_string() })?,
+        annotations: Vec::new(), // TODO: Parse annotations on transitions if grammar allows
+        actions, // Added
+        guards,  // Added
     })
 }
 
@@ -699,23 +760,22 @@ fn parse_on_transition(pair: Pair<Rule>) -> ParseResult<TransitionDefinition> {
 
 fn parse_annotation(pair: Pair<Rule>) -> ParseResult<Annotation> {
      if pair.as_rule() != Rule::annotation {
-         return Err(ParseError::UnexpectedRule { expected: Rule::annotation, found: pair.as_rule() });
-     }
-    let inner_pair = pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty annotation rule".to_string() })?;
+        return Err(ParseError::UnexpectedRule { expected: Rule::annotation, found: pair.as_rule() });
+    }
+    println!("Parsing annotation: {}", pair.as_str());
 
-    println!("Parsing specific annotation: {:?} - {}", inner_pair.as_rule(), inner_pair.as_str()); // Debug print
+    let inner_pair = pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty annotation rule".to_string() })?;
 
     match inner_pair.as_rule() {
         Rule::description_annotation => {
-            let value_pair = inner_pair.into_inner().next().ok_or(ParseError::MissingRule { expected: Rule::string_literal })?;
-            let value = parse_string_literal(value_pair)?;
+            let value = parse_string_literal(inner_pair.into_inner().next().unwrap())?;
             Ok(Annotation::Description(value))
         }
         Rule::validate_annotation => {
             let args = parse_annotation_args(inner_pair.into_inner())?;
             Ok(Annotation::Validate(args))
         }
-        Rule::db_annotation => {
+         Rule::db_annotation => {
             let args = parse_annotation_args(inner_pair.into_inner())?;
             Ok(Annotation::Db(args))
         }
@@ -724,25 +784,25 @@ fn parse_annotation(pair: Pair<Rule>) -> ParseResult<Annotation> {
             Ok(Annotation::Meta(args))
         }
         Rule::generic_flag_annotation => {
-            let key_pair = inner_pair.into_inner().next().ok_or(ParseError::MissingRule { expected: Rule::identifier })?;
-            let key = parse_identifier(key_pair)?;
-            Ok(Annotation::GenericFlag(key))
+             let ident = parse_identifier(inner_pair.into_inner().next().unwrap())?;
+            Ok(Annotation::GenericFlag(ident))
         }
-         Rule::generic_kv_annotation => {
-             let mut kv_pairs = inner_pair.into_inner();
-             let key_pair = kv_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::identifier })?;
-             let key = parse_identifier(key_pair)?;
-             let value_pair = kv_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::annotation_value })?;
-             let value_inner = value_pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty annotation_value rule in generic_kv".to_string() })?;
-              // For generic KV, keep the value as string for now
-              let value = match value_inner.as_rule() {
-                  Rule::string_literal => parse_string_literal(value_inner)?,
-                  Rule::integer_literal => value_inner.as_str().to_string(), // Keep as string
-                  _ => return Err(ParseError::UnexpectedRule { expected: Rule::string_literal /* or int */, found: value_inner.as_rule() })
-              };
-             Ok(Annotation::GenericKeyValue(key, value))
-         }
-        rule => Err(ParseError::UnexpectedRule { expected: Rule::description_annotation /* or others */, found: rule })
+        Rule::generic_kv_annotation => {
+            let mut kv_pairs = inner_pair.into_inner();
+            let ident = parse_identifier(kv_pairs.next().unwrap())?;
+            let value_pair = kv_pairs.next().unwrap(); // This is annotation_value
+            let value = parse_annotation_value(value_pair)?;
+             // For now, only handle string value for GenericKeyValue as per AST definition
+            if let AnnotationValue::String(s) = value {
+                 Ok(Annotation::GenericKeyValue(ident, s))
+            } else {
+                Err(ParseError::InvalidInput { message: format!("Expected string value for generic key-value annotation '{}', found {:?}", ident.name, value) })
+            }
+        }
+        // Handle specific flags added for states
+        Rule::initial_annotation => Ok(Annotation::Initial),
+        Rule::final_annotation => Ok(Annotation::Final),
+        rule => Err(ParseError::UnexpectedRule { expected: Rule::description_annotation /* or others */, found: rule }),
     }
 }
 
@@ -957,50 +1017,128 @@ mod tests {
     #[test]
     fn test_parse_simple_machines_block() {
         let content = r#"
-            $description("Simple machine");
             machines {
-                machine SimpleMachine @id(1) {
-                    context @id(10) {
-                        counter: int @id(100);
+                machine SimpleMachine @id(0) {
+                    $description("A basic machine");
+                    context @id(0) {
+                        counter: u32 @id(0) { $default(0); };
+                        userId: string @id(1);
                     }
-                    states @id(11) {
-                        state Idle @id(20) {
-                            on EVENT @id(200) transition Active;
+                    actions @id(1) {
+                        increment @id(0);
+                        logEntry @id(1);
+                    }
+                    guards @id(2) {
+                        isZero @id(0);
+                    }
+                    invokes @id(3) {
+                        invoke fetchUser @id(0) { src: UserService.fetchProfile; };
+                        invoke backgroundTask @id(1) { 
+                            src: "someTask";
+                            onDone: Done;
+                            onError: Failed;
+                        };
+                    }
+                    states @id(4) {
+                        $initial;
+                        state Idle @id(0) {
+                            on INCREMENT @id(0) transition Processing { action: increment; };
                         }
-                        state Active @id(21) {
-                            on EVENT @id(201) transition Idle;
+                        state Loading @id(1) {
+                           invoke LoadData @id(0) {
+                                src: invokes.fetchUser;
+                                input: { id: "ctx.userId" };
+                                onDone: Idle;
+                                onError: Failed;
+                           };
                         }
+                        state Processing @id(2) {
+                            $final;
+                            on COMPLETE @id(0) transition Idle { guard: isZero; action: logEntry; };
+                        }
+                         state Failed @id(3) { }
+                         state Done @id(4) { }
                     }
                 }
             }
         "#;
         let result = parse_ssot_content(content, None);
-        println!("Machines Block Parse Result: {:?}", result);
-         if let Err(e) = &result {
+        println!("Parse result: {:?}", result);
+        if let Err(e) = &result {
             if let ParseError::PestError(pe) = e {
                 eprintln!("Pest Error Details:\n{}", pe);
             }
         }
-        assert!(result.is_ok(), "Parsing failed: {:?}", result.err());
-
+        assert!(result.is_ok());
         let ast = result.unwrap();
-        assert_eq!(ast.definitions.len(), 1, "Expected one top-level definition (machines block)");
 
-         let machines_def = match &ast.definitions[0] {
-            TopLevelDefinition::Machines(block) => block,
-            _ => panic!("Expected MachinesBlock"),
-        };
+        assert_eq!(ast.definitions.len(), 1);
+        match &ast.definitions[0] {
+            TopLevelDefinition::Machines(machines_block) => {
+                 assert_eq!(machines_block.definitions.len(), 1);
+                 let machine = &machines_block.definitions[0];
+                 assert_eq!(machine.name.name, "SimpleMachine");
+                 assert!(machine.context.is_some());
+                 assert!(machine.actions.is_some());
+                 assert!(machine.guards.is_some());
+                 assert!(machine.invokes.is_some());
+                 assert!(machine.states.is_some());
 
-        assert_eq!(machines_def.annotations.len(), 1, "Expected one annotation on the machines block");
-        assert_eq!(machines_def.definitions.len(), 1, "Expected one machine definition");
+                 let invokes = machine.invokes.as_ref().unwrap();
+                 assert_eq!(invokes.definitions.len(), 2);
+                 assert_eq!(invokes.definitions[0].name.name, "fetchUser");
+                 match &invokes.definitions[0].src {
+                     InvokeSource::ServiceMethod(s, m) => {
+                         assert_eq!(s.name, "UserService");
+                         assert_eq!(m.name, "fetchProfile");
+                     }
+                     _ => panic!("Expected ServiceMethod source")
+                 }
+                  assert_eq!(invokes.definitions[1].name.name, "backgroundTask");
+                 match &invokes.definitions[1].src {
+                     InvokeSource::Literal(s) => assert_eq!(s, "someTask"),
+                     _ => panic!("Expected Literal source")
+                 }
+                 assert!(invokes.definitions[1].on_done.is_some());
+                 assert_eq!(invokes.definitions[1].on_done.as_ref().unwrap().target_state.name, "Done");
+                 assert!(invokes.definitions[1].on_error.is_some());
+                 assert_eq!(invokes.definitions[1].on_error.as_ref().unwrap().target_state.name, "Failed");
 
-        // Add more specific assertions about the parsed content if needed
-        let machine = &machines_def.definitions[0];
-        assert_eq!(machine.name.name, "SimpleMachine");
-        assert_eq!(machine.id.value, 1);
-        assert!(machine.context.is_some());
-        assert!(machine.states.is_some());
-        // ... add assertions for context, states, transitions etc.
+                 let states_block = machine.states.as_ref().unwrap();
+                 assert_eq!(states_block.states.len(), 5);
+
+                 let idle_state = &states_block.states[0];
+                 assert!(idle_state.invokes.is_empty());
+
+                  let loading_state = &states_block.states[1];
+                  assert!(!loading_state.is_initial);
+                  assert!(!loading_state.is_final);
+                  assert_eq!(loading_state.transitions.len(), 0);
+                  assert_eq!(loading_state.invokes.len(), 1);
+                  let state_invoke = &loading_state.invokes[0];
+                  assert_eq!(state_invoke.name.name, "LoadData");
+                  assert_eq!(state_invoke.src_ref.name, "fetchUser");
+                  assert!(state_invoke.input_mapping.is_some());
+                  assert_eq!(state_invoke.input_mapping.as_ref().unwrap().len(), 1);
+                  assert_eq!(state_invoke.input_mapping.as_ref().unwrap()[0].key.name, "id");
+                  if let AnnotationValue::String(s) = &state_invoke.input_mapping.as_ref().unwrap()[0].value {
+                      assert_eq!(s, "ctx.userId");
+                  } else {
+                       panic!("Expected string value for input mapping");
+                  }
+                  assert!(state_invoke.on_done.is_some());
+                  assert_eq!(state_invoke.on_done.as_ref().unwrap().target_state.name, "Idle");
+                  assert!(state_invoke.on_error.is_some());
+                  assert_eq!(state_invoke.on_error.as_ref().unwrap().target_state.name, "Failed");
+
+                  let processing_state = &states_block.states[2];
+                   assert!(processing_state.is_final);
+
+                  assert!(states_block.states.iter().any(|s| s.name.name == "Failed"));
+                  assert!(states_block.states.iter().any(|s| s.name.name == "Done"));
+            }
+            _ => panic!("Expected Machines block"),
+        }
     }
 
     #[test]

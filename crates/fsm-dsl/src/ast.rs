@@ -58,6 +58,9 @@ pub enum Annotation {
     GenericFlag(Identifier),             // Example: $final;
     GenericKeyValue(Identifier, String), // Example: $rust_out("path") - Keep simple string value for now
     // TODO: Consider if GenericKeyValue should use AnnotationValue
+    // Add specific annotations related to state machine structure
+    Initial, // $initial;
+    Final,   // $final;
 }
 
 // --- Definitions ---
@@ -167,10 +170,10 @@ pub struct MachineDefinition {
     pub context: Option<ContextDefinition>,
     pub states: Option<StatesBlock>, // Added states field
     // TODO: Add fields for initial, actions, guards, invokes
-    // pub actions: Option<ActionsBlock>,
-    // pub guards: Option<GuardsBlock>,
-    // pub invokes: Option<InvokesBlock>,
-    // pub initial_state: Option<Identifier>,
+    pub actions: Option<ActionsBlock>, // Added actions block
+    pub guards: Option<GuardsBlock>,   // Added guards block
+    pub invokes: Option<InvokesBlock>, // Added invokes block
+    // TODO: Add fields for initial_state: Option<Identifier>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -223,17 +226,24 @@ pub struct TransitionDefinition {
 pub struct StateDefinition {
     pub name: Identifier,
     pub id: NumericId,
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<Annotation>, // Contains general annotations + $initial/$final
     pub transitions: Vec<TransitionDefinition>,
     // TODO: Add fields for on_entry, on_exit, invokes, nested_states, history, initial, final, parallel
+    pub invokes: Vec<StateInvokeDefinition>, // Added invokes field
     // pub on_entry: Vec<Identifier>,
+    pub on_entry: Vec<Identifier>, // Added onEntry actions
+    pub on_exit: Vec<Identifier>,  // Added onExit actions
+    pub after_transitions: Vec<AfterTransitionDefinition>, // Added after transitions
     // pub on_exit: Vec<Identifier>,
     // pub invokes: Vec<InvokeDefinition>,
     // pub nested_states: Option<StatesBlock>,
     // pub history: Option<HistoryDefinition>,
-    // pub initial_state: Option<Identifier>,
-    // pub is_final: bool,
+    // pub initial_state: Option<Identifier>, // Redundant if using $initial annotation
+    // pub is_final: bool, // Redundant if using $final annotation
     // pub is_parallel: bool,
+    // Helper flags derived from annotations for easier access
+    pub is_initial: bool,
+    pub is_final: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -241,6 +251,112 @@ pub struct StatesBlock {
     pub id: NumericId,
     pub states: Vec<StateDefinition>,
     pub annotations: Vec<Annotation>,
+}
+
+// --- Action/Guard Definitions (Added) ---
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActionDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
+    // TODO: Add parameters or implementation details later
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActionsBlock {
+    pub id: NumericId,
+    pub definitions: Vec<ActionDefinition>,
+    pub annotations: Vec<Annotation>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GuardDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
+    // TODO: Add expression or condition details later
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GuardsBlock {
+    pub id: NumericId,
+    pub definitions: Vec<GuardDefinition>,
+    pub annotations: Vec<Annotation>,
+}
+
+// --- Invoke Definitions (Added) ---
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InvokeSource {
+    ServiceMethod(Identifier, Identifier), // ServiceName, MethodName
+    Literal(String), // String literal for function/promise name
+    Machine(Identifier), // MachineName
+    // TODO: Potentially DatabaseOperation, etc.
+}
+
+// Placeholder for input mapping, onDone/onError transitions
+// For now, just storing the target state identifier
+#[derive(Debug, Clone, PartialEq)]
+pub struct InvokeTransitionTarget {
+    pub target_state: Identifier, 
+    // TODO: Add actions, guards later if needed for invoke transitions
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InvokeDefinition {
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
+    pub src: InvokeSource,
+    pub input_mapping: Option<Vec<Argument>>, // Using Argument similar to annotations for now
+    pub on_done: Option<InvokeTransitionTarget>, // Simplified target
+    pub on_error: Option<InvokeTransitionTarget>, // Simplified target
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InvokesBlock {
+    pub id: NumericId,
+    pub definitions: Vec<InvokeDefinition>,
+    pub annotations: Vec<Annotation>,
+}
+
+// Represents an invoke call within a state, referencing a definition
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateInvokeDefinition {
+     pub name: Identifier, // Name of the invoke instance within the state
+     pub id: NumericId,
+     pub annotations: Vec<Annotation>,
+     pub src_ref: Identifier, // Name of the InvokeDefinition being referenced (from invokes block)
+     pub input_mapping: Option<Vec<Argument>>, // Specific input for this instance
+     pub on_done: Option<InvokeTransitionTarget>, // Specific onDone for this instance
+     pub on_error: Option<InvokeTransitionTarget>, // Specific onError for this instance
+}
+
+// --- Delayed Transitions (Added) ---
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TimeUnit {
+    Milliseconds,
+    Seconds,
+    Minutes,
+    Hours,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Duration {
+    pub value: u64,
+    pub unit: TimeUnit,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AfterTransitionDefinition {
+    pub delay: Duration,
+    pub id: NumericId,
+    pub target: Identifier,
+    pub annotations: Vec<Annotation>, // Add if grammar allows annotations here later
+    pub actions: Vec<Identifier>,
+    pub guards: Vec<Identifier>,
 }
 
 // --- TopLevelDefinition (Updated) ---

@@ -13,6 +13,7 @@ identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 integer_literal = @{ ("-")? ~ ASCII_DIGIT+ }
 hex_literal = @{ "0x" ~ ASCII_HEX_DIGIT+ }
+duration_literal = @{ ASCII_DIGIT+ ~ ("ms" | "s" | "m" | "h") }
 
 // Placeholder for the main parsing rule
 // file = { SOI ~ (COMMENT | PUSH(definition))* ~ EOI } // Old rule
@@ -86,7 +87,7 @@ annotation_value = _{ string_literal | integer_literal } // TODO: | boolean_lite
 
 machine_definition = { annotation* ~ "machine" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ machine_element* ~ "}" }
 // Updated placeholder for elements inside a machine block
-machine_element = { context_definition | states_definition | actions_definition | guards_definition } // Added actions/guards
+machine_element = { context_definition | states_definition | actions_definition | guards_definition | invokes_definition } // Added invokes
 
 context_definition = { annotation* ~ "context" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ context_field_definition* ~ "}" }
 // Context fields are similar to struct fields, but might have $default
@@ -99,10 +100,17 @@ states_definition = { annotation* ~ "states" ~ "@id(" ~ integer_literal ~ ")" ~ 
 state_definition = { annotation* ~ "state" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ state_element* ~ "}" }
 
 // Placeholder for elements inside a state block
-state_element = { initial_annotation | final_annotation | on_transition } // Allow initial/final flags
+state_element = { initial_annotation | final_annotation | on_entry | on_exit | on_transition | after_transition | state_invoke } // Added entry/exit/after
 
 // Basic event transition
 on_transition = { "on" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ transition_details ~ ";" }
+
+// --- Delayed Transition (Added) ---
+after_transition = { "after" ~ duration_literal ~ "@id(" ~ integer_literal ~ ")" ~ transition_details ~ ";" }
+
+// --- Entry/Exit Actions (Added) ---
+on_entry = { "onEntry" ~ "{" ~ action_ref* ~ "}" ~ ";" }
+on_exit = { "onExit" ~ "{" ~ action_ref* ~ "}" ~ ";" }
 
 // Details following the transition keyword
 transition_details = { "transition" ~ identifier ~ transition_block? }
@@ -117,6 +125,37 @@ action_definition = { annotation* ~ "action" ~ identifier ~ "@id(" ~ integer_lit
 // --- Guard Definitions (Added) ---
 guards_definition = { annotation* ~ "guards" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ guard_definition* ~ "}" }
 guard_definition = { annotation* ~ "guard" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ ";" } // Simple identifier-based for now
+
+// --- Invoke Definitions (Added) ---
+invokes_definition = { annotation* ~ "invokes" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ invoke_definition* ~ "}" }
+
+// invoke Name @id(N) { src: Source; input?: {...}; onDone?: ...; onError?: ...; }
+invoke_definition = { annotation* ~ "invoke" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ invoke_body ~ ";" }
+
+// Body of the invoke definition: { src: ... }
+invoke_body = { "{" ~ invoke_src ~ invoke_param* ~ "}" } 
+
+// Source of the invocation (service.method, "string", MachineName)
+invoke_src = { "src" ~ ":" ~ (service_method_ref | string_literal | identifier) ~ ";" } // Allow identifier for MachineName
+service_method_ref = { identifier ~ "." ~ identifier } 
+
+// Other invoke parameters (input, onDone, onError) - Very basic placeholders for now
+invoke_param = { (input_mapping | on_done | on_error) }
+input_mapping = { "input" ~ ":" ~ object_literal ~ ";" } // Placeholder: simple object literal
+on_done = { "onDone" ~ ":" ~ transition_ref ~ ";" } // Placeholder: references a transition (needs defining) 
+on_error = { "onError" ~ ":" ~ transition_ref ~ ";" } // Placeholder: references a transition
+
+transition_ref = { identifier } // Placeholder: just the target state name for now
+object_literal = { "{" ~ annotation_args? ~ "}" } // Reuse annotation_args for key:value structure (basic)
+
+// --- State Invocation (Added) ---
+// invoke StateInvokeName @id(N) { src: invokes.DefinedInvokeName; input?: {...}; onDone?: ...; onError?: ... }
+state_invoke = { "invoke" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ state_invoke_body ~ ";" }
+
+// Similar to invoke_body but src must reference a defined invoke
+state_invoke_body = { "{" ~ state_invoke_src ~ invoke_param* ~ "}" } 
+state_invoke_src = { "src" ~ ":" ~ invoke_ref ~ ";" } // Reference defined invoke: invokes.Name
+invoke_ref = { "invokes" ~ "." ~ identifier }
 
 // TODO: Add rules for all other elements from DSL.md:
 // - enums, machines, services, interfaces, protocols, actors, channels, events
