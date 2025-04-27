@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_variables)] // Allow unused for now
+#![allow(dead_code, unused_variables)] // Keep module level for now
 use crate::ast::SsotAst;
 use strum_macros::Display;
 use thiserror::Error;
