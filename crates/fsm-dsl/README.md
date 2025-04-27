@@ -13,16 +13,16 @@ This crate is a library for parsing the state machine description language (DSL)
 ## 現在の機能
 
 -   `.ssot` ファイルの基本的な構文解析:
-    -   ファイル ID (`@0x...;`)
+    -   ファイル ID (`file_id: 0x...;`)
     -   インポート文 (`import "..."`)
     -   コメント (`# ...`)
--   トップレベルブロックの認識:
+-   トップレベルブロックの解析:
     -   `types {}`
-    -   `actors {}` (プレースホルダー)
-    -   `communication {}` (プレースホルダー)
-    -   `services {}` (プレースホルダー)
-    -   `machines {}` (プレースホルダー)
-    -   `deployment_config {}` (プレースホルダー)
+    -   `actors {}`
+    -   `communication {}`
+    -   `services {}`
+    -   `machines {}`
+    -   `deployment_config {}` (ブロック認識のみ、中身は未実装)
 -   `types {}` ブロックの詳細な解析:
     -   `struct` 定義 (フィールド、ID、アノテーション付き)
     -   `enum` 定義 (バリアント、ID、アノテーション付き)
@@ -34,33 +34,52 @@ This crate is a library for parsing the state machine description language (DSL)
         -   `$meta(...)` (キー: 値形式の引数 - 文字列/整数)
         -   `$genericFlag;`
         -   `$genericKeyValue("...")`
--   基本的なテストケースによるパーサーの検証。
+-   `machines {}` ブロックの詳細な解析:
+    -   `machine` 定義
+    -   `context` 定義 (フィールド、`$default` はアノテーションとして取得)
+    -   `actions {}` ブロックと `action` 定義
+    -   `guards {}` ブロックと `guard` 定義
+    -   `invokes {}` ブロックと `invoke` 定義 (src: Service.Method | "literal" | MachineName, onDone/onError ターゲット状態)
+    -   `states {}` ブロックと `state` 定義
+        -   イベント遷移 (`on EVENT ...`)
+        -   遅延遷移 (`after DURATION ...`)
+        -   状態内 `invoke` 呼び出し (src: invokes.Name, input マッピング(基本), onDone/onError ターゲット状態)
+        -   状態内アクション (`onEntry`, `onExit`)
+        -   状態フラグ (`$initial`, `$final`, `$parallel`)
+        -   ネスト状態 (`state` 内の `states {}`)
+        -   履歴状態 (`history shallow|deep ... target ...`)
+        -   遷移ブロック内のアクション/ガード参照 (`action NAME;`, `guard NAME;`)
+-   `services {}` ブロックの解析:
+    -   `interface` 定義
+    -   `method` 定義 (パラメータリスト、戻り値型、メソッドボディ内アノテーション)
+    -   `service` 定義 (`extends`, `$implements` 等アノテーション)
+-   `communication {}` ブロックの解析:
+    -   `protocol` 定義
+    -   `channel` 定義 (`description`, `parameters` (基本))
+    -   `event` 定義 (フィールドリスト, `$channel` アノテーション)
+-   `actors {}` ブロックの解析:
+    -   `actor` 定義 (アノテーション含む)
+-   基本的なテストケースによる実装済み部分の検証。
 
 ## 今後のロードマップ
 
-1.  **ステートマシン構文の実装:**
-    -   `machines {}` ブロック内の詳細な構文解析:
-        -   `machine` 定義
-        -   `context` 定義 (フィールド)
-        -   `states {}` ブロックとネストされた状態
-        -   `initial`, `final`, `parallel`, `history` 状態
-        -   イベントハンドラ (`on EVENT ...`)
-        -   遅延遷移 (`after DURATION ...`)
-        -   遷移 (`transition TARGET { action ..., guard ... }`)
-        -   `actions {}` ブロックとアクション定義
-        -   `guards {}` ブロックとガード定義
-        -   `invokes {}` ブロックと呼び出し定義 (サービス、プロミス、マシン)
-2.  **サービス/通信/アクター構文の実装:**
-    -   `services {}` ブロック: `interface`, `service` 定義 (`extends`, `implements`, `$route`, `$protocol` など)
-    -   `communication {}` ブロック: `protocol`, `channel`, `event` 定義
-    -   `actors {}` ブロック: `actor` 定義
-3.  **デプロイメント構文の実装:**
-    -   `deployment_config {}` ブロック: `environment`, `infrastructure`, `deployment` 定義
-4.  **高度な型/アノテーション値のサポート:**
-    -   `map<K, V>` 型指定子
-    -   アノテーション値としての `boolean`, `list`, `object` (ネスト構造)
+1.  **`deployment_config` ブロックの実装:**
+    -   `environment`, `infrastructure`, `deployment` 定義の詳細な解析。
+2.  **高度な型/アノテーション値のサポート:**
+    -   `map<K, V>` 型指定子。
+    -   アノテーション値としての `boolean`, `list`, `object` (ネスト構造、例: `$db(policies: [...])`, `$validate` の複雑なルール)。
+    -   Channel パラメータの型パース。
+3.  **ステートマシン機能の強化:**
+    -   並列状態 (`$parallel`) のリージョン（複数の `states` ブロック）のパースとAST表現。
+    -   遷移ターゲットの拡張 (`.history`, 相対パスなど)。
+    -   Invoke 詳細の強化 (`input` の詳細なマッピング、`onDone`/`onError` でのアクション/ガード実行)。
+4.  **参照解決とバリデーション:**
+    -   型名、サービス名、アクション/ガード/インボーク名などの参照解決。
+    -   インポートされたファイル間の名前解決。
+    -   IDのスコープ内一意性などのバリデーション。
+    -   循環依存の検出。
 5.  **エラー報告の改善:** より詳細で位置情報に基づいたエラーメッセージ。
-6.  **テストカバレッジの向上:** 特に複雑なケースやエッジケースを含むテストの追加。
+6.  **テストカバレッジの向上:** 特にエッジケース、複雑な組み合わせ、未実装部分のテストを追加。
 7.  **(任意) コードジェネレーターの追加:** AST から Rust コードや他の形式 (Mermaid, PlantUML など) を生成する機能。
 
 ## 使用例

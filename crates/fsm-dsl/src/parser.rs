@@ -1,4 +1,4 @@
-use crate::ast::{Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition, ActionsBlock, ActionDefinition, GuardsBlock, GuardDefinition, InvokesBlock, InvokeDefinition, InvokeSource, StateInvokeDefinition, InvokeTransitionTarget, Duration, TimeUnit, AfterTransitionDefinition, HistoryDefinition, HistoryType, ServicesBlock, ServiceItem, InterfaceDefinition, MethodDefinition, ParameterDefinition, ServiceDefinition, CommunicationBlock, CommunicationItem, ProtocolDefinition, ChannelDefinition, EventDefinition, ActorsBlock, ActorDefinition};
+use crate::ast::{Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition, ActionsBlock, ActionDefinition, GuardsBlock, GuardDefinition, InvokesBlock, InvokeDefinition, InvokeSource, StateInvokeDefinition, InvokeTransitionTarget, Duration, TimeUnit, AfterTransitionDefinition, HistoryDefinition, HistoryType, ServicesBlock, ServiceItem, InterfaceDefinition, MethodDefinition, ParameterDefinition, ServiceDefinition, CommunicationBlock, CommunicationItem, ProtocolDefinition, ChannelDefinition, EventDefinition, ActorsBlock, ActorDefinition, DeploymentConfigBlock, DeploymentItem, EnvironmentDefinition, InfrastructureDefinition, DeploymentDefinition, AttributeDefinition};
 use pest::Parser;
 use pest_derive::Parser;
 use pest::iterators::{Pair, Pairs};
@@ -84,8 +84,7 @@ pub fn parse_ssot_content(content: &str, source_path: Option<PathBuf>) -> ParseR
                             ast.definitions.push(TopLevelDefinition::Services(parse_services_block(inner_definition_pair)?));
                         }
                          Rule::deployment_config_block => {
-                            eprintln!("Skipping deployment_config_block definition for now.");
-                             // ast.definitions.push(TopLevelDefinition::DeploymentConfig(parse_deployment_config_block(inner_definition_pair)?));
+                            ast.definitions.push(TopLevelDefinition::DeploymentConfig(parse_deployment_config_block(inner_definition_pair)?));
                         }
                         Rule::annotation => {
                              eprintln!("Skipping top-level annotation definition for now.");
@@ -1356,6 +1355,195 @@ fn parse_actor_definition(pair: Pair<Rule>) -> ParseResult<ActorDefinition> {
     })
 }
 
+// --- Deployment Config Block Parsing (Added) ---
+
+fn parse_deployment_config_block(pair: Pair<Rule>) -> ParseResult<DeploymentConfigBlock> {
+    if pair.as_rule() != Rule::deployment_config_block {
+        return Err(ParseError::UnexpectedRule { expected: Rule::deployment_config_block, found: pair.as_rule() });
+    }
+    println!("Parsing deployment_config block: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut definitions = Vec::new();
+
+    // Order: annotation*, "deployment_config", "{", deployment_item*, "}"
+    for inner_pair in pair.into_inner() {
+        match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::deployment_item => {
+                let item_pair = inner_pair.into_inner().next().unwrap();
+                match item_pair.as_rule() {
+                    Rule::environment_definition => definitions.push(DeploymentItem::Environment(parse_environment_definition(item_pair)?)),
+                    Rule::infrastructure_definition => definitions.push(DeploymentItem::Infrastructure(parse_infrastructure_definition(item_pair)?)),
+                    Rule::deployment_definition => definitions.push(DeploymentItem::Deployment(parse_deployment_definition(item_pair)?)),
+                    rule => return Err(ParseError::UnexpectedRule { expected: Rule::environment_definition /* or others */, found: rule })
+                }
+            }
+            _ => { /* Skip keyword, braces */ }
+        }
+    }
+    Ok(DeploymentConfigBlock { annotations, definitions })
+}
+
+fn parse_environment_definition(pair: Pair<Rule>) -> ParseResult<EnvironmentDefinition> {
+    if pair.as_rule() != Rule::environment_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::environment_definition, found: pair.as_rule() });
+    }
+     println!("Parsing environment definition: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut name: Option<Identifier> = None;
+    let mut id: Option<NumericId> = None;
+    let mut extends: Option<Identifier> = None;
+    let mut variables: Option<Vec<Argument>> = None;
+
+     // Order: annotation*, "environment", identifier, "@id(", int, ")", extends?, body, ";"
+     for inner_pair in pair.into_inner() {
+         match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::identifier => name = Some(parse_identifier(inner_pair)?),
+            Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
+            Rule::environment_extends => {
+                extends = Some(parse_identifier(inner_pair.into_inner().next().unwrap())?);
+            }
+            Rule::environment_body => {
+                 for element in inner_pair.into_inner() {
+                    match element.as_rule() {
+                        Rule::variables_element => {
+                            let vars_obj = element.into_inner().find(|p| p.as_rule() == Rule::object_literal).unwrap();
+                            variables = Some(parse_annotation_args(vars_obj.into_inner())?);
+                        }
+                        Rule::annotation => annotations.push(parse_annotation(element)?),
+                         _ => { /* Skip braces etc. */ }
+                    }
+                 }
+            }
+             _ => { /* Skip keywords, @id, etc. */ }
+         }
+     }
+
+     Ok(EnvironmentDefinition {
+        name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing environment name".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing environment id".to_string() })?,
+        annotations,
+        extends,
+        variables,
+    })
+}
+
+fn parse_infrastructure_definition(pair: Pair<Rule>) -> ParseResult<InfrastructureDefinition> {
+    if pair.as_rule() != Rule::infrastructure_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::infrastructure_definition, found: pair.as_rule() });
+    }
+    println!("Parsing infrastructure definition: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut name: Option<Identifier> = None;
+    let mut id: Option<NumericId> = None;
+    let mut extends: Option<Identifier> = None;
+    let mut attributes = Vec::new();
+
+    // Order: annotation*, "infrastructure", identifier, "@id(", int, ")", extends?, body, ";"
+    for inner_pair in pair.into_inner() {
+         match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::identifier => name = Some(parse_identifier(inner_pair)?),
+            Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
+            Rule::infrastructure_extends => {
+                extends = Some(parse_identifier(inner_pair.into_inner().next().unwrap())?);
+            }
+            Rule::infrastructure_body => {
+                 for element in inner_pair.into_inner() {
+                    match element.as_rule() {
+                         Rule::attribute_kv_pair => attributes.push(parse_attribute_kv_pair(element)?),
+                         Rule::annotation => annotations.push(parse_annotation(element)?),
+                         _ => { /* Skip braces etc. */ }
+                    }
+                 }
+            }
+             _ => { /* Skip keywords, @id, etc. */ }
+         }
+     }
+
+     Ok(InfrastructureDefinition {
+        name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing infrastructure name".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing infrastructure id".to_string() })?,
+        annotations,
+        extends,
+        attributes,
+    })
+}
+
+fn parse_attribute_kv_pair(pair: Pair<Rule>) -> ParseResult<AttributeDefinition> {
+     if pair.as_rule() != Rule::attribute_kv_pair {
+        return Err(ParseError::UnexpectedRule { expected: Rule::attribute_kv_pair, found: pair.as_rule() });
+    }
+    let mut inner = pair.into_inner();
+    let key = parse_identifier(inner.next().unwrap())?;
+    let value = parse_annotation_value(inner.next().unwrap())?;
+    Ok(AttributeDefinition { key, value })
+}
+
+fn parse_deployment_definition(pair: Pair<Rule>) -> ParseResult<DeploymentDefinition> {
+    if pair.as_rule() != Rule::deployment_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::deployment_definition, found: pair.as_rule() });
+    }
+    println!("Parsing deployment definition: {}", pair.as_str());
+
+    let mut annotations = Vec::new();
+    let mut name: Option<Identifier> = None;
+    let mut id: Option<NumericId> = None;
+    let mut target_environment: Option<Identifier> = None;
+    let mut target_infrastructure: Option<Vec<Argument>> = None;
+    let mut deployable: Option<Identifier> = None;
+    let mut config: Option<Vec<Argument>> = None;
+    let mut other_attributes = Vec::new();
+
+     // Order: annotation*, "deployment", identifier, "@id(", int, ")", body, ";"
+     for inner_pair in pair.into_inner() {
+         match inner_pair.as_rule() {
+            Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
+            Rule::identifier => name = Some(parse_identifier(inner_pair)?),
+            Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
+            Rule::deployment_body => {
+                 for element in inner_pair.into_inner() {
+                    match element.as_rule() {
+                         Rule::target_env_element => {
+                             target_environment = Some(parse_identifier(element.into_inner().find(|p| p.as_rule() == Rule::identifier).unwrap())?);
+                         }
+                         Rule::target_infra_element => {
+                             let infra_obj = element.into_inner().find(|p| p.as_rule() == Rule::object_literal).unwrap();
+                             target_infrastructure = Some(parse_annotation_args(infra_obj.into_inner())?);
+                         }
+                         Rule::deployable_element => {
+                             deployable = Some(parse_identifier(element.into_inner().find(|p| p.as_rule() == Rule::identifier).unwrap())?);
+                         }
+                         Rule::config_element => {
+                             let config_obj = element.into_inner().find(|p| p.as_rule() == Rule::object_literal).unwrap();
+                             config = Some(parse_annotation_args(config_obj.into_inner())?);
+                         }
+                         Rule::attribute_kv_pair => other_attributes.push(parse_attribute_kv_pair(element)?),
+                         Rule::annotation => annotations.push(parse_annotation(element)?),
+                         _ => { /* Skip braces etc. */ }
+                    }
+                 }
+            }
+             _ => { /* Skip keywords, @id, etc. */ }
+         }
+     }
+
+     Ok(DeploymentDefinition {
+        name: name.ok_or_else(|| ParseError::InvalidInput { message: "Missing deployment name".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing deployment id".to_string() })?,
+        annotations,
+        target_environment,
+        target_infrastructure,
+        deployable,
+        config,
+        other_attributes,
+    })
+}
+
 // --- Public API ---
 
 /// Reads and parses an SSOT file from the given path.
@@ -1372,7 +1560,7 @@ pub fn parse_ssot_file<P: AsRef<Path>>(path: P) -> ParseResult<SsotAst> {
 mod tests {
     use super::*;
     
-    use crate::ast::{TypeDefinition, Annotation, TypeSpecifier, InvokeSource, Duration, TimeUnit, HistoryType, ServiceItem, CommunicationItem, ActorsBlock, ActorDefinition}; // Ensure needed types are imported
+    use crate::ast::{TypeDefinition, Annotation, TypeSpecifier, InvokeSource, Duration, TimeUnit, HistoryType, ServiceItem, CommunicationItem, ActorsBlock, ActorDefinition, DeploymentItem, DeploymentConfigBlock}; // Ensure needed types are imported
     use pretty_assertions::assert_eq;
 
     // Helper to create simple Identifier
@@ -1974,6 +2162,111 @@ mod tests {
         assert_eq!(actor_api.annotations.len(), 2);
         assert!(actor_api.annotations.iter().any(|a| matches!(a, Annotation::GenericKeyValue(id, _) if id.name == "type")));
         assert!(actor_api.annotations.iter().any(|a| matches!(a, Annotation::Description(_))));
+    }
+
+    #[test]
+    fn test_parse_deployment_config_block() {
+        let content = r#"
+            file_id: 0xffffffffffffffff;
+            actors { actor DummyActor @id(0) {}; }
+            services { service DummyService @id(0) {}; }
+
+            deployment_config {
+                $description("Deployment settings");
+
+                environment Production @id(0) {
+                    variables: { logLevel: "info", apiEndpoint: "https://prod.example.com" };
+                    $provider("aws");
+                }
+
+                environment Staging @id(1) extends Production {
+                    variables: { logLevel: "debug" }; // Override variable
+                }
+
+                infrastructure Compute @id(0) {
+                    type: "kubernetes";
+                    instanceType: "t3.large";
+                }
+
+                deployment DeployLive @id(0) {
+                    targetEnvironment: Production;
+                    targetInfrastructure: { cluster: Compute }; // Simple reference for now
+                    deployable: DummyService;
+                    replicas: 3;
+                    config: { secretKey: "$env(PROD_SECRET)" };
+                    $strategy("blue-green");
+                }
+            }
+        "#;
+        let result = parse_ssot_content(content, None);
+        println!("Parse result (deployment_config): {:?}", result);
+        if let Err(e) = &result {
+            if let ParseError::PestError(pe) = e {
+                eprintln!("Pest Error Details:\n{}", pe);
+            }
+        }
+        assert!(result.is_ok());
+        let ast = result.unwrap();
+
+        let dep_block = ast.definitions.iter().find_map(|def| match def {
+            TopLevelDefinition::DeploymentConfig(block) => Some(block),
+            _ => None,
+        }).expect("DeploymentConfig block not found");
+
+         assert_eq!(dep_block.annotations.len(), 1);
+         assert!(matches!(dep_block.annotations[0], Annotation::Description(_)));
+         assert_eq!(dep_block.definitions.len(), 4);
+
+         // Check Environment Production
+         let env_prod = match &dep_block.definitions[0] {
+             DeploymentItem::Environment(env) => env,
+             _ => panic!("Expected EnvironmentDefinition")
+         };
+         assert_eq!(env_prod.name.name, "Production");
+         assert_eq!(env_prod.id.value, 0);
+         assert!(env_prod.extends.is_none());
+         assert!(env_prod.variables.is_some());
+         assert_eq!(env_prod.variables.as_ref().unwrap().len(), 2);
+         assert_eq!(env_prod.annotations.len(), 1);
+         assert!(matches!(env_prod.annotations[0], Annotation::GenericKeyValue(id, _) if id.name == "provider"));
+
+         // Check Environment Staging
+          let env_staging = match &dep_block.definitions[1] {
+             DeploymentItem::Environment(env) => env,
+             _ => panic!("Expected EnvironmentDefinition")
+         };
+         assert_eq!(env_staging.name.name, "Staging");
+         assert!(env_staging.extends.is_some());
+         assert_eq!(env_staging.extends.as_ref().unwrap().name, "Production");
+         assert!(env_staging.variables.is_some());
+         assert_eq!(env_staging.variables.as_ref().unwrap().len(), 1); // Check override
+
+         // Check Infrastructure Compute
+         let infra_compute = match &dep_block.definitions[2] {
+             DeploymentItem::Infrastructure(infra) => infra,
+             _ => panic!("Expected InfrastructureDefinition")
+         };
+         assert_eq!(infra_compute.name.name, "Compute");
+         assert_eq!(infra_compute.attributes.len(), 2);
+         assert_eq!(infra_compute.attributes[0].key.name, "type");
+         assert_eq!(infra_compute.attributes[1].key.name, "instanceType");
+
+         // Check Deployment DeployLive
+         let dep_live = match &dep_block.definitions[3] {
+             DeploymentItem::Deployment(dep) => dep,
+             _ => panic!("Expected DeploymentDefinition")
+         };
+         assert_eq!(dep_live.name.name, "DeployLive");
+         assert!(dep_live.target_environment.is_some());
+         assert_eq!(dep_live.target_environment.as_ref().unwrap().name, "Production");
+         assert!(dep_live.target_infrastructure.is_some()); // Basic check
+         assert!(dep_live.deployable.is_some());
+         assert_eq!(dep_live.deployable.as_ref().unwrap().name, "DummyService");
+         assert!(dep_live.config.is_some());
+         assert_eq!(dep_live.other_attributes.len(), 1);
+         assert_eq!(dep_live.other_attributes[0].key.name, "replicas");
+         assert_eq!(dep_live.annotations.len(), 1);
+         assert!(matches!(dep_live.annotations[0], Annotation::GenericKeyValue(id, _) if id.name == "strategy"));
     }
 
 } 
