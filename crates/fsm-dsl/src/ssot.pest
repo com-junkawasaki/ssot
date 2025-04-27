@@ -6,6 +6,7 @@ We'll progressively build this based on DSL.md.
 // Define whitespace and comments (ignored by parser rules)
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "#" ~ (!"\n" ~ ANY)* }
+ignored = _{ WHITESPACE | COMMENT } // Added back
 
 // Basic building blocks
 identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
@@ -14,8 +15,16 @@ integer_literal = @{ ("-")? ~ ASCII_DIGIT+ }
 hex_literal = @{ "0x" ~ ASCII_HEX_DIGIT+ }
 
 // Placeholder for the main parsing rule
-// file = _{ SOI ~ (ignored | PUSH(definition))* ~ ignored* ~ EOI } // Reverted change
-file = { SOI ~ (COMMENT | PUSH(definition))* ~ EOI } // Make file rule atomic
+// file = { SOI ~ (COMMENT | PUSH(definition))* ~ EOI } // Old rule
+file = {
+    SOI ~
+    ignored* ~ // Allow leading ignored
+    ( // Group for definitions
+        PUSH(definition) ~
+        ignored* // Allow ignored after definition
+    )* ~ // Repeat zero or more times
+    EOI
+}
 
 // Updated top-level definitions rule
 definition = { file_id | import_statement | types_block | actors_block | communication_block | services_block | machines_block | deployment_config_block | annotation }
@@ -59,6 +68,9 @@ db_annotation = { "$" ~ ("db") ~ "(" ~ annotation_args? ~ ")" ~ ";" }
 meta_annotation = { "$" ~ ("meta") ~ "(" ~ annotation_args? ~ ")" ~ ";" }
 generic_kv_annotation = { "$" ~ identifier ~ "(" ~ annotation_value ~ ")" }
 generic_flag_annotation = { "$" ~ identifier ~ ";" }
+// Add specific flag annotations for states
+initial_annotation = { "$" ~ "initial" ~ ";" }
+final_annotation = { "$" ~ "final" ~ ";" }
 
 // Rule for key-value arguments inside annotations like $validate, $db, $meta
 annotation_args = { annotation_arg ~ ("," ~ annotation_arg)* }
@@ -74,7 +86,7 @@ annotation_value = _{ string_literal | integer_literal } // TODO: | boolean_lite
 
 machine_definition = { annotation* ~ "machine" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ machine_element* ~ "}" }
 // Updated placeholder for elements inside a machine block
-machine_element = { context_definition | states_definition } // TODO: | actions_definition | guards_definition | invokes_definition | initial_annotation etc.
+machine_element = { context_definition | states_definition | actions_definition | guards_definition } // Added actions/guards
 
 context_definition = { annotation* ~ "context" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ context_field_definition* ~ "}" }
 // Context fields are similar to struct fields, but might have $default
@@ -87,7 +99,7 @@ states_definition = { annotation* ~ "states" ~ "@id(" ~ integer_literal ~ ")" ~ 
 state_definition = { annotation* ~ "state" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ state_element* ~ "}" }
 
 // Placeholder for elements inside a state block
-state_element = { on_transition } // TODO: | on_entry | on_exit | invoke | nested_states | history etc.
+state_element = { initial_annotation | final_annotation | on_transition } // Allow initial/final flags
 
 // Basic event transition
 on_transition = { "on" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ transition_details ~ ";" }
@@ -97,6 +109,14 @@ transition_details = { "transition" ~ identifier ~ transition_block? }
 transition_block = { "{" ~ (action_ref | guard_ref)* ~ "}" }
 action_ref = { "action" ~ identifier ~ ";" } // Assuming actions are predefined identifiers for now
 guard_ref = { "guard" ~ identifier ~ ";" }  // Assuming guards are predefined identifiers for now
+
+// --- Action Definitions (Added) ---
+actions_definition = { annotation* ~ "actions" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ action_definition* ~ "}" }
+action_definition = { annotation* ~ "action" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ ";" } // Simple identifier-based for now
+
+// --- Guard Definitions (Added) ---
+guards_definition = { annotation* ~ "guards" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ guard_definition* ~ "}" }
+guard_definition = { annotation* ~ "guard" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ ";" } // Simple identifier-based for now
 
 // TODO: Add rules for all other elements from DSL.md:
 // - enums, machines, services, interfaces, protocols, actors, channels, events

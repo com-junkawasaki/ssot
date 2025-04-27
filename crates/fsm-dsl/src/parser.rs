@@ -48,48 +48,65 @@ pub fn parse_ssot_content(content: &str, source_path: Option<PathBuf>) -> ParseR
         return Err(ParseError::UnexpectedRule { expected: Rule::file, found: file_pair.as_rule() });
     }
 
-    for pair in file_pair.into_inner() {
+    // Iterate over the inner pairs of the 'file' rule
+    for pair in file_pair.into_inner() { 
         match pair.as_rule() {
-            Rule::file_id => {
-                if ast.file_id.is_some() {
-                    eprintln!("Warning: Duplicate file ID found, ignoring subsequent IDs.");
-                } else {
-                    ast.file_id = Some(parse_file_id(pair)?);
-                }
-            }
-            Rule::import_statement => {
-                ast.imports.push(parse_import_statement(pair)?);
-            }
-            Rule::types_block => {
-                ast.definitions.push(TopLevelDefinition::Types(parse_types_block(pair)?));
-            }
-            Rule::machines_block => {
-                ast.definitions.push(TopLevelDefinition::Machines(parse_machines_block(pair)?));
-            }
-            Rule::actors_block => {
-                eprintln!("Skipping actors_block for now.");
-                 // ast.definitions.push(TopLevelDefinition::Actors(parse_actors_block(pair)?));
-            }
-            Rule::communication_block => {
-                eprintln!("Skipping communication_block for now.");
-                // ast.definitions.push(TopLevelDefinition::Communication(parse_communication_block(pair)?));
-            }
-             Rule::services_block => {
-                eprintln!("Skipping services_block for now.");
-                // ast.definitions.push(TopLevelDefinition::Services(parse_services_block(pair)?));
-            }
-             Rule::deployment_config_block => {
-                eprintln!("Skipping deployment_config_block for now.");
-                 // ast.definitions.push(TopLevelDefinition::DeploymentConfig(parse_deployment_config_block(pair)?));
-            }
-            Rule::annotation => {
-                 eprintln!("Skipping top-level annotation for now.");
-                 // TODO: Handle top-level annotations if needed
-            }
             Rule::COMMENT => { /* Skip comments */ }
             Rule::EOI => { /* End of Input, expected */ }
+
+            Rule::definition => { // Handle the PUSHed definition rule
+                // Get the actual definition *inside* the 'definition' pair
+                if let Some(inner_definition_pair) = pair.into_inner().next() {
+                    match inner_definition_pair.as_rule() {
+                        Rule::file_id => {
+                            if ast.file_id.is_some() {
+                                eprintln!("Warning: Duplicate file ID found, ignoring subsequent IDs.");
+                            } else {
+                                ast.file_id = Some(parse_file_id(inner_definition_pair)?);
+                            }
+                        }
+                        Rule::import_statement => {
+                            ast.imports.push(parse_import_statement(inner_definition_pair)?);
+                        }
+                        Rule::types_block => {
+                            ast.definitions.push(TopLevelDefinition::Types(parse_types_block(inner_definition_pair)?));
+                        }
+                        Rule::machines_block => {
+                            ast.definitions.push(TopLevelDefinition::Machines(parse_machines_block(inner_definition_pair)?));
+                        }
+                        Rule::actors_block => {
+                            eprintln!("Skipping actors_block definition for now.");
+                             // ast.definitions.push(TopLevelDefinition::Actors(parse_actors_block(inner_definition_pair)?));
+                        }
+                        Rule::communication_block => {
+                            eprintln!("Skipping communication_block definition for now.");
+                            // ast.definitions.push(TopLevelDefinition::Communication(parse_communication_block(inner_definition_pair)?));
+                        }
+                         Rule::services_block => {
+                            eprintln!("Skipping services_block definition for now.");
+                            // ast.definitions.push(TopLevelDefinition::Services(parse_services_block(inner_definition_pair)?));
+                        }
+                         Rule::deployment_config_block => {
+                            eprintln!("Skipping deployment_config_block definition for now.");
+                             // ast.definitions.push(TopLevelDefinition::DeploymentConfig(parse_deployment_config_block(inner_definition_pair)?));
+                        }
+                        Rule::annotation => {
+                             eprintln!("Skipping top-level annotation definition for now.");
+                             // TODO: Handle top-level annotations if needed (e.g., store them separately)
+                        }
+                        // Handle unexpected rule *inside* definition
+                        inner_rule => {
+                             eprintln!("Warning: Skipping unexpected rule inside definition: {:?}", inner_rule);
+                        }
+                    }
+                } else {
+                     eprintln!("Warning: Found empty definition rule.");
+                }
+            }
+
+            // Catch rules that are not COMMENT, EOI, or definition
             other_rule => {
-                 eprintln!("Warning: Skipping unexpected top-level rule: {:?}", other_rule);
+                 eprintln!("Warning: Skipping unexpected element at top level: {:?}", other_rule);
             }
         }
     }
@@ -153,26 +170,27 @@ fn parse_types_block(pair: Pair<Rule>) -> ParseResult<TypesBlock> {
     let mut annotations = Vec::new();
     let mut definitions = Vec::new();
 
+    // Grammar: types_block = { annotation* ~ "types" ~ "{" ~ type_definition* ~ "}" }
+    // Iterate through the direct children provided by Pest based on the rule
     for inner_pair in pair.into_inner() {
         match inner_pair.as_rule() {
-            Rule::annotation => {
+            Rule::annotation => { // Handle annotation* part
                 annotations.push(parse_annotation(inner_pair)?);
             }
-            Rule::type_definition => {
-                 let definition_pair = inner_pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty type_definition rule".to_string() })?;
-                 match definition_pair.as_rule() {
-                     Rule::struct_definition => {
-                         definitions.push(TypeDefinition::Struct(parse_struct_definition(definition_pair)?));
-                     }
-                     Rule::enum_definition => {
-                         definitions.push(TypeDefinition::Enum(parse_enum_definition(definition_pair)?));
-                     }
-                     rule => return Err(ParseError::UnexpectedRule { expected: Rule::struct_definition /* or enum */, found: rule })
-                 }
+            // Handle struct/enum definitions directly because type_definition is silent
+            Rule::struct_definition => {
+                definitions.push(TypeDefinition::Struct(parse_struct_definition(inner_pair)?));
             }
-             // Handle unexpected rules within the types block if necessary
+            Rule::enum_definition => {
+                 definitions.push(TypeDefinition::Enum(parse_enum_definition(inner_pair)?));
+            }
+            // Explicitly ignore the keyword based on the grammar rule structure
+            Rule::identifier if inner_pair.as_str() == "types" => { /* Skip 'types' keyword */ }
+            // Assuming Pest consumes `{` and `}` as part of the rule structure.
+            
+            // Catch truly unexpected rules
             rule => {
-                eprintln!("Warning: Skipping unexpected rule within types_block: {:?}", rule);
+                eprintln!("Warning: Skipping unexpected rule within types_block: {:?} -> '{}'", rule, inner_pair.as_str());
             }
         }
     }
@@ -188,16 +206,23 @@ fn parse_machines_block(pair: Pair<Rule>) -> ParseResult<MachinesBlock> {
     let mut annotations = Vec::new();
     let mut definitions = Vec::new();
 
+    // Grammar: machines_block = { annotation* ~ "machines" ~ "{" ~ machine_definition* ~ "}" }
+    // Iterate through the direct children provided by Pest based on the rule
     for inner_pair in pair.into_inner() {
         match inner_pair.as_rule() {
-            Rule::annotation => {
+            Rule::annotation => { // Handle annotation* part
                 annotations.push(parse_annotation(inner_pair)?);
             }
-            Rule::machine_definition => {
+            Rule::machine_definition => { // Handle machine_definition* part
                 definitions.push(parse_machine_definition(inner_pair)?);
             }
+            // Explicitly ignore the keyword based on the grammar rule structure
+            Rule::identifier if inner_pair.as_str() == "machines" => { /* Skip 'machines' keyword */ }
+            // Assuming Pest consumes `{` and `}` as part of the rule structure.
+            
+            // Catch truly unexpected rules
             rule => {
-                eprintln!("Warning: Skipping unexpected rule within machines_block: {:?}", rule);
+                eprintln!("Warning: Skipping unexpected rule within machines_block: {:?} -> '{}'", rule, inner_pair.as_str());
             }
         }
     }
@@ -789,11 +814,8 @@ fn parse_string_literal(pair: Pair<Rule>) -> ParseResult<String> {
 }
 
 fn parse_type_specifier(pair: Pair<Rule>) -> ParseResult<TypeSpecifier> {
-     if pair.as_rule() != Rule::type_specifier {
-         return Err(ParseError::UnexpectedRule { expected: Rule::type_specifier, found: pair.as_rule() });
-     }
-     // type_specifier is silent (_)
-    let inner_pair = pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput{ message: "Empty type_specifier rule".to_string() })?;
+     // The input pair IS the actual rule (simple_type, list_type, optional_type) because type_specifier is silent
+    let inner_pair = pair; // No need to call into_inner() for the top level
     println!("Parsing specific type_specifier: {:?} - {}", inner_pair.as_rule(), inner_pair.as_str()); // Debug print
 
     match inner_pair.as_rule() {
@@ -850,17 +872,21 @@ mod tests {
     #[test]
     fn test_parse_basic_file_structure() {
         let content = r#"
-            @0x1234abcd5678ef90;
+            file_id: 0x1234abcd5678ef90; // Corrected syntax
             import "/path/to/common.ssot";
+            // Add empty blocks to ensure they parse okay at top level
+            types {}
+            machines {}
         "#;
         let result = parse_ssot_content(content, None);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Basic parsing failed: {:?}", result.err()); // Add message
         let ast = result.unwrap();
 
         assert_eq!(ast.file_id, Some(FileId { value: 0x1234abcd5678ef90 }));
         assert_eq!(ast.imports.len(), 1);
         assert_eq!(ast.imports[0], ImportStatement { path: "/path/to/common.ssot".to_string() });
-        assert!(ast.definitions.is_empty());
+        // Check that definitions for the empty blocks were NOT created
+        assert!(ast.definitions.is_empty(), "Definitions should be empty for empty blocks");
     }
 
     #[test]
