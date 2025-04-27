@@ -2212,4 +2212,136 @@ mod tests {
             _ => panic!("Expected UnusedDefinition error"),
         }
     }
+
+    #[test]
+    fn test_duplicate_id_error() {
+        let mut symbol_table = SymbolTable::default();
+        let mut errors = Vec::new();
+
+        let mut machine = create_test_machine("duplicate_id_machine");
+
+        // Define two states with the same ID
+        let state1 = StateDefinition {
+            name: Identifier {
+                name: "state1".to_string(),
+            },
+            id: NumericId { value: 5 }, // ID 5
+            annotations: vec![],
+            transitions: vec![],
+            entry_actions: vec![],
+            exit_actions: vec![],
+            invokes: vec![],
+            after_transitions: vec![],
+            history: None,
+            regions: vec![],
+            is_initial: true, // Need an initial state
+            is_final: false,
+            is_parallel: false,
+        };
+        let state2 = StateDefinition {
+            name: Identifier {
+                name: "state2".to_string(),
+            },
+            id: NumericId { value: 5 }, // Duplicate ID 5
+            annotations: vec![],
+            transitions: vec![],
+            entry_actions: vec![],
+            exit_actions: vec![],
+            invokes: vec![],
+            after_transitions: vec![],
+            history: None,
+            regions: vec![],
+            is_initial: false,
+            is_final: false,
+            is_parallel: false,
+        };
+
+        let states_block = StatesBlock {
+            id: NumericId { value: 0 }, // States block ID
+            states: vec![state1, state2],
+            annotations: vec![],
+        };
+        machine.states = Some(states_block);
+
+        // Register the machine definitions (which should trigger the duplicate ID check)
+        collect_machine_definitions(&machine, &mut symbol_table, &mut errors);
+
+        // Verify that a DuplicateId error is reported
+        assert_eq!(errors.len(), 1, "Expected 1 error, got {errors:?}");
+        assert!(matches!(
+            errors[0],
+            ValidationError::DuplicateId { id, kind, name, .. } if id == 5 && kind == "State" && name == "state2"
+        ));
+    }
+
+    #[test]
+    fn test_undefined_action_reference() {
+        let mut symbol_table = SymbolTable::default();
+        let mut errors = Vec::new();
+
+        let mut machine = create_test_machine("undefined_ref_machine");
+
+        // Define a state with a transition referencing a non-existent action
+        let transition = TransitionDefinition {
+            event: Identifier { name: "GO".to_string() },
+            id: NumericId { value: 0 },
+            target: Some(TransitionTarget::State(Identifier { name: "state2".to_string() })),
+            guards: vec![],
+            actions: vec![Identifier { name: "non_existent_action".to_string() }], // Reference undefined action
+            annotations: vec![],
+        };
+
+        let state1 = StateDefinition {
+            name: Identifier { name: "state1".to_string() },
+            id: NumericId { value: 1 },
+            annotations: vec![Annotation::Initial(None)], // Mark as initial
+            transitions: vec![transition],
+            entry_actions: vec![],
+            exit_actions: vec![],
+            invokes: vec![],
+            after_transitions: vec![],
+            history: None,
+            regions: vec![],
+            is_initial: true,
+            is_final: false,
+            is_parallel: false,
+        };
+         let state2 = StateDefinition { // Need the target state defined
+            name: Identifier { name: "state2".to_string() },
+            id: NumericId { value: 2 },
+            annotations: vec![],
+            transitions: vec![],
+            entry_actions: vec![],
+            exit_actions: vec![],
+            invokes: vec![],
+            after_transitions: vec![],
+            history: None,
+            regions: vec![],
+            is_initial: false,
+            is_final: false,
+            is_parallel: false,
+        };
+
+
+        let states_block = StatesBlock {
+            id: NumericId { value: 0 },
+            states: vec![state1, state2],
+            annotations: vec![],
+        };
+        machine.states = Some(states_block);
+
+        // Collect definitions first
+        collect_machine_definitions(&machine, &mut symbol_table, &mut errors);
+        assert!(errors.is_empty(), "Errors during definition collection: {errors:?}");
+
+        // Validate references
+        validate_machine_refs(&machine, &[], &mut symbol_table, &mut errors);
+
+        // Verify that an UndefinedReference error is reported
+        assert_eq!(errors.len(), 1, "Expected 1 error, got {errors:?}");
+        assert!(matches!(
+            errors[0],
+            ValidationError::UndefinedReference { kind, name, .. } if kind == "Action" && name == "non_existent_action"
+        ), "Unexpected error: {:?}", errors[0]);
+    }
 }
