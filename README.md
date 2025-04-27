@@ -77,45 +77,57 @@ This project is organized as a Cargo workspace:
 
 ## Current Status
 
-*   ✅ DSL Parsing: States, events (with fields), transitions, basic annotations.
-*   ✅ Rust Code Generation: Functional state/event enums, machine struct, basic transition logic, callback trait.
-*   ✅ Cap'n Proto Schema Generation: Structures reflecting FSM states, events, and payloads.
-*   ✅ TypeScript Type Generation: State unions, event discriminated unions, payload interfaces.
+*   ✅ DSL Parsing: States, events (with fields), transitions, annotations (including types, machines, parallel/history states).
+*   ✅ Validation (Basic): 
+    *   ID Uniqueness Check (Global).
+    *   Name Resolution (Types, States, Actions, Guards, Invokes within scope).
+    *   Structural Checks:
+        *   Machine requires exactly one `$initial` state.
+        *   `parallel` state requires nested `states` block (regions).
+        *   `history` state requires exactly one eventless default transition.
+*   🚧 Rust Code Generation: Functional state/event enums, machine struct, basic transition logic, callback trait.
+*   🚧 Cap'n Proto Schema Generation: Structures reflecting FSM states, events, and payloads.
+*   🚧 TypeScript Type Generation: State unions, event discriminated unions, payload interfaces.
 *   ✅ Documentation Generation: From `$description` annotations for all targets.
-*   ✅ Example `build.rs` Workflow: Demonstrates parsing and invoking all generators.
+*   ✅ Example `build.rs` Workflow: Demonstrates parsing and invoking generators.
 
 ## Roadmap / Future Enhancements
 
 The vision is to evolve `.ssot` into a comprehensive Single Source of Truth not just for FSM logic, but for related concerns across distributed systems. Key development areas include:
 
-*   **DSL Improvements:** Enhance the `.ssot` language expressiveness, validation, and structure.
-    *   Entry/exit actions, hierarchical states, advanced annotations (`$deprecated`).
-    *   Improved validation rules (duplicate checks, transition logic).
-    *   Support for multi-file/directory projects (imports, discovery, config).
-    *   Explicit output file mapping and manifest generation.
+*   **DSL Improvements & Validation:** Enhance the `.ssot` language expressiveness, validation, and structure.
+    *   ✅ **Implemented:** Basic ID/Name validation, Initial/Parallel/History state structure checks.
+    *   🔜 **Next:**
+        *   **More Validation:** Unused definition checks (actions, guards), more detailed transition target validation (e.g., disallow transitions *to* parent states from children?), type checking for actions/guards/invokes if parameters are added.
+        *   Implement remaining top-level blocks (Services, Communication, Actors, Deployment) in the parser and validator.
+        *   Refine annotation handling and validation (e.g., required annotations, value types).
+        *   Entry/exit actions, hierarchical states, advanced annotations (`$deprecated`).
+        *   Support for multi-file/directory projects (imports, discovery, config).
+        *   Explicit output file mapping and manifest generation.
 
 *   **Expanded SSOT Scope:** Define more system aspects within the DSL.
     *   Distributed system components/services definition.
     *   Inter-service communication specification (RPC, messaging, default to Cap'n Proto).
-    *   **Infrastructure Configuration:** Definition of deployment environments, infrastructure resources (compute, database, network), and deployment strategies (**Implemented!** See `DSL.md`).
+    *   Infrastructure Configuration: Definition of deployment environments, infrastructure resources (compute, database, network), and deployment strategies.
     *   Integration with related concerns: Routing, UI/UX mapping, API calls, authorization, testing (BDD), observability (logging/monitoring), configuration/feature flags, compliance/auditing, formal verification/simulation.
 
 *   **Code Generation Enhancements:** Refine existing generators and add new capabilities.
+    *   Update generators to utilize validated AST/SymbolTable information.
     *   Generate skeleton `guard`/`action` functions (Rust).
     *   Improved hierarchical state machine generation.
     *   Generate Cap'n Proto interfaces and client/server stubs.
-    *   **IaC Generation:** Generate configurations for tools like Terraform, CDK, Pulumi, Kubernetes manifests from `environment`, `infrastructure`, and `deployment` definitions.
+    *   IaC Generation: Generate configurations for tools like Terraform, CDK, Pulumi, Kubernetes manifests from `environment`, `infrastructure`, and `deployment` definitions.
 
 *   **Expanded Target Formats & Integrations:** Support more output types and standard formats.
     *   Visualizations (Mermaid, Graphviz DOT), advanced documentation (state tables, sequence diagrams).
-    *   Integration with standard formats: Requirements (ReqIF), Process/Architecture (BPMN, ArchiMate), System Modeling (UML/SysML), Data/Schema (JSON Schema, Protobuf, Avro, **Zod Schemas**, etc.), API/Interface (OpenAPI, gRPC, GraphQL, AsyncAPI), DB Schema (SQL, Prisma, Drizzle, Liquibase, etc.).
+    *   Integration with standard formats: Requirements (ReqIF), Process/Architecture (BPMN, ArchiMate), System Modeling (UML/SysML), Data/Schema (JSON Schema, Protobuf, Avro, Zod Schemas, etc.), API/Interface (OpenAPI, gRPC, GraphQL, AsyncAPI), DB Schema (SQL, Prisma, Drizzle, Liquibase, etc.).
 
 *   **Project-Specific Generation:** Tailor output for specific frameworks and platforms.
     *   Generate Next.js routing (`app/` router), database migrations (SQL diffs), platform configs (`fly.toml`, `vercel.json`), deployment hints (Docker, K8s).
     *   Implement target-based orchestration (e.g., `nextjs` target triggers Rust, TS, routing, DB migration generation).
 
 *   **Developer Experience & Tooling:** Improve usability, diagnostics, and integration.
-    *   Better error messages and diagnostics.
+    *   Better error messages and diagnostics (leverage validation results).
     *   Source map generation (linking generated code back to `.ssot`).
     *   Enhanced automated testing (especially for `build.rs` and generation edge cases).
     *   Alternative Rust integration via procedural macro (`#[state_machine(...)]`).
