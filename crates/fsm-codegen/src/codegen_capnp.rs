@@ -1,41 +1,43 @@
 //! Cap'n Proto schema generation logic.
 
 use crate::CodegenError;
-use fsm_dsl::ast::{AnnotationValue, SsotAst, MachineDefinition, TopLevelDefinition, TypeDefinition, StructDefinition, EnumDefinition, EnumVariant, FieldDefinition, TypeSpecifier, Annotation, Argument, NumericId, Identifier, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition};
+use fsm_dsl::ast::{AnnotationValue, SsotAst, MachineDefinition, TypeDefinition, StructDefinition, EnumDefinition, EnumVariant, FieldDefinition, TypeSpecifier, Annotation, Identifier, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition, PrimitiveType};
 // use std::fmt::Write; // Removed unused import
 
-// Function to map DSL FieldType to Cap'n Proto type string
-fn map_field_type_to_capnp_type(field_type: &FieldType) -> String {
-    match field_type {
-        FieldType::Void => "Void".to_string(),
-        FieldType::Bool => "Bool".to_string(),
-        FieldType::Int8 => "Int8".to_string(),
-        FieldType::Int16 => "Int16".to_string(),
-        FieldType::Int32 => "Int32".to_string(),
-        FieldType::Int64 => "Int64".to_string(),
-        FieldType::UInt8 => "UInt8".to_string(),
-        FieldType::UInt16 => "UInt16".to_string(),
-        FieldType::UInt32 => "UInt32".to_string(),
-        FieldType::UInt64 => "UInt64".to_string(),
-        FieldType::Float32 => "Float32".to_string(),
-        FieldType::Float64 => "Float64".to_string(),
-        FieldType::Text => "Text".to_string(),
-        FieldType::Data => "Data".to_string(),
-        FieldType::List(inner) => {
-            let inner_capnp_type = map_field_type_to_capnp_type(inner);
+// Function to map DSL TypeSpecifier to Cap'n Proto type string
+fn map_type_specifier_to_capnp_type(type_spec: &TypeSpecifier) -> String {
+    match type_spec {
+        TypeSpecifier::Primitive(prim) => match prim {
+            PrimitiveType::Void => "Void".to_string(),
+            PrimitiveType::Bool => "Bool".to_string(),
+            PrimitiveType::Int8 => "Int8".to_string(),
+            PrimitiveType::Int16 => "Int16".to_string(),
+            PrimitiveType::Int32 => "Int32".to_string(),
+            PrimitiveType::Int64 => "Int64".to_string(),
+            PrimitiveType::UInt8 => "UInt8".to_string(),
+            PrimitiveType::UInt16 => "UInt16".to_string(),
+            PrimitiveType::UInt32 => "UInt32".to_string(),
+            PrimitiveType::UInt64 => "UInt64".to_string(),
+            PrimitiveType::Float32 => "Float32".to_string(),
+            PrimitiveType::Float64 => "Float64".to_string(),
+            PrimitiveType::String => "Text".to_string(), // Map DSL String to Cap'n Proto Text
+            PrimitiveType::Bytes => "Data".to_string(),  // Map DSL Bytes to Cap'n Proto Data
+        },
+        TypeSpecifier::Identifier(ident) => ident.name.to_string(), // Assume identifier is a defined struct/enum
+        TypeSpecifier::List(inner) => {
+            let inner_capnp_type = map_type_specifier_to_capnp_type(inner);
             // Cap'n Proto requires List(T) where T is a known type (primitive, struct, enum, list, data, text)
-            // Assuming List can contain primitives, structs, text, data, or other lists directly.
             format!("List({})", inner_capnp_type)
         }
-        FieldType::Identifier(ident) => ident.to_string(), // Assume identifier is a valid Cap'n Proto struct/enum name
+        // Add other TypeSpecifier variants if necessary (e.g., Map, Tuple)
     }
 }
 
 // Helper function to generate Cap'n Proto comments from annotations
-fn generate_capnp_comment(annotations: &[fsm_dsl::ast::Annotation], indent: &str) -> String {
+fn generate_capnp_comment(annotations: &[Annotation], indent: &str) -> String {
     let mut comment_str = String::new();
     // Use the find_annotation_value helper defined below
-    if let Some(AnnotationValue::StringLiteral(desc)) =
+    if let Some(AnnotationValue::String(desc)) = // Changed StringLiteral to String
         find_annotation_value(annotations, "description")
     {
         for line in desc.lines() {
@@ -48,121 +50,195 @@ fn generate_capnp_comment(annotations: &[fsm_dsl::ast::Annotation], indent: &str
 
 // Updated internal generation function
 pub(crate) fn generate_capnp_schema_internal(
-    file_ast: &SsotFile,
-    machine_ast: &StateMachine,
+    ast: &SsotAst, // Use the new top-level AST type
+    // machine_ast: &StateMachine, // Remove old machine type
 ) -> Result<String, CodegenError> {
-    let mut capnp_code = String::new();
-    let mut struct_id_counter = 2u64; // Start struct IDs from @2
+    // Find the machine definition within the AST
+    let machine_ast = ast.definitions.iter().find_map(|def| {
+        if let TypeDefinition::Machine(m) = def {
+            Some(m)
+        } else {
+            None
+        }
+    }).ok_or_else(|| CodegenError::AstValidationError("No machine definition found in AST".to_string()))?;
 
-    // --- File ID ---
-    let file_id = file_ast.file_id;
+    let mut capnp_code = String::new();
+    let mut type_id_counter = 0u64; // Counter for unique Cap'n Proto type IDs (@0, @1, ...)
+
+    // --- File ID (Placeholder) ---
+    // TODO: Implement a stable File ID generation strategy (e.g., hash-based)
+    let file_id = 0xCAFEBABECAFED00D; // Placeholder ID
     capnp_code.push_str(&format!("@0x{:x};\n\n", file_id));
 
     // --- File Header Comment ---
-    capnp_code.push_str(&generate_capnp_comment(&machine_ast.annotations, "")); // Add comment for the whole machine
+    capnp_code.push_str(&generate_capnp_comment(&machine_ast.annotations, ""));
     capnp_code.push_str(&format!(
-        "# Cap'n Proto schema generated from .ssot for {}\n",
-        machine_ast.name
+        "# Cap'n Proto schema generated from .ssot for {}\n\n",
+        machine_ast.name.name
     ));
-    // Add package declaration if present (using annotation for now)
-    // TODO: Use file_ast.package_declaration when available
-    let package_name = file_ast.package_declaration.as_deref().or_else(|| {
-        file_ast.items.iter().find_map(|item| {
-            if let TopLevelItem::Annotation(anno) = item {
-                if anno.name == "capnpPackage" {
-                    if let Some(AnnotationValue::StringLiteral(pkg)) = &anno.value {
-                        return Some(pkg.as_str());
-                    }
+
+    // --- Using Declarations (Optional - for imports) ---
+    // TODO: Generate 'using import "other_schema.capnp".*;' if needed
+
+    // --- Generate Structs/Enums defined in the SsotAst ---
+    let mut defined_types_code = String::new();
+    for def in &ast.definitions {
+        match def {
+            TypeDefinition::Struct(struct_def) => {
+                defined_types_code.push_str(&generate_capnp_comment(&struct_def.annotations, ""));
+                defined_types_code.push_str(&format!("struct {} @{} {{\n", struct_def.name.name, type_id_counter));
+                type_id_counter += 1;
+                let mut field_ordinal = 0u16;
+                for field in &struct_def.fields {
+                     defined_types_code.push_str(&generate_capnp_comment(&field.annotations, "  "));
+                     let field_capnp_type = map_type_specifier_to_capnp_type(&field.type_spec);
+                     defined_types_code.push_str(&format!(
+                        "  {} @{} :{};\n",
+                        field.name.name,
+                        field_ordinal, // Assign sequential ordinals within the struct
+                        field_capnp_type
+                    ));
+                    field_ordinal += 1;
                 }
+                defined_types_code.push_str("}\n\n");
             }
-            None
-        })
-    });
-    if let Some(pkg) = package_name {
-        // Cap'n Proto uses dot notation for package/scope
-        // Simple heuristic: replace :: or / with . (might need refinement)
-        capnp_code.push_str(&format!("# package: {}\n", pkg));
+            TypeDefinition::Enum(enum_def) => {
+                 defined_types_code.push_str(&generate_capnp_comment(&enum_def.annotations, ""));
+                defined_types_code.push_str(&format!("enum {} @{} {{\n", enum_def.name.name, type_id_counter));
+                type_id_counter += 1;
+                let mut variant_ordinal = 0u16;
+                 for variant in &enum_def.variants {
+                     defined_types_code.push_str(&generate_capnp_comment(&variant.annotations, "  "));
+                     // TODO: Handle potential associated types/payloads for enum variants if DSL supports it
+                     defined_types_code.push_str(&format!(
+                        "  {} @{};\n",
+                        variant.name.name,
+                        variant_ordinal // Assign sequential ordinals within the enum
+                    ));
+                    variant_ordinal += 1;
+                }
+                defined_types_code.push_str("}\n\n");
+            }
+            TypeDefinition::Machine(_) => { /* Handled separately */ }
+        }
     }
-    capnp_code.push('\n');
+    capnp_code.push_str(&defined_types_code);
 
     // --- State Enum ---
-    capnp_code.push_str("enum State @0 {\n");
-    for state in &machine_ast.states {
-        capnp_code.push_str(&generate_capnp_comment(&state.annotations, "  ")); // Add comment for state variant
-        capnp_code.push_str(&format!("  {} @{};\n", state.name, state.ordinal));
+    let states_block = machine_ast.states.as_ref()
+        .ok_or_else(|| CodegenError::AstValidationError("Machine definition requires a 'states' block".to_string()))?;
+    let state_enum_name = format!("{}State", machine_ast.name.name); // e.g., TrafficLightState
+    capnp_code.push_str(&generate_capnp_comment(&states_block.annotations, ""));
+    capnp_code.push_str(&format!("enum {} @{} {{\n", state_enum_name, type_id_counter));
+    let state_enum_id = type_id_counter;
+    type_id_counter += 1;
+    let mut state_ordinal = 0u16;
+    for state in &states_block.states {
+        capnp_code.push_str(&generate_capnp_comment(&state.annotations, "  "));
+        capnp_code.push_str(&format!("  {} @{};\n", state.name.name, state_ordinal));
+        state_ordinal += 1;
     }
     capnp_code.push_str("}\n\n");
 
     // --- Event Payloads (Structs) ---
-    let mut event_payload_structs = String::new();
-    for event in &machine_ast.events {
-        if !event.fields.is_empty() {
-            let struct_name = format!("{}Payload", event.name); // Use PascalCase? Cap'n Proto uses camelCase generally
-            event_payload_structs.push_str(&generate_capnp_comment(&event.annotations, "")); // Add comment for struct
-            event_payload_structs.push_str(&format!(
-                "struct {} @{} {{\n",
-                struct_name, struct_id_counter
-            ));
-            struct_id_counter += 1; // Increment for the next struct
-            for field in &event.fields {
-                let field_capnp_type = map_field_type_to_capnp_type(&field.field_type);
-                event_payload_structs.push_str(&generate_capnp_comment(&field.annotations, "  ")); // Add comment for field
-                                                                                                   // Handle optional ordinal correctly in format string
-                let ordinal_str = field.ordinal.map_or("N/A".to_string(), |o| o.to_string());
-                event_payload_structs.push_str(&format!(
-                    "  {} @{} :{};\n", // Corrected format string
-                    field.name, ordinal_str, field_capnp_type
-                ));
-            }
-            event_payload_structs.push_str("}\n\n");
-        }
-    }
-    if !event_payload_structs.is_empty() {
-        capnp_code.push_str(&event_payload_structs);
-    }
+    // Event payloads should ideally be defined as separate structs in the SsotAst
+    // and referenced by the event definition. We assume this convention.
 
     // --- Event Union ---
-    capnp_code.push_str("union Event @1 {\n"); // Assign next available ID
-    for event in &machine_ast.events {
-        let event_name_capnp = &event.name; // Use original name or convert case?
-        capnp_code.push_str(&generate_capnp_comment(&event.annotations, "  ")); // Use event annotations for union member
-        if event.fields.is_empty() {
-            capnp_code.push_str(&format!(
-                "  {} @{} :Void;\n",
-                event_name_capnp, event.ordinal
-            ));
-        } else {
-            let payload_struct_name = format!("{}Payload", event.name);
+    let events_block = machine_ast.events.as_ref()
+        .ok_or_else(|| CodegenError::AstValidationError("Machine definition requires an 'events' block".to_string()))?;
+    let event_union_name = format!("{}Event", machine_ast.name.name); // e.g., TrafficLightEvent
+    capnp_code.push_str(&generate_capnp_comment(&events_block.annotations, ""));
+    capnp_code.push_str(&format!("union {} @{} {{\n", event_union_name, type_id_counter));
+    let event_union_id = type_id_counter;
+    type_id_counter += 1;
+    let mut event_ordinal = 0u16;
+    for event_def in &events_block.events {
+         capnp_code.push_str(&generate_capnp_comment(&event_def.annotations, "  "));
+         match &event_def.payload {
+             Some(payload_type_spec) => {
+                let payload_capnp_type = map_type_specifier_to_capnp_type(payload_type_spec);
+                // Assume payload_capnp_type is a struct defined elsewhere in the AST
+                capnp_code.push_str(&format!(
+                    "  {} @{} :{};\n",
+                    event_def.name.name,
+                    event_ordinal,
+                    payload_capnp_type
+                ));
+            }
+            None => {
+                 capnp_code.push_str(&format!(
+                    "  {} @{} :Void;\n",
+                    event_def.name.name,
+                    event_ordinal
+                ));
+            }
+        }
+        event_ordinal += 1;
+    }
+    capnp_code.push_str("}\n\n");
+
+    // --- Context Struct ---
+    let context_struct_name = format!("{}Context", machine_ast.name.name); // e.g., TrafficLightContext
+    if let Some(context_block) = &machine_ast.context {
+        capnp_code.push_str(&generate_capnp_comment(&context_block.annotations, ""));
+        capnp_code.push_str(&format!("struct {} @{} {{\n", context_struct_name, type_id_counter));
+        let context_struct_id = type_id_counter;
+        type_id_counter += 1;
+        let mut context_field_ordinal = 0u16;
+        for field in &context_block.fields {
+            capnp_code.push_str(&generate_capnp_comment(&field.annotations, "  "));
+            let field_capnp_type = map_type_specifier_to_capnp_type(&field.type_spec);
             capnp_code.push_str(&format!(
                 "  {} @{} :{};\n",
-                event_name_capnp, event.ordinal, payload_struct_name
+                field.name.name,
+                context_field_ordinal,
+                field_capnp_type
             ));
+            context_field_ordinal += 1;
         }
-    }
-    capnp_code.push_str("}\n"); // Remove trailing newline
+        capnp_code.push_str("}\n\n");
 
-    // --- Optional: StateMachine Definition Struct ---
-    // Can add this later if needed
+        // --- Machine State Struct ---
+        let machine_state_struct_name = format!("{}MachineState", machine_ast.name.name);
+        capnp_code.push_str(&format!("# Represents the current state and context of the machine.\n"));
+        capnp_code.push_str(&format!("struct {} @{} {{\n", machine_state_struct_name, type_id_counter));
+        type_id_counter += 1;
+        capnp_code.push_str(&format!("  currentState @0 :{};\n", state_enum_name));
+        capnp_code.push_str(&format!("  context @1 :{};\n", context_struct_name));
+        capnp_code.push_str("}\n\n");
+
+    } else {
+        // If no context, maybe just define the State enum? Or a simpler MachineState?
+        // For now, we assume context is usually present for a meaningful machine state.
+         capnp_code.push_str(&format!("# Machine has no context defined.\n"));
+         // Define a simple state wrapper
+         let machine_state_struct_name = format!("{}MachineState", machine_ast.name.name);
+         capnp_code.push_str(&format!("# Represents the current state of the machine.\n"));
+         capnp_code.push_str(&format!("struct {} @{} {{\n", machine_state_struct_name, type_id_counter));
+         type_id_counter += 1;
+         capnp_code.push_str(&format!("  currentState @0 :{};\n", state_enum_name));
+         capnp_code.push_str("}\n\n");
+    }
+
 
     // TODO:
-    // - Need a robust way to assign unique @ IDs for structs (Payloads).
-    // - Handle annotations ($description -> # comments).
-    // - Decide on casing conventions (camelCase vs PascalCase for structs/enums/fields).
-    // - Validate FieldType::Identifier references against generated structs/enums.
-    // - Add support for `using` declarations if needed.
+    // - Assign unique @ IDs robustly.
+    // - Validate Identifier references against defined types.
+    // - Add support for `using` declarations.
+    // - Consider casing conventions.
 
     Ok(capnp_code)
 }
 
 // Helper to find annotation value by name
-// This needs to be defined *before* it's used or be in scope
-use fsm_dsl::ast::Annotation;
+// Moved the import inside the function where it's needed, or keep it global if used elsewhere
 fn find_annotation_value<'a>(
     annotations: &'a [Annotation],
     name: &str,
 ) -> Option<&'a AnnotationValue> {
     annotations
         .iter()
-        .find(|a| a.name == name)
+        .find(|a| a.name.name == name) // Compare with Identifier's name field
         .and_then(|a| a.value.as_ref())
 }
