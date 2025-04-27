@@ -1,4 +1,4 @@
-use crate::ast::{Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition, ActionsBlock, ActionDefinition, GuardsBlock, GuardDefinition, InvokesBlock, InvokeDefinition, InvokeSource, StateInvokeDefinition, InvokeTransitionTarget};
+use crate::ast::{Identifier, NumericId, SsotAst, FileId, ImportStatement, TopLevelDefinition, TypesBlock, TypeDefinition, StructDefinition, FieldDefinition, EnumDefinition, EnumVariant, TypeSpecifier, Annotation, Argument, AnnotationValue, MachineDefinition, MachinesBlock, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition, ActionsBlock, ActionDefinition, GuardsBlock, GuardDefinition, InvokesBlock, InvokeDefinition, InvokeSource, StateInvokeDefinition, InvokeTransitionTarget, Duration, TimeUnit, AfterTransitionDefinition, HistoryDefinition, HistoryType};
 use pest::Parser;
 use pest_derive::Parser;
 use pest::iterators::{Pair, Pairs};
@@ -603,6 +603,11 @@ fn parse_state_definition(pair: Pair<Rule>) -> ParseResult<StateDefinition> {
     let mut id: Option<NumericId> = None;
     let mut transitions = Vec::new();
     let mut invokes = Vec::new();
+    let mut on_entry_actions = Vec::new();
+    let mut on_exit_actions = Vec::new();
+    let mut after_transitions = Vec::new();
+    let mut nested_states: Option<Box<StatesBlock>> = None;
+    let mut history: Option<HistoryDefinition> = None;
     let mut is_initial = false;
     let mut is_final = false;
 
@@ -636,17 +641,28 @@ fn parse_state_definition(pair: Pair<Rule>) -> ParseResult<StateDefinition> {
             Rule::state_element => {
                  let element_pair = inner_pairs.next().unwrap().into_inner().next().ok_or_else(|| ParseError::InvalidInput { message: "Empty state_element rule".to_string() })?;
                  match element_pair.as_rule() {
-                    Rule::initial_annotation => { // Handle $initial; rule
-                        is_initial = true;
-                        annotations.push(Annotation::Initial); // Add to AST as well
+                    Rule::initial_annotation => { is_initial = true; annotations.push(Annotation::Initial); }
+                    Rule::final_annotation => { is_final = true; annotations.push(Annotation::Final); }
+                    Rule::on_entry => on_entry_actions = parse_on_entry(element_pair)?,
+                    Rule::on_exit => on_exit_actions = parse_on_exit(element_pair)?,
+                    Rule::on_transition => transitions.push(parse_on_transition(element_pair)?),
+                    Rule::after_transition => after_transitions.push(parse_after_transition(element_pair)?),
+                    Rule::state_invoke => invokes.push(parse_state_invoke(element_pair)?),
+                    Rule::states_definition => {
+                        if nested_states.is_some() {
+                            eprintln!("Warning: Duplicate nested states definition found within state '{}', ignoring subsequent.", name.as_ref().map(|n| n.name.as_str()).unwrap_or("unknown"));
+                        } else {
+                            nested_states = Some(Box::new(parse_states_definition(element_pair)?));
+                        }
                     }
-                    Rule::final_annotation => { // Handle $final; rule
-                        is_final = true;
-                        annotations.push(Annotation::Final); // Add to AST as well
+                    Rule::history_definition => {
+                        if history.is_some() {
+                            eprintln!("Warning: Duplicate history definition found within state '{}', ignoring subsequent.", name.as_ref().map(|n| n.name.as_str()).unwrap_or("unknown"));
+                        } else {
+                            history = Some(parse_history_definition(element_pair)?);
+                        }
                     }
-                     Rule::on_transition => transitions.push(parse_on_transition(element_pair)?),
-                     Rule::state_invoke => invokes.push(parse_state_invoke(element_pair)?),
-                     // TODO: Handle on_entry, on_exit, invoke, nested_states, history etc.
+                     // TODO: Handle history etc.
                      rule => {
                          eprintln!("Warning: Skipping unexpected rule within state_element: {:?}", rule);
                      }
@@ -663,6 +679,11 @@ fn parse_state_definition(pair: Pair<Rule>) -> ParseResult<StateDefinition> {
         annotations,
         transitions,
         invokes,
+        on_entry: on_entry_actions,
+        on_exit: on_exit_actions,
+        after_transitions,
+        nested_states,
+        history,
         is_initial,
         is_final,
     })
@@ -898,6 +919,43 @@ fn parse_type_specifier(pair: Pair<Rule>) -> ParseResult<TypeSpecifier> {
         // TODO: Add map_type when grammar supports it
         rule => Err(ParseError::UnexpectedRule { expected: Rule::simple_type /* or list/optional */, found: rule })
     }
+}
+
+// --- History State Parsing (Added) ---
+
+fn parse_history_definition(pair: Pair<Rule>) -> ParseResult<HistoryDefinition> {
+    if pair.as_rule() != Rule::history_definition {
+        return Err(ParseError::UnexpectedRule { expected: Rule::history_definition, found: pair.as_rule() });
+    }
+    println!("Parsing history definition: {}", pair.as_str());
+
+    let mut inner_pairs = pair.into_inner();
+    let mut history_type: Option<HistoryType> = None;
+    let mut id: Option<NumericId> = None;
+    let mut target: Option<Identifier> = None;
+
+    // Order: "history", history_type, "@id(", int, ")", "target", identifier, ";"
+    while let Some(p) = inner_pairs.peek() {
+        match p.as_rule() {
+            Rule::history_type => {
+                let type_str = inner_pairs.next().unwrap().as_str();
+                history_type = Some(match type_str {
+                    "shallow" => HistoryType::Shallow,
+                    "deep" => HistoryType::Deep,
+                    _ => return Err(ParseError::InvalidInput{ message: format!("Invalid history type: {}", type_str)}),
+                });
+            }
+            Rule::integer_literal => id = Some(parse_numeric_id(inner_pairs.next().unwrap())?),
+            Rule::identifier => target = Some(parse_identifier(inner_pairs.next().unwrap())?),
+            _ => { inner_pairs.next(); } // Consume keywords "history", "target", @id, etc.
+        }
+    }
+
+    Ok(HistoryDefinition {
+        history_type: history_type.ok_or_else(|| ParseError::InvalidInput { message: "Missing history type".to_string() })?,
+        id: id.ok_or_else(|| ParseError::InvalidInput { message: "Missing history id".to_string() })?,
+        default_target: target.ok_or_else(|| ParseError::InvalidInput { message: "Missing history default target".to_string() })?,
+    })
 }
 
 // --- Public API ---

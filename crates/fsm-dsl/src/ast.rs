@@ -234,10 +234,9 @@ pub struct StateDefinition {
     pub on_entry: Vec<Identifier>, // Added onEntry actions
     pub on_exit: Vec<Identifier>,  // Added onExit actions
     pub after_transitions: Vec<AfterTransitionDefinition>, // Added after transitions
-    // pub on_exit: Vec<Identifier>,
-    // pub invokes: Vec<InvokeDefinition>,
-    // pub nested_states: Option<StatesBlock>,
     // pub history: Option<HistoryDefinition>,
+    pub nested_states: Option<Box<StatesBlock>>, // Added nested states
+    pub history: Option<HistoryDefinition>, // Added history state definition
     // pub initial_state: Option<Identifier>, // Redundant if using $initial annotation
     // pub is_final: bool, // Redundant if using $final annotation
     // pub is_parallel: bool,
@@ -371,6 +370,20 @@ pub enum TopLevelDefinition {
     // TODO: Potentially handle top-level annotations here too? Or within blocks?
 }
 
+// --- History State Definition (Added) ---
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HistoryType {
+    Shallow,
+    Deep,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistoryDefinition {
+    pub history_type: HistoryType,
+    pub id: NumericId,
+    pub default_target: Identifier, // Default state to transition to if no history exists
+}
 
 /// Represents the entire parsed content of a .ssot file.
 #[derive(Debug, Clone, PartialEq)]

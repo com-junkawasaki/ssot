@@ -72,6 +72,7 @@ generic_flag_annotation = { "$" ~ identifier ~ ";" }
 // Add specific flag annotations for states
 initial_annotation = { "$" ~ "initial" ~ ";" }
 final_annotation = { "$" ~ "final" ~ ";" }
+parallel_annotation = { "$" ~ "parallel" ~ ";" } // Added parallel flag
 
 // Rule for key-value arguments inside annotations like $validate, $db, $meta
 annotation_args = { annotation_arg ~ ("," ~ annotation_arg)* }
@@ -100,7 +101,7 @@ states_definition = { annotation* ~ "states" ~ "@id(" ~ integer_literal ~ ")" ~ 
 state_definition = { annotation* ~ "state" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ state_element* ~ "}" }
 
 // Placeholder for elements inside a state block
-state_element = { initial_annotation | final_annotation | on_entry | on_exit | on_transition | after_transition | state_invoke } // Added entry/exit/after
+state_element = { initial_annotation | final_annotation | parallel_annotation | on_entry | on_exit | on_transition | after_transition | state_invoke | states_definition | history_definition } // Added parallel flag
 
 // Basic event transition
 on_transition = { "on" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ transition_details ~ ";" }
@@ -156,6 +157,11 @@ state_invoke = { "invoke" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ state_
 state_invoke_body = { "{" ~ state_invoke_src ~ invoke_param* ~ "}" } 
 state_invoke_src = { "src" ~ ":" ~ invoke_ref ~ ";" } // Reference defined invoke: invokes.Name
 invoke_ref = { "invokes" ~ "." ~ identifier }
+
+// --- History State Definition (Added) ---
+// history [shallow|deep] @id(N) target DefaultTargetState;
+history_definition = { "history" ~ history_type ~ "@id(" ~ integer_literal ~ ")" ~ "target" ~ identifier ~ ";" }
+history_type = { "shallow" | "deep" }
 
 // TODO: Add rules for all other elements from DSL.md:
 // - enums, machines, services, interfaces, protocols, actors, channels, events
