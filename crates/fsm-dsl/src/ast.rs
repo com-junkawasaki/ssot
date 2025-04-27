@@ -547,3 +547,82 @@ pub struct SsotAst {
     // Store comments or other non-semantic elements if needed
     // pub comments: Vec<CommentSpan>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*; // Import everything from the parent module (ast)
+    use pretty_assertions::assert_eq; // For better diffs on failure
+
+    // Helper to create Identifier
+    fn ident(name: &str) -> Identifier {
+        Identifier { name: name.to_string() }
+    }
+
+    // Helper to create NumericId
+    fn num_id(value: u64) -> NumericId {
+        NumericId { value }
+    }
+
+    #[test]
+    fn test_identifier_display() {
+        let id = ident("MyState");
+        assert_eq!(format!("{}", id), "MyState");
+    }
+
+    #[test]
+    fn test_struct_definition_equality() {
+        let field1 = FieldDefinition {
+            name: ident("fieldA"),
+            type_spec: TypeSpecifier::Simple(ident("string")),
+            id: num_id(0),
+            annotations: vec![],
+        };
+        let struct1 = StructDefinition {
+            name: ident("MyStruct"),
+            id: num_id(1),
+            fields: vec![field1.clone()],
+            annotations: vec![],
+        };
+        let struct2 = StructDefinition {
+            name: ident("MyStruct"),
+            id: num_id(1),
+            fields: vec![field1], // Use the same field def
+            annotations: vec![],
+        };
+        assert_eq!(struct1, struct2);
+    }
+
+    #[test]
+    fn test_annotation_creation_and_equality() {
+        let arg1 = Argument {
+            key: ident("key1"),
+            value: AnnotationValue::String("value1".to_string()),
+        };
+        let arg2 = Argument {
+            key: ident("key2"),
+            value: AnnotationValue::Integer(123),
+        };
+        let anno1 = Annotation::Meta(vec![arg1.clone(), arg2.clone()]);
+        let anno2 = Annotation::Meta(vec![arg1, arg2]);
+        assert_eq!(anno1, anno2);
+    }
+
+    #[test]
+    fn test_type_specifier_creation() {
+        let simple = TypeSpecifier::Simple(ident("u32"));
+        let list_of_simple = TypeSpecifier::List(Box::new(simple.clone()));
+        let optional_list = TypeSpecifier::Optional(Box::new(list_of_simple.clone()));
+        let map_type = TypeSpecifier::Map(
+            Box::new(TypeSpecifier::Simple(ident("string"))),
+            Box::new(simple.clone()),
+        );
+
+        assert_eq!(simple, TypeSpecifier::Simple(ident("u32")));
+        assert_eq!(list_of_simple, TypeSpecifier::List(Box::new(TypeSpecifier::Simple(ident("u32")))));
+        assert_eq!(optional_list, TypeSpecifier::Optional(Box::new(TypeSpecifier::List(Box::new(TypeSpecifier::Simple(ident("u32")))))));
+        assert_eq!(map_type, TypeSpecifier::Map(
+            Box::new(TypeSpecifier::Simple(ident("string"))),
+            Box::new(TypeSpecifier::Simple(ident("u32"))),
+        ));
+    }
+}

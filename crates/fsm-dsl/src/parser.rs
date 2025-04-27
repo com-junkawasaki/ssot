@@ -586,10 +586,10 @@ fn parse_machine_definition(
     let mut name: Option<Identifier> = None;
     let mut id: Option<NumericId> = None;
     let mut context: Option<ContextDefinition> = None;
-    let mut states: Option<StatesBlock> = None; // Changed to match AST
-    let mut actions: Option<ActionsBlock> = None; // Changed to match AST
-    let mut guards: Option<GuardsBlock> = None;   // Changed to match AST
-    let mut invokes: Option<InvokesBlock> = None; // Changed to match AST
+    let mut states: Option<StatesBlock> = None;
+    let mut actions: Option<ActionsBlock> = None;
+    let mut guards: Option<GuardsBlock> = None;
+    let mut invokes: Option<InvokesBlock> = None;
     let mut annotations = Vec::new();
 
     for inner_pair in pair.into_inner() {
@@ -605,7 +605,6 @@ fn parse_machine_definition(
                             context = Some(parse_context_definition(element_pair)?);
                         }
                         <SsotParser as pest::Parser>::Rule::states_definition => {
-                            // Assuming states_definition maps to StatesBlock
                             states = Some(parse_states_definition(element_pair)?);
                         }
                          <SsotParser as pest::Parser>::Rule::actions_definition => {
