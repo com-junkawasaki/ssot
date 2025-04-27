@@ -1,4 +1,8 @@
-use crate::ast::{Annotation, AnnotationValue, Argument, SsotAst, TopLevelDefinition, TypeDefinition, TypeSpecifier, Identifier, MachinesBlock, MachineDefinition as StateMachine, CommunicationBlock as ChannelsBlock};
+use crate::ast::{
+    Annotation, AnnotationValue, Argument, CommunicationBlock as ChannelsBlock, Identifier,
+    MachineDefinition as StateMachine, MachinesBlock, SsotAst, TopLevelDefinition, TypeDefinition,
+    TypeSpecifier,
+};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
 use thiserror::Error; // Import necessary AST nodes
@@ -165,6 +169,9 @@ pub enum ValidationError {
     CyclicDependency { kind: String, cycle: Vec<String> },
 }
 
+// TODO: Add more specific validation errors as needed.
+// - Import resolution errors (Specific cases?)
+/*
 impl Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -245,6 +252,7 @@ impl Display for ValidationError {
         }
     }
 }
+*/
 
 // Helper structure to store information about the first occurrence of an ID
 #[derive(Debug, Clone)]

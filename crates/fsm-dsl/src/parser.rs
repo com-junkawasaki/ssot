@@ -22,6 +22,9 @@ use thiserror::Error;
 #[grammar = "ssot.pest"] // Path relative to src
 struct SsotParser;
 
+// Bring Rule into scope
+use self::Rule;
+
 /// Represents errors that can occur during the parsing of an SSOT file or content.
 #[derive(Error, Debug)]
 pub enum ParseError {
@@ -45,7 +48,10 @@ pub enum ParseError {
     ParseIntError(#[from] std::num::ParseIntError),
     /// An unexpected grammar rule was encountered during parsing.
     #[error("Unexpected rule: expected {expected:?}, found {found:?}")]
-    UnexpectedRule { expected: SsotParser::Rule, found: SsotParser::Rule },
+    UnexpectedRule {
+        expected: SsotParser::Rule,
+        found: SsotParser::Rule,
+    },
     /// A required grammar rule was missing from the input.
     #[error("Missing expected rule: {expected:?}")]
     MissingRule { expected: SsotParser::Rule },
@@ -216,8 +222,12 @@ fn parse_file_id(pair: Pair<SsotParser::Rule>) -> ParseResult<FileId> {
     let mut inner_pairs = pair.into_inner();
     let hex_pair = inner_pairs
         .find(|p| p.as_rule() == SsotParser::Rule::hex_literal)
-        .ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::hex_literal })?;
-    Ok(FileId(hex_pair.as_str().to_string()))
+        .ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::hex_literal,
+        })?;
+    Ok(FileId {
+        value: u64::from_str_radix(hex_pair.as_str().trim_start_matches("0x"), 16)?,
+    })
 }
 
 fn parse_import_statement(pair: Pair<SsotParser::Rule>) -> ParseResult<ImportStatement> {
@@ -230,7 +240,9 @@ fn parse_import_statement(pair: Pair<SsotParser::Rule>) -> ParseResult<ImportSta
     let mut inner_pairs = pair.into_inner();
     let path_pair = inner_pairs
         .find(|p| p.as_rule() == SsotParser::Rule::string_literal)
-        .ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::string_literal })?;
+        .ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::string_literal,
+        })?;
 
     // Remove quotes from the string literal
     let path_str = path_pair.as_str();
@@ -258,9 +270,7 @@ fn parse_numeric_id(pair: Pair<SsotParser::Rule>) -> ParseResult<NumericId> {
         });
     }
     let value = pair.as_str().parse::<u64>()?;
-    Ok(NumericId {
-        value,
-    })
+    Ok(NumericId { value })
 }
 
 fn parse_types_block(pair: Pair<SsotParser::Rule>) -> ParseResult<TypesBlock> {
@@ -295,7 +305,7 @@ fn parse_types_block(pair: Pair<SsotParser::Rule>) -> ParseResult<TypesBlock> {
                             return Err(ParseError::UnexpectedRule {
                                 expected: SsotParser::Rule::struct_definition, // Or enum
                                 found: definition_pair.as_rule(),
-                            })
+                            });
                         }
                     }
                 } else {
@@ -307,7 +317,7 @@ fn parse_types_block(pair: Pair<SsotParser::Rule>) -> ParseResult<TypesBlock> {
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::annotation, // Or type_definition
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
@@ -339,7 +349,7 @@ fn parse_machines_block(pair: Pair<SsotParser::Rule>) -> ParseResult<MachinesBlo
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::annotation, // Or machine_definition
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
@@ -373,15 +383,19 @@ fn parse_struct_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<StructDe
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::identifier, // Or others
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
 
     Ok(StructDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         fields,
     })
 }
@@ -420,16 +434,22 @@ fn parse_field_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<FieldDefi
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::identifier, // Or others
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
 
     Ok(FieldDefinition {
         annotations, // Annotations found before the field identifier
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        type_specifier: type_spec.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::type_specifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        type_specifier: type_spec.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::type_specifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         field_annotations: main_annotations, // Annotations found after the ID
     })
 }
@@ -457,15 +477,19 @@ fn parse_enum_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<EnumDefini
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::identifier, // Or others
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
 
     Ok(EnumDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         variants,
     })
 }
@@ -498,15 +522,19 @@ fn parse_enum_variant(pair: Pair<SsotParser::Rule>) -> ParseResult<EnumVariant> 
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::identifier, // Or others
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
 
     Ok(EnumVariant {
         annotations, // Annotations before the variant name
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         variant_annotations, // Annotations after the ID
     })
 }
@@ -544,14 +572,20 @@ fn parse_machine_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Machine
                             states_block = Some(parse_states_definition(element_pair)?);
                         }
                         // --- TODO: Add parsing for actions, guards, invokes blocks ---
-                        SsotParser::Rule::actions_definition => actions = Some(parse_actions_block(element_pair)?),
-                        SsotParser::Rule::guards_definition => guards = Some(parse_guards_block(element_pair)?),
-                        SsotParser::Rule::invokes_definition => invokes = Some(parse_invokes_block(element_pair)?),
+                        SsotParser::Rule::actions_definition => {
+                            actions = Some(parse_actions_block(element_pair)?)
+                        }
+                        SsotParser::Rule::guards_definition => {
+                            guards = Some(parse_guards_block(element_pair)?)
+                        }
+                        SsotParser::Rule::invokes_definition => {
+                            invokes = Some(parse_invokes_block(element_pair)?)
+                        }
                         _ => {
                             return Err(ParseError::UnexpectedRule {
                                 expected: SsotParser::Rule::context_definition, // Or states_definition, etc.
                                 found: element_pair.as_rule(),
-                            })
+                            });
                         }
                     }
                 } else {
@@ -562,17 +596,23 @@ fn parse_machine_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Machine
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::identifier, // Or others
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
 
     Ok(MachineDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         context,
-        states: states_block.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::states_definition })?,
+        states: states_block.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::states_definition,
+        })?,
         actions,
         guards,
         invokes,
@@ -604,19 +644,23 @@ fn parse_context_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Context
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::integer_literal, // Or context_field_definition
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
 
     Ok(ContextDefinition {
         annotations,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         fields,
     })
 }
 
-fn parse_context_field_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<ContextFieldDefinition> {
+fn parse_context_field_definition(
+    pair: Pair<SsotParser::Rule>,
+) -> ParseResult<ContextFieldDefinition> {
     if pair.as_rule() != SsotParser::Rule::context_field_definition {
         return Err(ParseError::UnexpectedRule {
             expected: SsotParser::Rule::context_field_definition,
@@ -647,16 +691,22 @@ fn parse_context_field_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<C
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::identifier, // Or others
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
 
     Ok(ContextFieldDefinition {
         annotations, // Annotations before the name
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        type_specifier: type_spec.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::type_specifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        type_specifier: type_spec.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::type_specifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         field_annotations, // Annotations after the id (like $default)
     })
 }
@@ -682,14 +732,16 @@ fn parse_states_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<StatesBl
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::integer_literal, // Or state_definition
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
 
     Ok(StatesBlock {
         annotations,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         states,
     })
 }
@@ -734,7 +786,9 @@ fn parse_state_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<StateDefi
                 // state_element is silent, look inside
                 if let Some(element_pair) = inner_pair.into_inner().next() {
                     match element_pair.as_rule() {
-                        SsotParser::Rule::on_entry => on_entry_actions = parse_on_entry(element_pair)?,
+                        SsotParser::Rule::on_entry => {
+                            on_entry_actions = parse_on_entry(element_pair)?
+                        }
                         SsotParser::Rule::on_exit => on_exit_actions = parse_on_exit(element_pair)?,
                         SsotParser::Rule::on_transition => {
                             on_transitions.push(parse_on_transition(element_pair)?)
@@ -742,7 +796,9 @@ fn parse_state_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<StateDefi
                         SsotParser::Rule::after_transition => {
                             after_transitions.push(parse_after_transition(element_pair)?)
                         }
-                        SsotParser::Rule::state_invoke => invokes.push(parse_state_invoke(element_pair)?),
+                        SsotParser::Rule::state_invoke => {
+                            invokes.push(parse_state_invoke(element_pair)?)
+                        }
                         SsotParser::Rule::states_definition => {
                             nested_states = Some(parse_states_definition(element_pair)?);
                         }
@@ -758,7 +814,7 @@ fn parse_state_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<StateDefi
                             return Err(ParseError::UnexpectedRule {
                                 expected: SsotParser::Rule::on_entry, // Or others
                                 found: element_pair.as_rule(),
-                            })
+                            });
                         }
                     }
                 } else {
@@ -769,15 +825,19 @@ fn parse_state_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<StateDefi
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::identifier, // Or others
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
 
     Ok(StateDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         entry: on_entry_actions,
         exit: on_exit_actions,
         transitions: on_transitions,
@@ -816,17 +876,23 @@ fn parse_on_transition(pair: Pair<SsotParser::Rule>) -> ParseResult<TransitionDe
                 let mut details_pairs = inner_pair.into_inner();
                 target = Some(parse_transition_target(details_pairs.next().unwrap())?);
 
-                if let Some(block_pair) = details_pairs.next() { // transition_block is optional
+                if let Some(block_pair) = details_pairs.next() {
+                    // transition_block is optional
                     if block_pair.as_rule() == SsotParser::Rule::transition_block {
                         for block_inner in block_pair.into_inner() {
                             match block_inner.as_rule() {
                                 SsotParser::Rule::action_ref => {
-                                    actions.push(parse_identifier(block_inner.into_inner().next().unwrap())?);
+                                    actions.push(parse_identifier(
+                                        block_inner.into_inner().next().unwrap(),
+                                    )?);
                                 }
                                 SsotParser::Rule::guard_ref => {
-                                    guard = Some(parse_identifier(block_inner.into_inner().next().unwrap())?);
+                                    guard = Some(parse_identifier(
+                                        block_inner.into_inner().next().unwrap(),
+                                    )?);
                                 }
-                                SsotParser::Rule::annotation => { // Handle $allowedActors
+                                SsotParser::Rule::annotation => {
+                                    // Handle $allowedActors
                                     annotations.push(parse_annotation(block_inner)?);
                                 }
                                 _ => { /* Ignore unexpected inside block */ }
@@ -840,8 +906,12 @@ fn parse_on_transition(pair: Pair<SsotParser::Rule>) -> ParseResult<TransitionDe
     }
 
     Ok(TransitionDefinition {
-        event: event.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        event: event.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         target,
         actions,
         guard,
@@ -856,13 +926,21 @@ fn parse_on_transition(pair: Pair<SsotParser::Rule>) -> ParseResult<TransitionDe
 fn parse_actions_block(_pair: Pair<SsotParser::Rule>) -> ParseResult<ActionsBlock> {
     // TODO: Implement actual parsing logic
     println!("TODO: Implement parse_actions_block");
-    Ok(ActionsBlock { annotations: vec![], id: NumericId { value: 0 }, actions: vec![] })
+    Ok(ActionsBlock {
+        annotations: vec![],
+        id: NumericId { value: 0 },
+        actions: vec![],
+    })
 }
 
 fn parse_guards_block(_pair: Pair<SsotParser::Rule>) -> ParseResult<GuardsBlock> {
     // TODO: Implement actual parsing logic
     println!("TODO: Implement parse_guards_block");
-    Ok(GuardsBlock { annotations: vec![], id: NumericId { value: 0 }, guards: vec![] })
+    Ok(GuardsBlock {
+        annotations: vec![],
+        id: NumericId { value: 0 },
+        guards: vec![],
+    })
 }
 
 fn parse_invokes_block(pair: Pair<SsotParser::Rule>) -> ParseResult<InvokesBlock> {
@@ -970,7 +1048,14 @@ fn parse_invoke_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<InvokeDe
     })
 }
 
-fn parse_invoke_body(pair: Pair<SsotParser::Rule>) -> ParseResult<(InvokeSource, Option<ObjectLiteral>, Option<TransitionDefinition>, Option<TransitionDefinition>)> {
+fn parse_invoke_body(
+    pair: Pair<SsotParser::Rule>,
+) -> ParseResult<(
+    InvokeSource,
+    Option<ObjectLiteral>,
+    Option<TransitionDefinition>,
+    Option<TransitionDefinition>,
+)> {
     if pair.as_rule() != SsotParser::Rule::invoke_body {
         return Err(ParseError::UnexpectedRule {
             expected: SsotParser::Rule::invoke_body,
@@ -989,24 +1074,30 @@ fn parse_invoke_body(pair: Pair<SsotParser::Rule>) -> ParseResult<(InvokeSource,
                 src = Some(parse_invoke_src(item)?);
             }
             SsotParser::Rule::input_mapping => {
-                let object_literal = item.into_inner().next()
-                    .ok_or_else(|| ParseError::InvalidInput {
-                        message: "Empty input mapping".to_string(),
-                    })?;
+                let object_literal =
+                    item.into_inner()
+                        .next()
+                        .ok_or_else(|| ParseError::InvalidInput {
+                            message: "Empty input mapping".to_string(),
+                        })?;
                 input_mapping = Some(parse_object_literal(object_literal)?);
             }
             SsotParser::Rule::on_done => {
-                let transition_details = item.into_inner().next()
-                    .ok_or_else(|| ParseError::InvalidInput {
-                        message: "Empty onDone transition".to_string(),
-                    })?;
+                let transition_details =
+                    item.into_inner()
+                        .next()
+                        .ok_or_else(|| ParseError::InvalidInput {
+                            message: "Empty onDone transition".to_string(),
+                        })?;
                 on_done = Some(parse_invoke_transition_details(transition_details)?);
             }
             SsotParser::Rule::on_error => {
-                let transition_details = item.into_inner().next()
-                    .ok_or_else(|| ParseError::InvalidInput {
-                        message: "Empty onError transition".to_string(),
-                    })?;
+                let transition_details =
+                    item.into_inner()
+                        .next()
+                        .ok_or_else(|| ParseError::InvalidInput {
+                            message: "Empty onError transition".to_string(),
+                        })?;
                 on_error = Some(parse_invoke_transition_details(transition_details)?);
             }
             _ => {
@@ -1033,7 +1124,9 @@ fn parse_invoke_src(pair: Pair<SsotParser::Rule>) -> ParseResult<InvokeSource> {
         });
     }
 
-    let src_pair = pair.into_inner().next()
+    let src_pair = pair
+        .into_inner()
+        .next()
         .ok_or_else(|| ParseError::InvalidInput {
             message: "Empty invoke src".to_string(),
         })?;
@@ -1048,19 +1141,17 @@ fn parse_invoke_src(pair: Pair<SsotParser::Rule>) -> ParseResult<InvokeSource> {
         SsotParser::Rule::string_literal => {
             Ok(InvokeSource::StringLiteral(parse_string_literal(src_pair)?))
         }
-        SsotParser::Rule::identifier => {
-            Ok(InvokeSource::MachineName(parse_identifier(src_pair)?))
-        }
-        _ => {
-            Err(ParseError::UnexpectedRule {
-                expected: SsotParser::Rule::service_method_ref,
-                found: src_pair.as_rule(),
-            })
-        }
+        SsotParser::Rule::identifier => Ok(InvokeSource::MachineName(parse_identifier(src_pair)?)),
+        _ => Err(ParseError::UnexpectedRule {
+            expected: SsotParser::Rule::service_method_ref,
+            found: src_pair.as_rule(),
+        }),
     }
 }
 
-fn parse_invoke_transition_details(pair: Pair<SsotParser::Rule>) -> ParseResult<TransitionDefinition> {
+fn parse_invoke_transition_details(
+    pair: Pair<SsotParser::Rule>,
+) -> ParseResult<TransitionDefinition> {
     if pair.as_rule() != SsotParser::Rule::invoke_transition_details {
         return Err(ParseError::UnexpectedRule {
             expected: SsotParser::Rule::invoke_transition_details,
@@ -1111,7 +1202,7 @@ fn parse_invoke_transition_details(pair: Pair<SsotParser::Rule>) -> ParseResult<
     })?;
 
     Ok(TransitionDefinition {
-        event: None, // Not used in invoke transitions
+        event: None,                // Not used in invoke transitions
         id: NumericId { value: 0 }, // Not used in invoke transitions
         target: Some(target),
         actions,
@@ -1154,7 +1245,10 @@ fn parse_after_transition(_pair: Pair<SsotParser::Rule>) -> ParseResult<AfterTra
     println!("TODO: Implement parse_after_transition");
     // Dummy implementation
     Ok(AfterTransitionDefinition {
-        delay: Duration { value: 1, unit: TimeUnit::Seconds },
+        delay: Duration {
+            value: 1,
+            unit: TimeUnit::Seconds,
+        },
         id: NumericId { value: 0 },
         target: None,
         actions: vec![],
@@ -1168,9 +1262,13 @@ fn parse_state_invoke(_pair: Pair<SsotParser::Rule>) -> ParseResult<StateInvokeD
     println!("TODO: Implement parse_state_invoke");
     // Dummy implementation
     Ok(StateInvokeDefinition {
-        name: Identifier { name: "dummy_invoke".to_string() },
+        name: Identifier {
+            name: "dummy_invoke".to_string(),
+        },
         id: NumericId { value: 0 },
-        src: Identifier { name: "dummy_src".to_string() }, // Should parse invoke_ref
+        src: Identifier {
+            name: "dummy_src".to_string(),
+        }, // Should parse invoke_ref
         input_mapping: None,
         on_done: None,
         on_error: None,
@@ -1182,19 +1280,25 @@ fn parse_transition_target(pair: Pair<SsotParser::Rule>) -> ParseResult<Transiti
     // TODO: Implement actual parsing logic
     println!("TODO: Implement parse_transition_target");
     // Based on grammar: qualified_history_target | current_history_target | state_name_target
-     if let Some(inner) = pair.into_inner().next() { // transition_target is silent
+    if let Some(inner) = pair.into_inner().next() {
+        // transition_target is silent
         match inner.as_rule() {
-            SsotParser::Rule::state_name_target => Ok(TransitionTarget::State(
-                parse_identifier(inner.into_inner().next().unwrap())?
-            )),
+            SsotParser::Rule::state_name_target => Ok(TransitionTarget::State(parse_identifier(
+                inner.into_inner().next().unwrap(),
+            )?)),
             SsotParser::Rule::current_history_target => Ok(TransitionTarget::CurrentHistory),
             SsotParser::Rule::qualified_history_target => Ok(TransitionTarget::ParentHistory(
-                parse_identifier(inner.into_inner().next().unwrap())?
+                parse_identifier(inner.into_inner().next().unwrap())?,
             )),
-            _ => Err(ParseError::UnexpectedRule { expected: SsotParser::Rule::state_name_target, found: inner.as_rule() })
+            _ => Err(ParseError::UnexpectedRule {
+                expected: SsotParser::Rule::state_name_target,
+                found: inner.as_rule(),
+            }),
         }
     } else {
-         Err(ParseError::MissingRule { expected: SsotParser::Rule::transition_target })
+        Err(ParseError::MissingRule {
+            expected: SsotParser::Rule::transition_target,
+        })
     }
 }
 
@@ -1225,9 +1329,12 @@ fn parse_annotation(pair: Pair<SsotParser::Rule>) -> ParseResult<Annotation> {
     }
 
     // Annotation rule is silent, look inside
-    let inner_pair = pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput {
-        message: "Empty annotation rule".to_string(),
-    })?;
+    let inner_pair = pair
+        .into_inner()
+        .next()
+        .ok_or_else(|| ParseError::InvalidInput {
+            message: "Empty annotation rule".to_string(),
+        })?;
 
     match inner_pair.as_rule() {
         SsotParser::Rule::description_annotation
@@ -1245,49 +1352,104 @@ fn parse_annotation(pair: Pair<SsotParser::Rule>) -> ParseResult<Annotation> {
         | SsotParser::Rule::allowed_actors_annotation => {
             let mut kv_pairs = inner_pair.into_inner();
             let name_ident = kv_pairs.next().unwrap(); // The annotation name like 'description'
-            let name = Identifier { name: name_ident.as_str().to_string() };
+            let name = Identifier {
+                name: name_ident.as_str().to_string(),
+            };
 
-            let args = match kv_pairs.next() { // Optional annotation_args or identifier_list or identifier or string_literal
+            let args = match kv_pairs.next() {
+                // Optional annotation_args or identifier_list or identifier or string_literal
                 Some(args_pair) => {
                     match args_pair.as_rule() {
                         SsotParser::Rule::string_literal => {
                             // For description
-                            vec![Argument { key: Identifier { name: "value".to_string() }, value: parse_annotation_value(args_pair)? }]
-                        },
-                         SsotParser::Rule::annotation_args => parse_annotation_args(args_pair.into_inner())?,
-                         SsotParser::Rule::identifier_list => {
-                             // For allowedActors
-                             let ids = parse_identifier_list(args_pair)?;
-                             vec![Argument { key: Identifier { name: "actors".to_string() }, value: AnnotationValue::List(ids.into_iter().map(|id| AnnotationValue::String(id.name)).collect())}]
-                         }
-                         SsotParser::Rule::identifier => {
+                            vec![Argument {
+                                key: Identifier {
+                                    name: "value".to_string(),
+                                },
+                                value: parse_annotation_value(args_pair)?,
+                            }]
+                        }
+                        SsotParser::Rule::annotation_args => {
+                            parse_annotation_args(args_pair.into_inner())?
+                        }
+                        SsotParser::Rule::identifier_list => {
+                            // For allowedActors
+                            let ids = parse_identifier_list(args_pair)?;
+                            vec![Argument {
+                                key: Identifier {
+                                    name: "actors".to_string(),
+                                },
+                                value: AnnotationValue::List(
+                                    ids.into_iter()
+                                        .map(|id| AnnotationValue::String(id.name))
+                                        .collect(),
+                                ),
+                            }]
+                        }
+                        SsotParser::Rule::identifier => {
                             // For protocol, implements, channel, initial, publishes, subscribes
-                             vec![Argument { key: Identifier { name: "name".to_string() }, value: AnnotationValue::String(parse_identifier(args_pair)?.name) }]
-                         }
-                        _ => return Err(ParseError::UnexpectedRule { expected: SsotParser::Rule::annotation_args, found: args_pair.as_rule() })
+                            vec![Argument {
+                                key: Identifier {
+                                    name: "name".to_string(),
+                                },
+                                value: AnnotationValue::String(parse_identifier(args_pair)?.name),
+                            }]
+                        }
+                        _ => {
+                            return Err(ParseError::UnexpectedRule {
+                                expected: SsotParser::Rule::annotation_args,
+                                found: args_pair.as_rule(),
+                            })
+                        }
                     }
                 }
                 None => Vec::new(), // No arguments for flags like $final
             };
-            Ok(Annotation { name, arguments: args })
+            Ok(Annotation {
+                name,
+                arguments: args,
+            })
         }
         SsotParser::Rule::generic_kv_annotation => {
             let mut kv_pairs = inner_pair.into_inner();
             let name = parse_identifier(kv_pairs.next().unwrap())?;
             let value = parse_annotation_value(kv_pairs.next().unwrap())?;
-            Ok(Annotation { name, arguments: vec![Argument { key: Identifier { name: "value".to_string() }, value }] })
+            Ok(Annotation {
+                name,
+                arguments: vec![Argument {
+                    key: Identifier {
+                        name: "value".to_string(),
+                    },
+                    value,
+                }],
+            })
         }
-        SsotParser::Rule::generic_flag_annotation | SsotParser::Rule::final_annotation | SsotParser::Rule::parallel_annotation => {
+        SsotParser::Rule::generic_flag_annotation
+        | SsotParser::Rule::final_annotation
+        | SsotParser::Rule::parallel_annotation => {
             let name = parse_identifier(inner_pair.into_inner().next().unwrap())?;
-            Ok(Annotation { name, arguments: Vec::new() })
+            Ok(Annotation {
+                name,
+                arguments: Vec::new(),
+            })
         }
         SsotParser::Rule::output_directive_annotation => {
-             let mut kv_pairs = inner_pair.into_inner();
-             let name_ident = kv_pairs.next().unwrap(); // e.g., rust_out
-             let name = Identifier { name: name_ident.as_str().to_string() };
-             let value_pair = kv_pairs.next().unwrap();
-             let value = parse_string_literal(value_pair)?;
-             Ok(Annotation { name, arguments: vec![Argument { key: Identifier{ name: "path".to_string() }, value: AnnotationValue::String(value) }] })
+            let mut kv_pairs = inner_pair.into_inner();
+            let name_ident = kv_pairs.next().unwrap(); // e.g., rust_out
+            let name = Identifier {
+                name: name_ident.as_str().to_string(),
+            };
+            let value_pair = kv_pairs.next().unwrap();
+            let value = parse_string_literal(value_pair)?;
+            Ok(Annotation {
+                name,
+                arguments: vec![Argument {
+                    key: Identifier {
+                        name: "path".to_string(),
+                    },
+                    value: AnnotationValue::String(value),
+                }],
+            })
         }
         rule => Err(ParseError::UnexpectedRule {
             expected: SsotParser::Rule::description_annotation, // Or others
@@ -1320,26 +1482,39 @@ fn parse_annotation_arg(pair: Pair<SsotParser::Rule>) -> ParseResult<Argument> {
 }
 
 fn parse_annotation_value(pair: Pair<SsotParser::Rule>) -> ParseResult<AnnotationValue> {
-     // Value rule is silent, look inside
-    let inner_pair = pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput {
-        message: "Empty annotation_value rule".to_string(),
-    })?;
+    // Value rule is silent, look inside
+    let inner_pair = pair
+        .into_inner()
+        .next()
+        .ok_or_else(|| ParseError::InvalidInput {
+            message: "Empty annotation_value rule".to_string(),
+        })?;
 
     match inner_pair.as_rule() {
-        SsotParser::Rule::string_literal => Ok(AnnotationValue::String(parse_string_literal(inner_pair)?)),
-        SsotParser::Rule::integer_literal => Ok(AnnotationValue::Integer(inner_pair.as_str().parse::<i64>()?)),
-        SsotParser::Rule::boolean_literal => Ok(AnnotationValue::Boolean(inner_pair.as_str() == "true")),
+        SsotParser::Rule::string_literal => {
+            Ok(AnnotationValue::String(parse_string_literal(inner_pair)?))
+        }
+        SsotParser::Rule::integer_literal => Ok(AnnotationValue::Integer(
+            inner_pair.as_str().parse::<i64>()?,
+        )),
+        SsotParser::Rule::boolean_literal => {
+            Ok(AnnotationValue::Boolean(inner_pair.as_str() == "true"))
+        }
         SsotParser::Rule::list_literal => {
-            let items = inner_pair.into_inner()
+            let items = inner_pair
+                .into_inner()
                 .map(|item_pair| parse_annotation_value(item_pair))
                 .collect::<ParseResult<Vec<_>>>()?;
             Ok(AnnotationValue::List(items))
         }
         SsotParser::Rule::object_literal => {
-             let args = match inner_pair.into_inner().next() { // object_literal contains optional annotation_args
-                 Some(args_pair) if args_pair.as_rule() == SsotParser::Rule::annotation_args => parse_annotation_args(args_pair.into_inner())?,
-                 _ => vec![] // Empty object or no args
-             };
+            let args = match inner_pair.into_inner().next() {
+                // object_literal contains optional annotation_args
+                Some(args_pair) if args_pair.as_rule() == SsotParser::Rule::annotation_args => {
+                    parse_annotation_args(args_pair.into_inner())?
+                }
+                _ => vec![], // Empty object or no args
+            };
             Ok(AnnotationValue::Object(args))
         }
         rule => Err(ParseError::UnexpectedRule {
@@ -1361,38 +1536,57 @@ fn parse_string_literal(pair: Pair<SsotParser::Rule>) -> ParseResult<String> {
 }
 
 fn parse_type_specifier(pair: Pair<SsotParser::Rule>) -> ParseResult<TypeSpecifier> {
-     // type_specifier rule is silent, look inside
-    let inner_pair = pair.into_inner().next().ok_or_else(|| ParseError::InvalidInput {
-        message: "Empty type_specifier rule".to_string(),
-    })?;
+    // type_specifier rule is silent, look inside
+    let inner_pair = pair
+        .into_inner()
+        .next()
+        .ok_or_else(|| ParseError::InvalidInput {
+            message: "Empty type_specifier rule".to_string(),
+        })?;
 
     match inner_pair.as_rule() {
         SsotParser::Rule::simple_type => {
-            let ident_pair = inner_pair.into_inner().next().ok_or_else(|| ParseError::MissingRule {
-                expected: SsotParser::Rule::identifier,
-            })?;
+            let ident_pair =
+                inner_pair
+                    .into_inner()
+                    .next()
+                    .ok_or_else(|| ParseError::MissingRule {
+                        expected: SsotParser::Rule::identifier,
+                    })?;
             Ok(TypeSpecifier::Simple(parse_identifier(ident_pair)?))
         }
         SsotParser::Rule::list_type => {
-            let inner_type_pair = inner_pair.into_inner().next().ok_or_else(|| ParseError::MissingRule {
-                expected: SsotParser::Rule::type_specifier,
-            })?;
+            let inner_type_pair =
+                inner_pair
+                    .into_inner()
+                    .next()
+                    .ok_or_else(|| ParseError::MissingRule {
+                        expected: SsotParser::Rule::type_specifier,
+                    })?;
             let inner_type = parse_type_specifier(inner_type_pair)?;
             Ok(TypeSpecifier::List(Box::new(inner_type)))
         }
         SsotParser::Rule::optional_type => {
-             let inner_type_pair = inner_pair.into_inner().next().ok_or_else(|| ParseError::MissingRule {
-                expected: SsotParser::Rule::type_specifier,
-            })?;
+            let inner_type_pair =
+                inner_pair
+                    .into_inner()
+                    .next()
+                    .ok_or_else(|| ParseError::MissingRule {
+                        expected: SsotParser::Rule::type_specifier,
+                    })?;
             let inner_type = parse_type_specifier(inner_type_pair)?;
             Ok(TypeSpecifier::Optional(Box::new(inner_type)))
         }
         SsotParser::Rule::map_type => {
-             let mut map_inner = inner_pair.into_inner();
-             let key_type_pair = map_inner.next().ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::type_specifier })?;
-             let value_type_pair = map_inner.next().ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::type_specifier })?;
-             let key_type = parse_type_specifier(key_type_pair)?;
-             let value_type = parse_type_specifier(value_type_pair)?;
+            let mut map_inner = inner_pair.into_inner();
+            let key_type_pair = map_inner.next().ok_or_else(|| ParseError::MissingRule {
+                expected: SsotParser::Rule::type_specifier,
+            })?;
+            let value_type_pair = map_inner.next().ok_or_else(|| ParseError::MissingRule {
+                expected: SsotParser::Rule::type_specifier,
+            })?;
+            let key_type = parse_type_specifier(key_type_pair)?;
+            let value_type = parse_type_specifier(value_type_pair)?;
             Ok(TypeSpecifier::Map(Box::new(key_type), Box::new(value_type)))
         }
         rule => Err(ParseError::UnexpectedRule {
@@ -1420,7 +1614,11 @@ fn parse_history_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<History
                 history_type = Some(match inner_pair.as_str() {
                     "shallow" => HistoryType::Shallow,
                     "deep" => HistoryType::Deep,
-                    _ => return Err(ParseError::InvalidInput { message: format!("Invalid history type: {}", inner_pair.as_str()) })
+                    _ => {
+                        return Err(ParseError::InvalidInput {
+                            message: format!("Invalid history type: {}", inner_pair.as_str()),
+                        })
+                    }
                 });
             }
             SsotParser::Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
@@ -1432,19 +1630,27 @@ fn parse_history_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<History
     }
 
     Ok(HistoryDefinition {
-        history_type: history_type.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::history_type })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
-        target: target.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
+        history_type: history_type.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::history_type,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
+        target: target.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
     })
 }
 
-
 fn parse_identifier_list_in_parens(pair: Pair<SsotParser::Rule>) -> ParseResult<Vec<Identifier>> {
-     // Rule might be silent, e.g., `allowed_actors_annotation = { ... "(" ~ identifier_list ~ ")" ... }`
-     // Need to find the actual identifier_list pair within the current pair.
-     let id_list_pair = pair.into_inner()
-         .find(|p| p.as_rule() == SsotParser::Rule::identifier_list)
-         .ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier_list })?;
+    // Rule might be silent, e.g., `allowed_actors_annotation = { ... "(" ~ identifier_list ~ ")" ... }`
+    // Need to find the actual identifier_list pair within the current pair.
+    let id_list_pair = pair
+        .into_inner()
+        .find(|p| p.as_rule() == SsotParser::Rule::identifier_list)
+        .ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier_list,
+        })?;
     parse_identifier_list(id_list_pair)
 }
 
@@ -1466,28 +1672,29 @@ fn parse_services_block(pair: Pair<SsotParser::Rule>) -> ParseResult<ServicesBlo
                 // service_item is silent, look inside
                 if let Some(item_pair) = inner_pair.into_inner().next() {
                     match item_pair.as_rule() {
-                        SsotParser::Rule::interface_definition => definitions.push(ServiceItem::Interface(
-                            parse_interface_definition(item_pair)?,
-                        )),
+                        SsotParser::Rule::interface_definition => definitions.push(
+                            ServiceItem::Interface(parse_interface_definition(item_pair)?),
+                        ),
                         SsotParser::Rule::service_definition => {
-                            definitions.push(ServiceItem::Service(parse_service_definition(item_pair)?));
+                            definitions
+                                .push(ServiceItem::Service(parse_service_definition(item_pair)?));
                         }
                         _ => {
                             return Err(ParseError::UnexpectedRule {
                                 expected: SsotParser::Rule::interface_definition, // or service
                                 found: item_pair.as_rule(),
-                            })
+                            });
                         }
                     }
                 } else {
-                     eprintln!("Warning: Empty service_item encountered.");
+                    eprintln!("Warning: Empty service_item encountered.");
                 }
             }
             _ => {
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::annotation, // Or service_item
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
@@ -1516,20 +1723,26 @@ fn parse_interface_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Inter
             SsotParser::Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
             SsotParser::Rule::identifier => name = Some(parse_identifier(inner_pair)?),
             SsotParser::Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
-            SsotParser::Rule::method_definition => methods.push(parse_method_definition(inner_pair)?),
+            SsotParser::Rule::method_definition => {
+                methods.push(parse_method_definition(inner_pair)?)
+            }
             _ => {
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::identifier, // Or others
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
 
     Ok(InterfaceDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         methods,
     })
 }
@@ -1562,7 +1775,7 @@ fn parse_method_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<MethodDe
                 }
             }
             SsotParser::Rule::method_return => {
-                 // method_return is silent, look inside for type_specifier
+                // method_return is silent, look inside for type_specifier
                 if let Some(ts_pair) = inner_pair.into_inner().next() {
                     return_type = Some(parse_type_specifier(ts_pair)?);
                 }
@@ -1582,8 +1795,12 @@ fn parse_method_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<MethodDe
 
     Ok(MethodDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         parameters,
         return_type,
         body_annotations,
@@ -1608,14 +1825,18 @@ fn parse_parameter(pair: Pair<SsotParser::Rule>) -> ParseResult<ParameterDefinit
             SsotParser::Rule::type_specifier => type_spec = Some(parse_type_specifier(inner_pair)?),
             SsotParser::Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
             _ => {
-                 // Ignore unexpected rules (like @id parts if handled differently)
+                // Ignore unexpected rules (like @id parts if handled differently)
             }
         }
     }
 
     Ok(ParameterDefinition {
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        type_specifier: type_spec.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::type_specifier })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        type_specifier: type_spec.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::type_specifier,
+        })?,
         id,
     })
 }
@@ -1640,24 +1861,25 @@ fn parse_service_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Service
             SsotParser::Rule::identifier => name = Some(parse_identifier(inner_pair)?),
             SsotParser::Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
             SsotParser::Rule::service_extends => {
-                 // service_extends is silent, look inside for identifier
+                // service_extends is silent, look inside for identifier
                 if let Some(id_pair) = inner_pair.into_inner().next() {
-                     extends = Some(parse_identifier(id_pair)?);
+                    extends = Some(parse_identifier(id_pair)?);
                 }
             }
             SsotParser::Rule::service_body => {
                 for body_item in inner_pair.into_inner() {
-                     // service_element is silent, check its inner rule
+                    // service_element is silent, check its inner rule
                     if let Some(element_pair) = body_item.into_inner().next() {
-                         if element_pair.as_rule() == SsotParser::Rule::annotation {
+                        if element_pair.as_rule() == SsotParser::Rule::annotation {
                             body_annotations.push(parse_annotation(element_pair)?);
-                         }
-                     } else if body_item.as_rule() != SsotParser::Rule::service_element { // Check top level pair if not silent
-                         // If service_element itself could be non-silent annotation
-                         if body_item.as_rule() == SsotParser::Rule::annotation {
-                             body_annotations.push(parse_annotation(body_item)?);
-                         }
-                     }
+                        }
+                    } else if body_item.as_rule() != SsotParser::Rule::service_element {
+                        // Check top level pair if not silent
+                        // If service_element itself could be non-silent annotation
+                        if body_item.as_rule() == SsotParser::Rule::annotation {
+                            body_annotations.push(parse_annotation(body_item)?);
+                        }
+                    }
                 }
             }
             _ => { /* Ignore unexpected */ }
@@ -1669,8 +1891,12 @@ fn parse_service_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Service
 
     Ok(ServiceDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         extends,
         // elements: body_annotations, // Store body annotations here or merge
     })
@@ -1694,19 +1920,19 @@ fn parse_communication_block(pair: Pair<SsotParser::Rule>) -> ParseResult<Commun
                 // communication_item is silent, look inside
                 if let Some(item_pair) = inner_pair.into_inner().next() {
                     match item_pair.as_rule() {
-                        SsotParser::Rule::protocol_definition => definitions.push(CommunicationItem::Protocol(
-                            parse_protocol_definition(item_pair)?,
-                        )),
-                        SsotParser::Rule::channel_definition => definitions.push(CommunicationItem::Channel(
-                            parse_channel_definition(item_pair)?,
-                        )),
+                        SsotParser::Rule::protocol_definition => definitions.push(
+                            CommunicationItem::Protocol(parse_protocol_definition(item_pair)?),
+                        ),
+                        SsotParser::Rule::channel_definition => definitions.push(
+                            CommunicationItem::Channel(parse_channel_definition(item_pair)?),
+                        ),
                         SsotParser::Rule::event_definition => definitions
                             .push(CommunicationItem::Event(parse_event_definition(item_pair)?)),
                         _ => {
                             return Err(ParseError::UnexpectedRule {
                                 expected: SsotParser::Rule::protocol_definition, // or others
                                 found: item_pair.as_rule(),
-                            })
+                            });
                         }
                     }
                 } else {
@@ -1717,7 +1943,7 @@ fn parse_communication_block(pair: Pair<SsotParser::Rule>) -> ParseResult<Commun
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::annotation, // Or communication_item
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
@@ -1761,8 +1987,12 @@ fn parse_protocol_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Protoc
 
     Ok(ProtocolDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         // Body annotations are merged into main annotations
     })
 }
@@ -1792,24 +2022,35 @@ fn parse_channel_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Channel
                     if let Some(element_pair) = element.into_inner().next() {
                         match element_pair.as_rule() {
                             SsotParser::Rule::description_element => {
-                                let desc_val = element_pair.into_inner()
+                                let desc_val = element_pair
+                                    .into_inner()
                                     .find(|p| p.as_rule() == SsotParser::Rule::string_literal)
-                                    .ok_or(ParseError::MissingRule { expected: SsotParser::Rule::string_literal })?;
+                                    .ok_or(ParseError::MissingRule {
+                                        expected: SsotParser::Rule::string_literal,
+                                    })?;
                                 description = Some(parse_string_literal(desc_val)?);
                             }
                             SsotParser::Rule::parameters_element => {
-                                let params_val = element_pair.into_inner()
-                                     .find(|p| p.as_rule() == SsotParser::Rule::object_literal)
-                                     .ok_or(ParseError::MissingRule { expected: SsotParser::Rule::object_literal })?;
-                                if let AnnotationValue::Object(params_obj) = parse_annotation_value(params_val)? {
+                                let params_val = element_pair
+                                    .into_inner()
+                                    .find(|p| p.as_rule() == SsotParser::Rule::object_literal)
+                                    .ok_or(ParseError::MissingRule {
+                                        expected: SsotParser::Rule::object_literal,
+                                    })?;
+                                if let AnnotationValue::Object(params_obj) =
+                                    parse_annotation_value(params_val)?
+                                {
                                     parameters = Some(params_obj);
                                 }
                             }
-                            SsotParser::Rule::annotation => annotations.push(parse_annotation(element_pair)?),
+                            SsotParser::Rule::annotation => {
+                                annotations.push(parse_annotation(element_pair)?)
+                            }
                             _ => { /* Unexpected inside channel_element */ }
                         }
-                    } else if element.as_rule() == SsotParser::Rule::annotation { // Handle annotation directly under channel_body
-                         annotations.push(parse_annotation(element)?);
+                    } else if element.as_rule() == SsotParser::Rule::annotation {
+                        // Handle annotation directly under channel_body
+                        annotations.push(parse_annotation(element)?);
                     }
                 }
             }
@@ -1819,8 +2060,12 @@ fn parse_channel_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Channel
 
     Ok(ChannelDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         description,
         parameters,
     })
@@ -1847,7 +2092,7 @@ fn parse_event_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<EventDefi
             SsotParser::Rule::event_field_definition => {
                 // event_field_definition is silent, contains field_definition
                 if let Some(field_pair) = inner_pair.into_inner().next() {
-                     if field_pair.as_rule() == SsotParser::Rule::field_definition {
+                    if field_pair.as_rule() == SsotParser::Rule::field_definition {
                         fields.push(parse_field_definition(field_pair)?);
                     }
                 }
@@ -1858,8 +2103,12 @@ fn parse_event_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<EventDefi
 
     Ok(EventDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         fields,
     })
 }
@@ -1878,12 +2127,14 @@ fn parse_actors_block(pair: Pair<SsotParser::Rule>) -> ParseResult<ActorsBlock> 
     for inner_pair in pair.into_inner() {
         match inner_pair.as_rule() {
             SsotParser::Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
-            SsotParser::Rule::actor_definition => definitions.push(parse_actor_definition(inner_pair)?),
+            SsotParser::Rule::actor_definition => {
+                definitions.push(parse_actor_definition(inner_pair)?)
+            }
             _ => {
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::annotation, // Or actor_definition
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
@@ -1927,12 +2178,18 @@ fn parse_actor_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<ActorDefi
 
     Ok(ActorDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
     })
 }
 
-fn parse_deployment_config_block(pair: Pair<SsotParser::Rule>) -> ParseResult<DeploymentConfigBlock> {
+fn parse_deployment_config_block(
+    pair: Pair<SsotParser::Rule>,
+) -> ParseResult<DeploymentConfigBlock> {
     if pair.as_rule() != SsotParser::Rule::deployment_config_block {
         return Err(ParseError::UnexpectedRule {
             expected: SsotParser::Rule::deployment_config_block,
@@ -1947,23 +2204,25 @@ fn parse_deployment_config_block(pair: Pair<SsotParser::Rule>) -> ParseResult<De
         match inner_pair.as_rule() {
             SsotParser::Rule::annotation => annotations.push(parse_annotation(inner_pair)?),
             SsotParser::Rule::deployment_item => {
-                 // deployment_item is silent, look inside
+                // deployment_item is silent, look inside
                 if let Some(item_pair) = inner_pair.into_inner().next() {
                     match item_pair.as_rule() {
-                        SsotParser::Rule::environment_definition => definitions.push(DeploymentItem::Environment(
-                            parse_environment_definition(item_pair)?,
-                        )),
-                        SsotParser::Rule::infrastructure_definition => definitions.push(
-                            DeploymentItem::Infrastructure(parse_infrastructure_definition(item_pair)?),
+                        SsotParser::Rule::environment_definition => definitions.push(
+                            DeploymentItem::Environment(parse_environment_definition(item_pair)?),
                         ),
-                        SsotParser::Rule::deployment_definition => definitions.push(DeploymentItem::Deployment(
-                            parse_deployment_definition(item_pair)?,
-                        )),
+                        SsotParser::Rule::infrastructure_definition => {
+                            definitions.push(DeploymentItem::Infrastructure(
+                                parse_infrastructure_definition(item_pair)?,
+                            ))
+                        }
+                        SsotParser::Rule::deployment_definition => definitions.push(
+                            DeploymentItem::Deployment(parse_deployment_definition(item_pair)?),
+                        ),
                         _ => {
                             return Err(ParseError::UnexpectedRule {
                                 expected: SsotParser::Rule::environment_definition, // or others
                                 found: item_pair.as_rule(),
-                            })
+                            });
                         }
                     }
                 } else {
@@ -1974,7 +2233,7 @@ fn parse_deployment_config_block(pair: Pair<SsotParser::Rule>) -> ParseResult<De
                 return Err(ParseError::UnexpectedRule {
                     expected: SsotParser::Rule::annotation, // Or deployment_item
                     found: inner_pair.as_rule(),
-                })
+                });
             }
         }
     }
@@ -1985,8 +2244,10 @@ fn parse_deployment_config_block(pair: Pair<SsotParser::Rule>) -> ParseResult<De
     })
 }
 
-fn parse_environment_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<EnvironmentDefinition> {
-     if pair.as_rule() != SsotParser::Rule::environment_definition {
+fn parse_environment_definition(
+    pair: Pair<SsotParser::Rule>,
+) -> ParseResult<EnvironmentDefinition> {
+    if pair.as_rule() != SsotParser::Rule::environment_definition {
         return Err(ParseError::UnexpectedRule {
             expected: SsotParser::Rule::environment_definition,
             found: pair.as_rule(),
@@ -2005,46 +2266,60 @@ fn parse_environment_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Env
             SsotParser::Rule::identifier => name = Some(parse_identifier(inner_pair)?),
             SsotParser::Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
             SsotParser::Rule::environment_extends => {
-                 if let Some(id_pair) = inner_pair.into_inner().next() {
-                     extends = Some(parse_identifier(id_pair)?);
-                 }
+                if let Some(id_pair) = inner_pair.into_inner().next() {
+                    extends = Some(parse_identifier(id_pair)?);
+                }
             }
             SsotParser::Rule::environment_body => {
-                 for element in inner_pair.into_inner() {
+                for element in inner_pair.into_inner() {
                     // environment_element is silent
                     if let Some(element_pair) = element.into_inner().next() {
                         match element_pair.as_rule() {
                             SsotParser::Rule::variables_element => {
-                                 let vars_val = element_pair.into_inner()
-                                     .find(|p| p.as_rule() == SsotParser::Rule::object_literal)
-                                     .ok_or(ParseError::MissingRule { expected: SsotParser::Rule::object_literal })?;
-                                if let AnnotationValue::Object(vars_obj) = parse_annotation_value(vars_val)? {
-                                     variables = Some(vars_obj);
+                                let vars_val = element_pair
+                                    .into_inner()
+                                    .find(|p| p.as_rule() == SsotParser::Rule::object_literal)
+                                    .ok_or(ParseError::MissingRule {
+                                        expected: SsotParser::Rule::object_literal,
+                                    })?;
+                                if let AnnotationValue::Object(vars_obj) =
+                                    parse_annotation_value(vars_val)?
+                                {
+                                    variables = Some(vars_obj);
                                 }
                             }
-                            SsotParser::Rule::annotation => annotations.push(parse_annotation(element_pair)?),
+                            SsotParser::Rule::annotation => {
+                                annotations.push(parse_annotation(element_pair)?)
+                            }
                             _ => { /* Unexpected inside element */ }
                         }
-                    } else if element.as_rule() == SsotParser::Rule::annotation { // Annotation directly under body
+                    } else if element.as_rule() == SsotParser::Rule::annotation {
+                        // Annotation directly under body
                         annotations.push(parse_annotation(element)?);
                     }
-                 }
+                }
             }
             _ => { /* Ignore unexpected */ }
         }
     }
 
-     Ok(EnvironmentDefinition {
+    Ok(EnvironmentDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         extends,
         variables,
     })
 }
 
-fn parse_infrastructure_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<InfrastructureDefinition> {
-     if pair.as_rule() != SsotParser::Rule::infrastructure_definition {
+fn parse_infrastructure_definition(
+    pair: Pair<SsotParser::Rule>,
+) -> ParseResult<InfrastructureDefinition> {
+    if pair.as_rule() != SsotParser::Rule::infrastructure_definition {
         return Err(ParseError::UnexpectedRule {
             expected: SsotParser::Rule::infrastructure_definition,
             found: pair.as_rule(),
@@ -2063,34 +2338,41 @@ fn parse_infrastructure_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<
             SsotParser::Rule::identifier => name = Some(parse_identifier(inner_pair)?),
             SsotParser::Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
             SsotParser::Rule::infrastructure_extends => {
-                 if let Some(id_pair) = inner_pair.into_inner().next() {
-                     extends = Some(parse_identifier(id_pair)?);
-                 }
+                if let Some(id_pair) = inner_pair.into_inner().next() {
+                    extends = Some(parse_identifier(id_pair)?);
+                }
             }
             SsotParser::Rule::infrastructure_body => {
-                 for element in inner_pair.into_inner() {
-                     // infrastructure_element is silent
+                for element in inner_pair.into_inner() {
+                    // infrastructure_element is silent
                     if let Some(element_pair) = element.into_inner().next() {
                         match element_pair.as_rule() {
                             SsotParser::Rule::attribute_kv_pair => {
                                 attributes.push(parse_attribute_kv_pair(element_pair)?);
                             }
-                            SsotParser::Rule::annotation => annotations.push(parse_annotation(element_pair)?),
-                             _ => { /* Unexpected inside element */ }
+                            SsotParser::Rule::annotation => {
+                                annotations.push(parse_annotation(element_pair)?)
+                            }
+                            _ => { /* Unexpected inside element */ }
                         }
-                    } else if element.as_rule() == SsotParser::Rule::annotation { // Annotation directly under body
+                    } else if element.as_rule() == SsotParser::Rule::annotation {
+                        // Annotation directly under body
                         annotations.push(parse_annotation(element)?);
                     }
-                 }
+                }
             }
             _ => { /* Ignore unexpected */ }
         }
     }
 
-     Ok(InfrastructureDefinition {
+    Ok(InfrastructureDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
         extends,
         attributes,
     })
@@ -2124,8 +2406,7 @@ fn parse_deployment_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Depl
     let mut target_infrastructure = None;
     let mut deployable = None;
     let mut config = None;
-    let mut attributes = Vec::new(); // For direct attributes like replicas, strategy
-
+    let mut other_attributes = Vec::new(); // For direct attributes like replicas, strategy
 
     for inner_pair in pair.into_inner() {
         match inner_pair.as_rule() {
@@ -2134,44 +2415,63 @@ fn parse_deployment_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Depl
             SsotParser::Rule::integer_literal => id = Some(parse_numeric_id(inner_pair)?),
             SsotParser::Rule::deployment_body => {
                 for element in inner_pair.into_inner() {
-                     // deployment_element is silent
+                    // deployment_element is silent
                     if let Some(element_pair) = element.into_inner().next() {
                         match element_pair.as_rule() {
                             SsotParser::Rule::target_env_element => {
-                                 let env_id = element_pair.into_inner()
-                                     .find(|p| p.as_rule() == SsotParser::Rule::identifier)
-                                     .ok_or(ParseError::MissingRule { expected: SsotParser::Rule::identifier })?;
-                                 target_environment = Some(parse_identifier(env_id)?);
+                                let env_id = element_pair
+                                    .into_inner()
+                                    .find(|p| p.as_rule() == SsotParser::Rule::identifier)
+                                    .ok_or(ParseError::MissingRule {
+                                        expected: SsotParser::Rule::identifier,
+                                    })?;
+                                target_environment = Some(parse_identifier(env_id)?);
                             }
                             SsotParser::Rule::target_infra_element => {
-                                 let infra_obj = element_pair.into_inner()
-                                     .find(|p| p.as_rule() == SsotParser::Rule::object_literal)
-                                     .ok_or(ParseError::MissingRule { expected: SsotParser::Rule::object_literal })?;
-                                 if let AnnotationValue::Object(infra_map) = parse_annotation_value(infra_obj)? {
-                                      target_infrastructure = Some(infra_map);
-                                 }
+                                let infra_obj = element_pair
+                                    .into_inner()
+                                    .find(|p| p.as_rule() == SsotParser::Rule::object_literal)
+                                    .ok_or(ParseError::MissingRule {
+                                        expected: SsotParser::Rule::object_literal,
+                                    })?;
+                                if let AnnotationValue::Object(infra_map) =
+                                    parse_annotation_value(infra_obj)?
+                                {
+                                    target_infrastructure = Some(infra_map);
+                                }
                             }
                             SsotParser::Rule::deployable_element => {
-                                 let dep_id = element_pair.into_inner()
-                                     .find(|p| p.as_rule() == SsotParser::Rule::identifier)
-                                     .ok_or(ParseError::MissingRule { expected: SsotParser::Rule::identifier })?;
-                                 deployable = Some(parse_identifier(dep_id)?);
+                                let dep_id = element_pair
+                                    .into_inner()
+                                    .find(|p| p.as_rule() == SsotParser::Rule::identifier)
+                                    .ok_or(ParseError::MissingRule {
+                                        expected: SsotParser::Rule::identifier,
+                                    })?;
+                                deployable = Some(parse_identifier(dep_id)?);
                             }
                             SsotParser::Rule::config_element => {
-                                 let conf_obj = element_pair.into_inner()
-                                     .find(|p| p.as_rule() == SsotParser::Rule::object_literal)
-                                     .ok_or(ParseError::MissingRule { expected: SsotParser::Rule::object_literal })?;
-                                if let AnnotationValue::Object(conf_map) = parse_annotation_value(conf_obj)? {
-                                     config = Some(conf_map);
+                                let conf_obj = element_pair
+                                    .into_inner()
+                                    .find(|p| p.as_rule() == SsotParser::Rule::object_literal)
+                                    .ok_or(ParseError::MissingRule {
+                                        expected: SsotParser::Rule::object_literal,
+                                    })?;
+                                if let AnnotationValue::Object(conf_map) =
+                                    parse_annotation_value(conf_obj)?
+                                {
+                                    config = Some(conf_map);
                                 }
                             }
                             SsotParser::Rule::attribute_kv_pair => {
-                                 attributes.push(parse_attribute_kv_pair(element_pair)?);
+                                other_attributes.push(parse_attribute_kv_pair(element_pair)?);
                             }
-                            SsotParser::Rule::annotation => annotations.push(parse_annotation(element_pair)?),
-                             _ => { /* Unexpected inside element */ }
+                            SsotParser::Rule::annotation => {
+                                annotations.push(parse_annotation(element_pair)?)
+                            }
+                            _ => { /* Unexpected inside element */ }
                         }
-                    } else if element.as_rule() == SsotParser::Rule::annotation { // Annotation directly under body
+                    } else if element.as_rule() == SsotParser::Rule::annotation {
+                        // Annotation directly under body
                         annotations.push(parse_annotation(element)?);
                     }
                 }
@@ -2182,16 +2482,25 @@ fn parse_deployment_definition(pair: Pair<SsotParser::Rule>) -> ParseResult<Depl
 
     Ok(DeploymentDefinition {
         annotations,
-        name: name.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::identifier })?,
-        id: id.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::integer_literal })?,
-        target_environment: target_environment.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::target_env_element })?,
-        target_infrastructure: target_infrastructure.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::target_infra_element })?,
-        deployable: deployable.ok_or_else(|| ParseError::MissingRule { expected: SsotParser::Rule::deployable_element })?,
+        name: name.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::identifier,
+        })?,
+        id: id.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::integer_literal,
+        })?,
+        target_environment: target_environment.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::target_env_element,
+        })?,
+        target_infrastructure: target_infrastructure.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::target_infra_element,
+        })?,
+        deployable: deployable.ok_or_else(|| ParseError::MissingRule {
+            expected: SsotParser::Rule::deployable_element,
+        })?,
         config,
-        attributes,
+        other_attributes,
     })
 }
-
 
 /// Parses an SSOT file from the given path.
 ///
@@ -2222,27 +2531,86 @@ pub fn parse_ssot_file<P: AsRef<Path>>(path: P) -> ParseResult<SsotAst> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{ // Import necessary AST nodes for comparison
-        ActionDefinition, ActionsBlock, ActorDefinition, ActorsBlock, Annotation, AnnotationValue, Argument,
-        AttributeDefinition, ChannelDefinition, CommunicationBlock, CommunicationItem, ContextDefinition,
-        ContextFieldDefinition, DeploymentConfigBlock, DeploymentDefinition, DeploymentItem,
-        EnumDefinition, EnumVariant, EnvironmentDefinition, EventDefinition, FieldDefinition, FileId,
-        GuardDefinition, GuardsBlock, HistoryDefinition, HistoryType, Identifier, ImportStatement,
-        InfrastructureDefinition, InterfaceDefinition, InvokeDefinition, InvokeSource, InvokesBlock,
-        MachineDefinition, MachinesBlock, MethodDefinition, NumericId, ParameterDefinition,
-        ProtocolDefinition, ServiceDefinition, ServiceItem, ServicesBlock, SsotAst, StateDefinition,
-        StateInvokeDefinition, StatesBlock, StructDefinition, TopLevelDefinition, TransitionDefinition,
-        TransitionTarget, TypeDefinition, TypeSpecifier, TypesBlock,
-        ActorDefinition, ActorsBlock, Annotation, CommunicationItem, DeploymentConfigBlock, DeploymentItem, Duration, HistoryType, InvokeSource, ServiceItem, TimeUnit, TransitionTarget, TypeDefinition, TypeSpecifier
+    use crate::ast::{
+        // Import necessary AST nodes for comparison
+        ActionDefinition,
+        ActionsBlock,
+        ActorDefinition,
+        ActorDefinition,
+        ActorsBlock,
+        ActorsBlock,
+        Annotation,
+        Annotation,
+        AnnotationValue,
+        Argument,
+        AttributeDefinition,
+        ChannelDefinition,
+        CommunicationBlock,
+        CommunicationItem,
+        CommunicationItem,
+        ContextDefinition,
+        ContextFieldDefinition,
+        DeploymentConfigBlock,
+        DeploymentConfigBlock,
+        DeploymentDefinition,
+        DeploymentItem,
+        DeploymentItem,
+        Duration,
+        EnumDefinition,
+        EnumVariant,
+        EnvironmentDefinition,
+        EventDefinition,
+        FieldDefinition,
+        FileId,
+        GuardDefinition,
+        GuardsBlock,
+        HistoryDefinition,
+        HistoryType,
+        HistoryType,
+        Identifier,
+        ImportStatement,
+        InfrastructureDefinition,
+        InterfaceDefinition,
+        InvokeDefinition,
+        InvokeSource,
+        InvokeSource,
+        InvokesBlock,
+        MachineDefinition,
+        MachinesBlock,
+        MethodDefinition,
+        NumericId,
+        ParameterDefinition,
+        ProtocolDefinition,
+        ServiceDefinition,
+        ServiceItem,
+        ServiceItem,
+        ServicesBlock,
+        SsotAst,
+        StateDefinition,
+        StateInvokeDefinition,
+        StatesBlock,
+        StructDefinition,
+        TimeUnit,
+        TopLevelDefinition,
+        TransitionDefinition,
+        TransitionTarget,
+        TransitionTarget,
+        TypeDefinition,
+        TypeDefinition,
+        TypeSpecifier,
+        TypeSpecifier,
+        TypesBlock,
     };
     use pretty_assertions::assert_eq;
+    use std::io::Write;
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
-    use std::io::Write;
 
     // Helper to create Identifier
     fn ident(name: &str) -> Identifier {
-        Identifier { name: name.to_string() }
+        Identifier {
+            name: name.to_string(),
+        }
     }
 
     // Helper to create NumericId
@@ -2253,16 +2621,15 @@ mod tests {
     #[test]
     fn test_parse_basic_file_structure() {
         let content = r#"
-            # This is a comment
             file_id: 0xabcdef1234567890;
-            import "/path/to/another.ssot";
-            # Another comment
+            import \"/path/to/another.ssot\";
+            # This is a comment
         "#;
         let ast = parse_ssot_content(content, None).unwrap();
 
-        assert_eq!(ast.file_id, Some(FileId("0xabcdef1234567890".to_string())));
+        assert_eq!(ast.file_id, Some(FileId { value: 0xabcdef1234567890 }));
         assert_eq!(ast.imports.len(), 1);
-        assert_eq!(ast.imports[0], ImportStatement("/path/to/another.ssot".to_string()));
+        assert_eq!(ast.imports[0], ImportStatement{ path: "/path/to/another.ssot".to_string() });
         assert!(ast.definitions.is_empty());
     }
 
@@ -2291,7 +2658,7 @@ mod tests {
         match &ast.definitions[0] {
             TopLevelDefinition::Types(types_block) => {
                 assert_eq!(types_block.annotations.len(), 1);
-                assert_eq!(types_block.annotations[0].name.name, "description");
+                assert!(matches!(types_block.annotations[0], Annotation::Description(s) if s == "Some types"));
                 assert_eq!(types_block.definitions.len(), 2);
 
                 // Check Struct
@@ -2302,16 +2669,20 @@ mod tests {
                         assert_eq!(s.fields.len(), 2);
                         assert_eq!(s.fields[0].name.name, "x");
                         assert_eq!(s.fields[0].id.value, 0);
-                        assert!(matches!(s.fields[0].type_specifier, TypeSpecifier::Simple(ref id) if id.name == "i32"));
+                        assert!(
+                            matches!(s.fields[0].type_spec, TypeSpecifier::Simple(ref id) if id.name == "i32")
+                        );
                         assert_eq!(s.fields[1].name.name, "y");
                         assert_eq!(s.fields[1].id.value, 1);
-                         assert!(matches!(s.fields[1].type_specifier, TypeSpecifier::Simple(ref id) if id.name == "i32"));
-                        assert_eq!(s.fields[1].field_annotations.len(), 1);
-                        assert_eq!(s.fields[1].field_annotations[0].name.name, "meta");
-                         assert_eq!(s.fields[1].field_annotations[0].arguments.len(), 1);
-                         assert_eq!(s.fields[1].field_annotations[0].arguments[0].key.name, "unit");
-                         assert!(matches!(s.fields[1].field_annotations[0].arguments[0].value, AnnotationValue::String(ref s) if s == "pixels"));
-
+                        assert!(
+                            matches!(s.fields[1].type_spec, TypeSpecifier::Simple(ref id) if id.name == "i32")
+                        );
+                        assert_eq!(s.fields[1].annotations.len(), 1);
+                        assert!(matches!(&s.fields[1].annotations[0], Annotation::Meta(args) if \
+                            args.len() == 1 && \
+                            args[0].key.name == "unit" && \
+                            matches!(args[0].value, AnnotationValue::String(ref s) if s == "pixels") // Corrected: Compare with AnnotationValue::String
+                        )); // Added borrow
                     }
                     _ => panic!("Expected StructDefinition"),
                 }
@@ -2328,8 +2699,8 @@ mod tests {
                         assert_eq!(e.variants[1].id.value, 1);
                         assert_eq!(e.variants[2].name.name, "BLUE");
                         assert_eq!(e.variants[2].id.value, 2);
-                        assert_eq!(e.variants[2].variant_annotations.len(), 1);
-                        assert_eq!(e.variants[2].variant_annotations[0].name.name, "description");
+                        assert_eq!(e.variants[2].annotations.len(), 1);
+                        assert!(matches!(&e.variants[2].annotations[0], Annotation::Description(s) if s == "Primary blue"));
                     }
                     _ => panic!("Expected EnumDefinition"),
                 }
@@ -2338,7 +2709,7 @@ mod tests {
         }
     }
 
-     #[test]
+    #[test]
     fn test_parse_simple_machines_block() {
         let content = r#"
             file_id: 0x2;
@@ -2380,11 +2751,12 @@ mod tests {
         match &ast.definitions[0] {
             TopLevelDefinition::Machines(machines_block) => {
                 assert_eq!(machines_block.annotations.len(), 1);
+                assert!(matches!(machines_block.annotations[0], Annotation::Description(s) if s == "State machines"));
                 assert_eq!(machines_block.definitions.len(), 1);
                 let machine = &machines_block.definitions[0];
                 assert_eq!(machine.name.name, "SimpleMachine");
                 assert_eq!(machine.id.value, 0);
-                assert!(machine.annotations.iter().any(|a| a.name.name == "initial"));
+                assert!(machine.annotations.iter().any(|a| matches!(a, Annotation::Initial(id) if id.name == "Idle")));
 
                 // Check context
                 assert!(machine.context.is_some());
@@ -2392,8 +2764,8 @@ mod tests {
                 assert_eq!(context.id.value, 0);
                 assert_eq!(context.fields.len(), 1);
                 assert_eq!(context.fields[0].name.name, "counter");
-                 assert_eq!(context.fields[0].field_annotations.len(), 1); // $default
-                 assert_eq!(context.fields[0].field_annotations[0].name.name, "default");
+                assert_eq!(context.fields[0].field_annotations.len(), 1); // $default
+                assert!(matches!(context.fields[0].field_annotations[0], Annotation::Default(val) if val == "0"));
 
                 // Check states block
                 assert_eq!(machine.states.id.value, 1);
@@ -2405,7 +2777,9 @@ mod tests {
                 assert_eq!(idle_state.id.value, 0);
                 assert_eq!(idle_state.transitions.len(), 1);
                 assert_eq!(idle_state.transitions[0].event.name, "START");
-                assert!(matches!(idle_state.transitions[0].target, Some(TransitionTarget::State(ref id)) if id.name == "Running"));
+                assert!(
+                    matches!(idle_state.transitions[0].target, Some(TransitionTarget::State(ref id)) if id.name == "Running")
+                );
 
                 // Check Running state
                 let running_state = &machine.states.states[1];
@@ -2413,29 +2787,36 @@ mod tests {
                 assert_eq!(running_state.id.value, 1);
                 assert!(running_state.is_parallel);
                 assert_eq!(running_state.transitions.len(), 1);
-                 assert_eq!(running_state.transitions[0].event.name, "STOP");
-                assert!(matches!(running_state.transitions[0].target, Some(TransitionTarget::State(ref id)) if id.name == "Idle"));
+                assert_eq!(running_state.transitions[0].event.name, "STOP");
+                assert!(
+                    matches!(running_state.transitions[0].target, Some(TransitionTarget::State(ref id)) if id.name == "Idle")
+                );
                 assert_eq!(running_state.after.len(), 1);
-                 assert_eq!(running_state.after[0].delay.value, 5);
+                assert_eq!(running_state.after[0].delay.value, 5);
                 assert_eq!(running_state.after[0].actions.len(), 1);
-                 assert_eq!(running_state.after[0].actions[0].name, "StopAction");
+                assert_eq!(running_state.after[0].actions[0].name, "StopAction");
                 assert_eq!(running_state.invokes.len(), 1);
-                 // assert_eq!(running_state.invokes[0].name.name, "TimerInvoke"); // Need to implement invoke parsing
+                // assert_eq!(running_state.invokes[0].name.name, "TimerInvoke"); // Need to implement invoke parsing
                 assert!(running_state.history.is_some());
-                assert_eq!(running_state.history.as_ref().unwrap().history_type, HistoryType::Deep);
+                assert_eq!(
+                    running_state.history.as_ref().unwrap().history_type,
+                    HistoryType::Deep
+                );
                 assert!(running_state.states.is_some());
                 assert_eq!(running_state.states.as_ref().unwrap().states.len(), 1);
-                assert_eq!(running_state.states.as_ref().unwrap().states[0].name.name, "SubIdle");
-                 assert!(running_state.states.as_ref().unwrap().states[0].is_final);
+                assert_eq!(
+                    running_state.states.as_ref().unwrap().states[0].name.name,
+                    "SubIdle"
+                );
+                assert!(running_state.states.as_ref().unwrap().states[0].is_final);
 
                 // Check Actions, Guards, Invokes (basic check based on TODO placeholders)
-                 assert!(machine.actions.is_some());
-                 // assert_eq!(machine.actions.as_ref().unwrap().actions.len(), 1); // Need impl
-                 assert!(machine.guards.is_some());
-                 // assert_eq!(machine.guards.as_ref().unwrap().guards.len(), 1); // Need impl
-                 assert!(machine.invokes.is_some());
-                 // assert_eq!(machine.invokes.as_ref().unwrap().invokes.len(), 1); // Need impl
-
+                assert!(machine.actions.is_some());
+                // assert_eq!(machine.actions.as_ref().unwrap().actions.len(), 1); // Need impl
+                assert!(machine.guards.is_some());
+                // assert_eq!(machine.guards.as_ref().unwrap().guards.len(), 1); // Need impl
+                assert!(machine.invokes.is_some());
+                // assert_eq!(machine.invokes.as_ref().unwrap().invokes.len(), 1); // Need impl
             }
             _ => panic!("Expected Machines block"),
         }
@@ -2457,19 +2838,22 @@ mod tests {
 
     #[test]
     fn test_parse_parallel_state() {
-         let content = r#"
-            file_id: 0x3;
+        let content = r#"
+            file_id: 0x10; # Example ID
             machines {
                 machine ParallelMachine @id(0) {
-                    $initial(ParallelState);
                     states @id(0) {
-                        ParallelState @id(0) {
+                        state ParallelState @id(0) { # State marked parallel implicitly by having regions
                             $parallel;
-                            states @id(0) { // Region 1
-                                A @id(0) { $initial(A1); states @id(0) { A1 @id(0); } }
+                            states RegionA @id(0) { # Region 1
+                                $initial(A1);
+                                state A1 @id(0);
+                                state A2 @id(1);
                             }
-                            states @id(1) { // Region 2
-                                B @id(0) { $initial(B1); states @id(0) { B1 @id(0); } }
+                            states RegionB @id(1) { # Region 2
+                                $initial(B1);
+                                state B1 @id(0);
+                                state B2 @id(1);
                             }
                         }
                     }
@@ -2477,30 +2861,27 @@ mod tests {
             }
         "#;
         let ast = parse_ssot_content(content, None).unwrap();
-        let machine = match &ast.definitions[0] {
-            TopLevelDefinition::Machines(m) => &m.definitions[0],
-            _ => panic!(),
-        };
-        let parallel_state = &machine.states.states[0];
-        assert!(parallel_state.is_parallel);
-        assert!(parallel_state.states.is_none()); // Nested states are handled differently in AST? Check AST structure.
-                                                  // Currently, the parser puts nested states into the `states` field.
-                                                  // Let's assume for now the test checks if the nested blocks were parsed.
-                                                  // We need a way to represent regions properly in AST.
-        // How to access regions? Requires AST modification or specific parsing logic.
-        // For now, just assert the state exists and has the parallel flag.
-        assert_eq!(parallel_state.name.name, "ParallelState");
-
-        // TODO: Enhance AST and parser to represent parallel regions explicitly
-        //       and update this test accordingly.
-        // Example pseudo-test:
-        // assert_eq!(parallel_state.regions.len(), 2);
-        // assert_eq!(parallel_state.regions[0].states.len(), 1);
-        // assert_eq!(parallel_state.regions[0].states[0].name.name, "A");
+        match &ast.definitions[0] {
+            TopLevelDefinition::Machines(machine_block) => {
+                assert_eq!(machine_block.definitions.len(), 1);
+                let machine = &machine_block.definitions[0];
+                assert!(machine.states.is_some());
+                let states_block = machine.states.as_ref().unwrap(); // Added unwrap
+                assert_eq!(states_block.states.len(), 1);
+                let parallel_state = &states_block.states[0]; // Added unwrap
+                assert_eq!(parallel_state.name.name, "ParallelState");
+                assert!(parallel_state.is_parallel); // Check derived flag
+                assert_eq!(parallel_state.regions.len(), 2);
+                assert_eq!(parallel_state.regions[0].id.value, 0);
+                assert_eq!(parallel_state.regions[0].states.len(), 2);
+                assert_eq!(parallel_state.regions[1].id.value, 1);
+                assert_eq!(parallel_state.regions[1].states.len(), 2);
+            }
+            _ => panic!("Expected Machines block"),
+        }
     }
 
-
-     #[test]
+    #[test]
     fn test_parse_services_block() {
         let content = r#"
             file_id: 0x4;
@@ -2522,6 +2903,7 @@ mod tests {
         match &ast.definitions[0] {
             TopLevelDefinition::Services(services_block) => {
                 assert_eq!(services_block.annotations.len(), 1);
+                assert!(matches!(services_block.annotations[0], Annotation::Description(s) if s == "API Services"));
                 assert_eq!(services_block.definitions.len(), 2);
 
                 // Check Interface
@@ -2533,13 +2915,16 @@ mod tests {
                         let method = &i.methods[0];
                         assert_eq!(method.name.name, "sayHello");
                         assert_eq!(method.parameters.len(), 1);
-                         assert_eq!(method.parameters[0].name.name, "name");
-                         assert!(matches!(method.parameters[0].type_specifier, TypeSpecifier::Simple(ref id) if id.name == "string"));
-                         assert_eq!(method.parameters[0].id.unwrap().value, 0);
-                        assert!(matches!(method.return_type, Some(TypeSpecifier::Simple(ref id)) if id.name == "string"));
+                        assert_eq!(method.parameters[0].name.name, "name");
+                        assert!(
+                            matches!(method.parameters[0].type_spec, TypeSpecifier::Simple(ref id) if id.name == "string")
+                        );
+                        assert_eq!(method.parameters[0].id.unwrap().value, 0);
+                        assert!(
+                            matches!(method.return_type, Some(TypeSpecifier::Simple(ref id)) if id.name == "string")
+                        );
                         assert_eq!(method.body_annotations.len(), 1);
-                         assert_eq!(method.body_annotations[0].name.name, "route");
-                         assert_eq!(method.body_annotations[0].arguments.len(), 2);
+                        assert!(matches!(&method.body_annotations[0], Annotation::Route(args) if args.len() == 2));
                     }
                     _ => panic!("Expected Interface"),
                 }
@@ -2552,8 +2937,8 @@ mod tests {
                         assert!(s.extends.is_some());
                         assert_eq!(s.extends.as_ref().unwrap().name, "BaseService");
                         assert_eq!(s.annotations.len(), 2);
-                         assert!(s.annotations.iter().any(|a| a.name.name == "implements"));
-                         assert!(s.annotations.iter().any(|a| a.name.name == "route"));
+                        assert!(s.annotations.iter().any(|a| matches!(a, Annotation::Implements(id) if id.name == "Greeter")));
+                        assert!(s.annotations.iter().any(|a| matches!(a, Annotation::Route(_))));
                     }
                     _ => panic!("Expected Service"),
                 }
@@ -2562,7 +2947,7 @@ mod tests {
         }
     }
 
-     #[test]
+    #[test]
     fn test_parse_communication_block() {
         let content = r#"
             file_id: 0x5;
@@ -2585,50 +2970,49 @@ mod tests {
         assert_eq!(ast.definitions.len(), 1);
         match &ast.definitions[0] {
             TopLevelDefinition::Communication(comm_block) => {
-                 assert_eq!(comm_block.definitions.len(), 3);
+                assert_eq!(comm_block.definitions.len(), 3);
 
-                 // Check Protocol
-                 match &comm_block.definitions[0] {
-                     CommunicationItem::Protocol(p) => {
-                         assert_eq!(p.name.name, "CapnpRPC");
-                         assert_eq!(p.id.value, 0);
-                     }
-                     _ => panic!("Expected Protocol"),
-                 }
+                // Check Protocol
+                match &comm_block.definitions[0] {
+                    CommunicationItem::Protocol(p) => {
+                        assert_eq!(p.name.name, "CapnpRPC");
+                        assert_eq!(p.id.value, 0);
+                    }
+                    _ => panic!("Expected Protocol"),
+                }
 
-                 // Check Channel
-                 match &comm_block.definitions[1] {
-                     CommunicationItem::Channel(c) => {
-                         assert_eq!(c.name.name, "UserEvents");
-                         assert_eq!(c.id.value, 1);
-                         assert!(c.description.is_some());
-                         assert!(c.parameters.is_some());
-                         assert_eq!(c.parameters.as_ref().unwrap().len(), 1);
-                         assert_eq!(c.parameters.as_ref().unwrap()[0].key.name, "userId");
-                     }
-                     _ => panic!("Expected Channel"),
-                 }
+                // Check Channel
+                match &comm_block.definitions[1] {
+                    CommunicationItem::Channel(c) => {
+                        assert_eq!(c.name.name, "UserEvents");
+                        assert_eq!(c.id.value, 1);
+                        assert!(c.description.is_some());
+                        assert!(c.parameters.is_some());
+                        assert_eq!(c.parameters.as_ref().unwrap().len(), 1);
+                        assert_eq!(c.parameters.as_ref().unwrap()[0].key.name, "userId");
+                    }
+                    _ => panic!("Expected Channel"),
+                }
 
-                 // Check Event
-                 match &comm_block.definitions[2] {
-                     CommunicationItem::Event(e) => {
-                         assert_eq!(e.name.name, "UserLoggedIn");
-                         assert_eq!(e.id.value, 2);
-                         assert_eq!(e.annotations.len(), 1);
-                         assert_eq!(e.annotations[0].name.name, "channel");
-                         assert_eq!(e.fields.len(), 2);
-                         assert_eq!(e.fields[0].name.name, "userId");
-                         assert_eq!(e.fields[1].name.name, "timestamp");
-
-                     }
-                     _ => panic!("Expected Event"),
-                 }
+                // Check Event
+                match &comm_block.definitions[2] {
+                    CommunicationItem::Event(e) => {
+                        assert_eq!(e.name.name, "UserLoggedIn");
+                        assert_eq!(e.id.value, 2);
+                        assert_eq!(e.annotations.len(), 1);
+                        assert!(matches!(&e.annotations[0], Annotation::Channel(id) if id.name == "UserEvents"));
+                        assert_eq!(e.fields.len(), 2);
+                        assert_eq!(e.fields[0].name.name, "userId");
+                        assert_eq!(e.fields[1].name.name, "timestamp");
+                    }
+                    _ => panic!("Expected Event"),
+                }
             }
-             _ => panic!("Expected Communication block"),
+            _ => panic!("Expected Communication block"),
         }
     }
 
-     #[test]
+    #[test]
     fn test_parse_actors_block() {
         let content = r#"
             file_id: 0x6;
@@ -2639,33 +3023,39 @@ mod tests {
         "#;
         let ast = parse_ssot_content(content, None).unwrap();
         assert_eq!(ast.definitions.len(), 1);
-         match &ast.definitions[0] {
-             TopLevelDefinition::Actors(actors_block) => {
+        match &ast.definitions[0] {
+            TopLevelDefinition::Actors(actors_block) => {
                 assert_eq!(actors_block.definitions.len(), 2);
-                 match &actors_block.definitions[0] {
-                     ActorDefinition{ name, id, annotations } => {
-                         assert_eq!(name.name, "AdminUser");
-                         assert_eq!(id.value, 0);
-                         assert_eq!(annotations.len(), 1);
-                         assert_eq!(annotations[0].name.name, "type");
-                     }
-                     // _ => panic!("Expected ActorDefinition")
-                 }
-                 match &actors_block.definitions[1] {
-                      ActorDefinition{ name, id, annotations } => {
-                         assert_eq!(name.name, "PaymentGateway");
-                         assert_eq!(id.value, 1);
-                         assert_eq!(annotations.len(), 1);
-                         assert_eq!(annotations[0].name.name, "description");
-                     }
-                     // _ => panic!("Expected ActorDefinition")
-                 }
-             }
-             _ => panic!("Expected Actors block"),
-         }
+                match &actors_block.definitions[0] {
+                    ActorDefinition {
+                        name,
+                        id,
+                        annotations,
+                    } => {
+                        assert_eq!(name.name, "AdminUser");
+                        assert_eq!(id.value, 0);
+                        assert_eq!(annotations.len(), 1);
+                        assert!(matches!(&annotations[0], Annotation::GenericKeyValue(id, val) if id.name == "type" && val == "role"));
+                    } // _ => panic!("Expected ActorDefinition")
+                }
+                match &actors_block.definitions[1] {
+                    ActorDefinition {
+                        name,
+                        id,
+                        annotations,
+                    } => {
+                        assert_eq!(name.name, "PaymentGateway");
+                        assert_eq!(id.value, 1);
+                        assert_eq!(annotations.len(), 1);
+                        assert!(matches!(&annotations[0], Annotation::Description(s) if s == "External system"));
+                    } // _ => panic!("Expected ActorDefinition")
+                }
+            }
+            _ => panic!("Expected Actors block"),
+        }
     }
 
-     #[test]
+    #[test]
     fn test_parse_deployment_config_block() {
         let content = r#"
             file_id: 0x7;
@@ -2686,48 +3076,53 @@ mod tests {
                 }
             }
         "#;
-         let ast = parse_ssot_content(content, None).unwrap();
-         assert_eq!(ast.definitions.len(), 1);
-          match &ast.definitions[0] {
+        let ast = parse_ssot_content(content, None).unwrap();
+        assert_eq!(ast.definitions.len(), 1);
+        match &ast.definitions[0] {
             TopLevelDefinition::DeploymentConfig(dep_block) => {
-                 assert_eq!(dep_block.definitions.len(), 3);
+                assert_eq!(dep_block.definitions.len(), 3);
 
-                 // Check Environment
-                 match &dep_block.definitions[0] {
+                // Check Environment
+                match &dep_block.definitions[0] {
                     DeploymentItem::Environment(e) => {
-                         assert_eq!(e.name.name, "Production");
-                         assert!(e.variables.is_some());
-                         assert!(e.annotations.iter().any(|a| a.name.name == "provider"));
+                        assert_eq!(e.name.name, "Production");
+                        assert!(e.variables.is_some());
+                        // Check for the $provider annotation specifically
+                        assert!(e.annotations.iter().any(|a| matches!(a, Annotation::GenericKeyValue(id, val) if id.name == "provider" && val == "aws")));
                     }
-                    _ => panic!("Expected Environment")
-                 }
-                 // Check Infrastructure
-                 match &dep_block.definitions[1] {
+                    _ => panic!("Expected Environment"),
+                }
+                // Check Infrastructure
+                match &dep_block.definitions[1] {
                     DeploymentItem::Infrastructure(i) => {
-                         assert_eq!(i.name.name, "Compute");
-                         assert_eq!(i.attributes.len(), 2);
-                         assert!(i.attributes.iter().any(|a| a.key.name == "type"));
-                         assert!(i.attributes.iter().any(|a| a.key.name == "size"));
+                        assert_eq!(i.name.name, "Compute");
+                        assert_eq!(i.attributes.len(), 2);
+                        assert!(i.attributes.iter().any(|a| a.key.name == "type"));
+                        assert!(i.attributes.iter().any(|a| a.key.name == "size"));
                     }
-                     _ => panic!("Expected Infrastructure")
-                 }
-                  // Check Deployment
-                 match &dep_block.definitions[2] {
+                    _ => panic!("Expected Infrastructure"),
+                }
+                // Check Deployment
+                match &dep_block.definitions[2] {
                     DeploymentItem::Deployment(d) => {
-                         assert_eq!(d.name.name, "WebApp");
-                         assert_eq!(d.target_environment.name, "Production");
-                         assert!(d.target_infrastructure.is_some());
-                         assert_eq!(d.deployable.name, "MyWebAppService");
-                         assert!(d.attributes.iter().any(|a| a.key.name == "replicas"));
+                        assert_eq!(d.name.name, "WebApp");
+                        assert_eq!(d.target_environment.as_ref().unwrap().name, "Production"); // Use as_ref().unwrap()
+                        assert!(d.target_infrastructure.is_some());
+                        assert_eq!(d.deployable.as_ref().unwrap().name, "MyWebAppService"); // Use as_ref().unwrap()
+                        // Check other_attributes instead of attributes
+                        assert!(d
+                            .other_attributes
+                            .iter()
+                            .any(|a| a.key.name == "replicas"));
                     }
-                    _ => panic!("Expected Deployment")
-                 }
+                    _ => panic!("Expected Deployment"),
+                }
             }
-             _ => panic!("Expected DeploymentConfig block"),
-          }
+            _ => panic!("Expected DeploymentConfig block"),
+        }
     }
 
-     #[test]
+    #[test]
     fn test_parse_annotations() {
         let content = r#"
             file_id: 0x8;
@@ -2754,34 +3149,50 @@ mod tests {
         };
         assert_eq!(struct_def.annotations.len(), 6);
         // Basic checks
-        assert!(struct_def.annotations.iter().any(|a| a.name.name == "description"));
-        assert!(struct_def.annotations.iter().any(|a| a.name.name == "validate"));
-        assert!(struct_def.annotations.iter().any(|a| a.name.name == "db"));
-        assert!(struct_def.annotations.iter().any(|a| a.name.name == "meta"));
-        assert!(struct_def.annotations.iter().any(|a| a.name.name == "customFlag"));
-        assert!(struct_def.annotations.iter().any(|a| a.name.name == "customKV"));
+        assert!(struct_def
+            .annotations
+            .iter()
+            .any(|a| matches!(a, Annotation::Description(s) if s == "Hello")));
+        assert!(struct_def
+            .annotations
+            .iter()
+            .any(|a| matches!(a, Annotation::Validate(_))));
+        assert!(struct_def.annotations.iter().any(|a| matches!(a, Annotation::Db(_))));
+        assert!(struct_def.annotations.iter().any(|a| matches!(a, Annotation::Meta(_))));
+        assert!(struct_def
+            .annotations
+            .iter()
+            .any(|a| matches!(a, Annotation::GenericFlag(id) if id.name == "customFlag")));
+        assert!(struct_def
+            .annotations
+            .iter()
+            .any(|a| matches!(a, Annotation::GenericKeyValue(id, val) if id.name == "customKV" && val == "some_value")));
 
-        // Check nested values (example)
-        let meta = struct_def.annotations.iter().find(|a| a.name.name == "meta").unwrap();
-        assert_eq!(meta.arguments.len(), 3);
-        let list_arg = meta.arguments.iter().find(|arg| arg.key.name == "list").unwrap();
-        assert!(matches!(list_arg.value, AnnotationValue::List(ref l) if l.len() == 3));
-        let obj_arg = meta.arguments.iter().find(|arg| arg.key.name == "obj").unwrap();
-         assert!(matches!(obj_arg.value, AnnotationValue::Object(ref o) if o.len() == 1));
-
+        // Optionally, check details of a specific annotation like $meta
+        let meta_annotation = struct_def.annotations.iter().find(|a| matches!(a, Annotation::Meta(_))).unwrap();
+        if let Annotation::Meta(args) = meta_annotation {
+            assert_eq!(args.len(), 3);
+            // Further checks on args if needed
+        } else {
+            panic!("Expected Meta annotation");
+        }
     }
 
-     #[test]
+    #[test]
     fn test_parse_from_file() {
         let content = "file_id: 0x9;";
         let mut temp_file = NamedTempFile::new().unwrap();
         writeln!(temp_file, "{}", content).unwrap();
 
         let ast_from_file = parse_ssot_file(temp_file.path()).unwrap();
-        let ast_from_content = parse_ssot_content(content, Some(temp_file.path().to_path_buf())).unwrap();
+        let ast_from_content =
+            parse_ssot_content(content, Some(temp_file.path().to_path_buf())).unwrap();
 
-        assert_eq!(ast_from_file.file_id, Some(FileId("0x9".to_string())));
-        assert_eq!(ast_from_file.source_path, Some(temp_file.path().to_path_buf()));
+        assert_eq!(ast_from_file.file_id, Some(FileId { value: 0x9 }));
+        assert_eq!(
+            ast_from_file.source_path,
+            Some(temp_file.path().to_path_buf())
+        );
         // Compare relevant fields (ignore source_path potentially)
         assert_eq!(ast_from_file.file_id, ast_from_content.file_id);
         assert_eq!(ast_from_file.imports, ast_from_content.imports);

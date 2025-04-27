@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::fmt;
+use std::path::PathBuf; // Import fmt
 
 // Re-export pest for convenience if needed later for spans, etc.
 // extern crate pest;
@@ -10,6 +11,13 @@ use std::path::PathBuf;
 pub struct Identifier {
     pub name: String,
     // pub span: Span<'static>, // Consider adding spans later
+}
+
+// Implement Display for Identifier
+impl fmt::Display for Identifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -186,15 +194,13 @@ pub struct ActorsBlock {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CommunicationBlock {
-    // TODO: Define ProtocolDefinition, ChannelDefinition, EventDefinition
-    // pub definitions: Vec<CommunicationItem>,
+    pub definitions: Vec<CommunicationItem>, // Added definitions field
     pub annotations: Vec<Annotation>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServicesBlock {
-    // TODO: Define InterfaceDefinition, ServiceDefinition
-    // pub definitions: Vec<ServiceItem>,
+    pub definitions: Vec<ServiceItem>, // Added definitions field
     pub annotations: Vec<Annotation>,
 }
 
@@ -389,12 +395,12 @@ pub enum InvokeSource {
 
 // Placeholder for input mapping, onDone/onError transitions
 // For now, just storing the target state identifier
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InvokeTransitionTarget {
-    pub target: TransitionTarget, // Updated target type
-    // TODO: Add actions, guards later if needed for invoke transitions
-    pub actions: Vec<Identifier>, // Added actions for invoke transition
-    pub guards: Vec<Identifier>,  // Added guards for invoke transition
+    pub target: TransitionTarget,     // Updated target type
+    pub actions: Vec<Identifier>,     // Added actions for invoke transition
+    pub guards: Vec<Identifier>,      // Added guards for invoke transition
+    pub annotations: Vec<Annotation>, // Added annotations
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -408,7 +414,7 @@ pub struct InvokeDefinition {
     pub on_error: Option<InvokeTransitionTarget>, // Simplified target
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InvokesBlock {
     pub id: NumericId,
     pub definitions: Vec<InvokeDefinition>,
