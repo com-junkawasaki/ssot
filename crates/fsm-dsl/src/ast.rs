@@ -25,6 +25,7 @@ pub enum TypeSpecifier {
     Simple(Identifier),
     List(Box<TypeSpecifier>),    // Added: list<T>
     Optional(Box<TypeSpecifier>), // Added: optional<T>
+    Map(Box<TypeSpecifier>, Box<TypeSpecifier>), // Added: map<K, V>
     // TODO: Add Map(Box<TypeSpecifier>, Box<TypeSpecifier>)
 }
 

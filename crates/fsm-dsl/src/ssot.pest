@@ -56,14 +56,15 @@ enum_definition = { annotation* ~ "enum" ~ identifier ~ "@id(" ~ integer_literal
 enum_variant = { annotation* ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ annotation* ~ ";" }
 
 // Updated type specifiers rule
-type_specifier = _{ list_type | optional_type | simple_type }
+type_specifier = _{ list_type | optional_type | map_type | simple_type }
 
 simple_type = { identifier }
 list_type = { "list" ~ "<" ~ type_specifier ~ ">" }
 optional_type = { "optional" ~ "<" ~ type_specifier ~ ">" }
+map_type = { "map" ~ "<" ~ type_specifier ~ "," ~ type_specifier ~ ">" }
 
 // Updated annotation rules
-annotation = _{ description_annotation | validate_annotation | db_annotation | meta_annotation | generic_kv_annotation | generic_flag_annotation }
+annotation = _{ description_annotation | validate_annotation | db_annotation | meta_annotation | generic_kv_annotation | generic_flag_annotation | implements_annotation | channel_annotation }
 
 description_annotation = { "$" ~ ("description") ~ "(" ~ string_literal ~ ")" ~ ";" }
 validate_annotation = { "$" ~ ("validate") ~ "(" ~ annotation_args? ~ ")" ~ ";" }

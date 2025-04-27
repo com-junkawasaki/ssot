@@ -929,6 +929,14 @@ fn parse_type_specifier(pair: Pair<Rule>) -> ParseResult<TypeSpecifier> {
              let inner_type = parse_type_specifier(inner_type_pair)?;
              Ok(TypeSpecifier::Optional(Box::new(inner_type)))
          }
+         Rule::map_type => { // Added map case
+            let mut inner_pairs = inner_pair.into_inner();
+            let key_type_pair = inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::type_specifier })?;
+            let value_type_pair = inner_pairs.next().ok_or(ParseError::MissingRule { expected: Rule::type_specifier })?;
+            let key_type = parse_type_specifier(key_type_pair)?;
+            let value_type = parse_type_specifier(value_type_pair)?;
+            Ok(TypeSpecifier::Map(Box::new(key_type), Box::new(value_type)))
+         }
         // TODO: Add map_type when grammar supports it
         rule => Err(ParseError::UnexpectedRule { expected: Rule::simple_type /* or list/optional */, found: rule })
     }
@@ -1604,6 +1612,7 @@ mod tests {
             types {
                 struct SimpleStruct @id(1) {
                     field_a: string @id(10);
+                    field_b: map<string, i32> @id(11); // Added map type field
                 }
                 enum SimpleEnum @id(2) {
                     VARIANT_A @id(20);
@@ -1637,13 +1646,26 @@ mod tests {
             TypeDefinition::Struct(s) => {
                 assert_eq!(s.name.name, "SimpleStruct");
                 assert_eq!(s.id.value, 1);
-                assert_eq!(s.fields.len(), 1);
+                assert_eq!(s.fields.len(), 2);
                 assert_eq!(s.fields[0].name.name, "field_a");
                 assert_eq!(s.fields[0].id.value, 10);
                  if let TypeSpecifier::Simple(ts) = &s.fields[0].type_spec {
                       assert_eq!(ts.name, "string");
                  } else {
                      panic!("Expected simple type specifier for field_a");
+                 }
+                 // Check field_b (map type)
+                 assert_eq!(s.fields[1].name.name, "field_b");
+                 assert_eq!(s.fields[1].id.value, 11);
+                 if let TypeSpecifier::Map(key_type, value_type) = &s.fields[1].type_spec {
+                     if let TypeSpecifier::Simple(k) = &**key_type {
+                         assert_eq!(k.name, "string");
+                     } else { panic!("Expected simple key type in map"); }
+                     if let TypeSpecifier::Simple(v) = &**value_type {
+                          assert_eq!(v.name, "i32");
+                     } else { panic!("Expected simple value type in map"); }
+                 } else {
+                      panic!("Expected map type specifier for field_b");
                  }
             },
             _ => panic!("Expected StructDefinition")
