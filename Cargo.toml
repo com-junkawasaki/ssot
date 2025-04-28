@@ -1,9 +1,0 @@
-[workspace]
-members = [
-    "crates/fsm-dsl",
-    "crates/fsm-codegen",
-    "crates/fsm-example",
-    "crates/ssot-linter",
-]
-
-resolver = "2" 

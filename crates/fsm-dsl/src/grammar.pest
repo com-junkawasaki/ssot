@@ -83,7 +83,13 @@ state_element = _{ states_block
 transition_definition = { ("on" ~ WHITESPACE*)? ~ IDENTIFIER ~ WHITESPACE* ~ numeric_id? ~ WHITESPACE* ~ transition_target_specifier ~ WHITESPACE* ~ ";"? }
 transition_target_specifier = { "target" ~ WHITESPACE* ~ target_identifier ~ WHITESPACE* ~ transition_details? }
 target_identifier = { IDENTIFIER | ("." ~ "history") | (IDENTIFIER ~ "." ~ "history") }
-transition_details = _{ "{" ~ any_content ~ "}" }
+transition_details = { "{" ~ WHITESPACE* ~ (transition_detail_item ~ (","? ~ WHITESPACE* ~ transition_detail_item)*)? ~ WHITESPACE* ~ "}" }
+transition_detail_item = _{ transition_action | transition_guard /* | Add other details like allowed_actors later */ }
+transition_action = { "action" ~ WHITESPACE* ~ ":" ~ WHITESPACE* ~ (IDENTIFIER | action_list) }
+action_list = { "[" ~ WHITESPACE* ~ (IDENTIFIER ~ ("," ~ WHITESPACE* ~ IDENTIFIER)*)? ~ WHITESPACE* ~ "]" }
+transition_guard = { "guard" ~ WHITESPACE* ~ ":" ~ WHITESPACE* ~ (guard_specifier | guard_list) }
+guard_list = { "[" ~ WHITESPACE* ~ (guard_specifier ~ ("," ~ WHITESPACE* ~ guard_specifier)*)? ~ WHITESPACE* ~ "]" }
+guard_specifier = { IDENTIFIER ~ ("(" ~ WHITESPACE* ~ "not" ~ WHITESPACE* ~ ")")? } // Allows guardName(not)
 
 // --- Actions / Guards / Invokes Blocks ---
 actions_block = { "actions" ~ WHITESPACE* ~ numeric_id? ~ WHITESPACE* ~ "{" ~ WHITESPACE* ~ (COMMENT | WHITESPACE | annotation | action_definition)* ~ WHITESPACE* ~ "}" }
