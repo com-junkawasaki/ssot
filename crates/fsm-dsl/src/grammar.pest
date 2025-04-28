@@ -1,0 +1,122 @@
+/*
+ * Pest grammar for the .ssot language
+ */
+
+// Basic Whitespace and Comments
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* | "/*" ~ (COMMENT | !"*/" ~ ANY)* ~ "*/" }
+inner = _{ !(COMMENT | WHITESPACE) ~ ANY }
+
+// Basic Tokens
+IDENTIFIER = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+STRING_LITERAL = @{ "\"" ~ ("\\" | !"\"" ~ ANY)* ~ "\"" }
+INTEGER_LITERAL = @{ "-"? ~ ASCII_DIGIT+ }
+
+// --- Float Literal Components ---
+sign = { "+" | "-" }
+exp_char = { "e" | "E" }
+exponent = { exp_char ~ sign? ~ ASCII_DIGIT+ }
+FLOAT_LITERAL = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? ~ exponent? }
+
+BOOLEAN_LITERAL = @{ "true" | "false" }
+DURATION_LITERAL = @{ INTEGER_LITERAL ~ ("ms" | "s" | "m" | "h") }
+NULL_LITERAL = @{ "null" }
+
+// Basic Types
+primitive_type = { "string" | "number" | "boolean" | "integer" | "float" | "any" | "void" }
+list_type = { "List" ~ "<" ~ type_ref ~ ">" }
+map_type = { "Map" ~ "<" ~ type_ref ~ "," ~ type_ref ~ ">" }
+type_ref = { (primitive_type | list_type | map_type | IDENTIFIER) ~ "?"? }
+
+// Annotations
+annotation = { "@" ~ IDENTIFIER ~ annotation_args? }
+annotation_args = { "(" ~ (annotation_arg ~ ("," ~ annotation_arg)*)? ~ ")" }
+annotation_arg = { (IDENTIFIER ~ "=")? ~ annotation_value }
+annotation_value = { literal_value | list_literal | object_literal }
+
+// Literals for Annotation Values
+list_literal = { "[" ~ (annotation_value ~ ("," ~ annotation_value)*)? ~ "]" }
+object_literal = { "{" ~ (IDENTIFIER ~ ":" ~ annotation_value ~ ("," ~ IDENTIFIER ~ ":" ~ annotation_value)*)? ~ "}" }
+literal_value = { STRING_LITERAL | INTEGER_LITERAL | FLOAT_LITERAL | BOOLEAN_LITERAL | DURATION_LITERAL | NULL_LITERAL | IDENTIFIER /* For enums/constants */ }
+
+// Top Level Structure
+file = { SOI ~ (COMMENT | WHITESPACE | import_statement | top_level_definition)* ~ EOI }
+
+// --- Imports ---
+import_statement = { "import" ~ (IDENTIFIER | ( "{" ~ identifier_list ~ "}" ~ "from")) ~ STRING_LITERAL ~ ";"? }
+import_path = _{ STRING_LITERAL | IDENTIFIER ~ ("." ~ IDENTIFIER)* }
+
+// --- Top Level Definitions ---
+top_level_definition = _{ annotation* ~ (machine_definition | type_definition | actor_definition | service_definition | communication_definition | deployment_definition | infrastructure_definition) }
+
+// --- Machine Definition ---
+machine_definition = { "machine" ~ WHITESPACE+ ~ IDENTIFIER ~ WHITESPACE* ~ "{" ~ WHITESPACE* ~ machine_body? ~ WHITESPACE* ~ "}" }
+machine_body = { (COMMENT | WHITESPACE | annotation | machine_element)* }
+machine_element = _{ context_definition | initial_definition | state_definition | transition_definition | actions_block | guards_block | invokes_block | final_states_definition | history_definition }
+
+initial_definition = { "initial" ~ WHITESPACE+ ~ IDENTIFIER ~ ";" }
+final_states_definition = { "final" ~ WHITESPACE+ ~ "states" ~ WHITESPACE* ~ "{" ~ WHITESPACE* ~ identifier_list? ~ WHITESPACE* ~ "}" }
+identifier_list = { IDENTIFIER ~ ("," ~ WHITESPACE* ~ IDENTIFIER)* }
+
+context_definition = { "context" ~ WHITESPACE* ~ "{" ~ WHITESPACE* ~ context_body? ~ WHITESPACE* ~ "}" }
+context_body = { (COMMENT | WHITESPACE | context_field_definition)* }
+context_field_definition = { IDENTIFIER ~ ":" ~ WHITESPACE* ~ type_ref ~ (WHITESPACE* ~ "=" ~ WHITESPACE* ~ literal_value)? ~ ";" }
+
+// --- State Definitions ---
+state_definition = { "state" ~ WHITESPACE+ ~ IDENTIFIER ~ WHITESPACE* ~ state_body? }
+state_body = _{ "{" ~ WHITESPACE* ~ (COMMENT | WHITESPACE | annotation | state_element)* ~ WHITESPACE* ~ "}" | ";" }
+state_element = _{ state_definition // Nested states
+                 | transition_definition
+                 | on_entry
+                 | on_exit
+                 | state_invoke
+                 | history_definition }
+
+// --- Transition Definition (Basic Structure) ---
+transition_definition = { ("on" ~ WHITESPACE+)? ~ event_specifier ~ WHITESPACE* ~ ("->" | "transition") ~ WHITESPACE* ~ transition_details ~ ";" }
+event_specifier = { IDENTIFIER | STRING_LITERAL }
+// TODO: Expand transition_details (target, actions, guard)
+transition_details = { IDENTIFIER /* Placeholder for target */ }
+
+// --- Actions / Guards / Invokes Blocks (Placeholders) ---
+actions_block = { "actions" ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
+guards_block = { "guards" ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
+invokes_block = { "invokes" ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
+
+// --- State Lifecycle Hooks (Placeholders) ---
+on_entry = { "entry" ~ WHITESPACE* ~ action_block ~ ";" }
+on_exit = { "exit" ~ WHITESPACE* ~ action_block ~ ";" }
+action_block = { IDENTIFIER | "{" ~ any_content ~ "}" }
+
+// --- State Invokes (Placeholder) ---
+state_invoke = { "invoke" ~ WHITESPACE* ~ invoke_body ~ ";" }
+invoke_body = { IDENTIFIER | "{" ~ any_content ~ "}" }
+
+// --- History Definition (Placeholder) ---
+history_definition = { "history" ~ WHITESPACE+ ~ IDENTIFIER ~ WHITESPACE* ~ (history_type)? ~ ";" }
+history_type = { "shallow" | "deep" }
+
+// --- Type Definitions (Placeholder) ---
+type_definition = { ("type" | "enum" | "struct") ~ WHITESPACE+ ~ IDENTIFIER ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
+
+// --- Actor Definitions (Placeholder) ---
+actor_definition = { "actor" ~ WHITESPACE+ ~ IDENTIFIER ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
+
+// --- Service Definitions (Placeholder) ---
+service_definition = { "service" ~ WHITESPACE+ ~ IDENTIFIER ~ WHITESPACE* ~ ("extends" ~ WHITESPACE+ ~ IDENTIFIER)? ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
+
+// --- Communication Definitions (Placeholder) ---
+communication_definition = { "communication" ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
+
+// --- Deployment Definitions (Placeholder) ---
+deployment_definition = { "deployment" ~ WHITESPACE+ ~ IDENTIFIER ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
+
+// --- Infrastructure Definitions (Placeholder) ---
+infrastructure_definition = { "infrastructure" ~ WHITESPACE+ ~ IDENTIFIER ~ WHITESPACE* ~ ("extends" ~ WHITESPACE+ ~ IDENTIFIER)? ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
+
+// Helper for placeholders
+any_content = _{ (COMMENT | WHITESPACE | ( !"}" ~ inner ))* }
+
+// --- Rule Reference ---
+// The main rule the parser will start with.
+ssot_entry_rule = _{ file } 

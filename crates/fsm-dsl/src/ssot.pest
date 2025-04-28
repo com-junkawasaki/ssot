@@ -6,7 +6,7 @@ We'll progressively build this based on DSL.md.
 // Define whitespace and comments (ignored by parser rules)
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "#" ~ (!"\n" ~ ANY)* }
-ignored = _{ WHITESPACE | COMMENT } // Added back
+ignored = _{ WHITESPACE | COMMENT }
 
 // Basic building blocks
 identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
@@ -16,21 +16,13 @@ hex_literal = @{ "0x" ~ ASCII_HEX_DIGIT+ }
 duration_literal = @{ ASCII_DIGIT+ ~ ("ms" | "s" | "m" | "h") }
 
 // Placeholder for the main parsing rule
-// file = { SOI ~ (COMMENT | PUSH(definition))* ~ EOI } // Old rule
-file = {
-    SOI ~
-    ignored* ~ // Allow leading ignored
-    ( // Group for definitions
-        PUSH(definition) ~
-        ignored* // Allow ignored after definition
-    )* ~ // Repeat zero or more times
-    EOI
-}
+file = { SOI ~ ignored* ~ definition* ~ ignored* ~ EOI }
 
 // Updated top-level definitions rule
-definition = { file_id | import_statement | types_block | actors_block | communication_block | services_block | machines_block | deployment_config_block | annotation }
+// definition = { file_id | import_statement | types_block | actors_block | communication_block | services_block /* | machines_block */ | deployment_config_block | annotation }
+// definition = { file_id | import_statement | types_block | actors_block | communication_block | services_block /* | machines_block */ | deployment_config_block | annotation } // machines_block commented out
+definition = { file_id | import_statement | types_block | actors_block | communication_block | services_block | machines_block | deployment_config_block | annotation } // machines, services, communication commented out
 
-// file_id = { "@" ~ hex_literal ~ ";" } // Keep the reverted change for now
 file_id = { "file_id" ~ ":" ~ hex_literal ~ ";" }
 import_statement = { "import" ~ string_literal ~ ";" }
 
@@ -64,32 +56,48 @@ optional_type = { "optional" ~ "<" ~ type_specifier ~ ">" }
 map_type = { "map" ~ "<" ~ type_specifier ~ "," ~ type_specifier ~ ">" }
 
 // Updated annotation rules
-annotation = _{ description_annotation | validate_annotation | db_annotation | meta_annotation
-             | implements_annotation | channel_annotation | initial_annotation | final_annotation
-             | parallel_annotation | allowed_actors_annotation | protocol_annotation
-             | communicates_with_annotation | publishes_annotation | subscribes_annotation
-             | route_annotation | output_directive_annotation | generic_kv_annotation
-             | generic_flag_annotation }
+annotation = { dollar_annotation }
 
-// Capture key and value/args explicitly
-description_annotation = { "$" ~ key:("description") ~ "(" ~ value:string_literal ~ ")" ~ ";" }
-validate_annotation = { "$" ~ key:("validate") ~ "(" ~ args:annotation_args? ~ ")" ~ ";" }
-db_annotation = { "$" ~ key:("db") ~ "(" ~ args:annotation_args? ~ ")" ~ ";" }
-meta_annotation = { "$" ~ key:("meta") ~ "(" ~ args:annotation_args? ~ ")" ~ ";" }
-initial_annotation = { "$" ~ key:("initial") ~ "(" ~ value:identifier ~ ")" ~ ";" }
-final_annotation = { "$" ~ key:("final") ~ ";" }
-parallel_annotation = { "$" ~ key:("parallel") ~ ";" }
-allowed_actors_annotation = { "$" ~ key:("allowedActors") ~ "(" ~ value:identifier_list ~ ")" ~ ";" }
-protocol_annotation = { "$" ~ key:("protocol") ~ "(" ~ value:identifier ~ ")" ~ ";" }
-communicates_with_annotation = { "$" ~ key:("communicatesWith") ~ "(" ~ service:identifier ~ "using" ~ protocol:identifier ~ ")" ~ ";" }
-publishes_annotation = { "$" ~ key:("publishes") ~ "(" ~ value:identifier ~ ")" ~ ";" }
-subscribes_annotation = { "$" ~ key:("subscribes") ~ "(" ~ value:identifier ~ ")" ~ ";" }
-route_annotation = { "$" ~ key:("route") ~ "(" ~ args:annotation_args ~ ")" ~ ";" }
+dollar_annotation = {
+    description_annotation |
+    validate_annotation |
+    db_annotation |
+    meta_annotation |
+    implements_annotation |
+    channel_annotation |
+    initial_annotation |
+    final_annotation |
+    parallel_annotation |
+    allowed_actors_annotation |
+    protocol_annotation |
+    communicates_with_annotation |
+    publishes_annotation |
+    subscribes_annotation |
+    route_annotation |
+    output_directive_annotation |
+    generic_kv_annotation |
+    generic_flag_annotation
+}
+
+// Capture key and value/args explicitly (Using workaround for key:(literal))
+description_annotation = { "$" ~ "description" ~ "(" ~ (desc_value:string_literal) ~ ")" ~ ";" }
+validate_annotation = { "$" ~ "validate" ~ "(" ~ annotation_args? ~ ")" ~ ";" }
+db_annotation = { "$" ~ "db" ~ "(" ~ annotation_args? ~ ")" ~ ";" }
+meta_annotation = { "$" ~ "meta" ~ "(" ~ annotation_args? ~ ")" ~ ";" }
+initial_annotation = { "$" ~ "initial" ~ "(" ~ value:identifier ~ ")" ~ ";" }
+final_annotation = { "$" ~ "final" ~ ";" }
+parallel_annotation = { "$" ~ "parallel" ~ ";" }
+allowed_actors_annotation = { "$" ~ "allowedActors" ~ "(" ~ value:identifier_list ~ ")" ~ ";" }
+protocol_annotation = { "$" ~ "protocol" ~ "(" ~ value:identifier ~ ")" ~ ";" }
+communicates_with_annotation = { "$" ~ "communicatesWith" ~ "(" ~ service:identifier ~ "using" ~ protocol:identifier ~ ")" ~ ";" }
+publishes_annotation = { "$" ~ "publishes" ~ "(" ~ value:identifier ~ ")" ~ ";" }
+subscribes_annotation = { "$" ~ "subscribes" ~ "(" ~ value:identifier ~ ")" ~ ";" }
+route_annotation = { "$" ~ "route" ~ "(" ~ args:annotation_args ~ ")" ~ ";" }
 output_directive_annotation = { "$" ~ key:(identifier ~ "_" ~ "out") ~ "(" ~ value:string_literal ~ ")" ~ ";" }
-implements_annotation = { "$" ~ key:("implements") ~ "(" ~ value:identifier ~ ")" ~ ";" }
-channel_annotation = { "$" ~ key:("channel") ~ "(" ~ value:identifier ~ ")" ~ ";" }
+implements_annotation = { "$" ~ "implements" ~ "(" ~ value:identifier ~ ")" ~ ";" }
+channel_annotation = { "$" ~ "channel" ~ "(" ~ value:identifier ~ ")" ~ ";" }
 
-generic_kv_annotation = { "$" ~ key:identifier ~ "(" ~ value:annotation_value ~ ")" ~ ";" } // Removed trailing semicolon from grammar - check if needed
+generic_kv_annotation = { "$" ~ key:identifier ~ "(" ~ value:annotation_value ~ ")" ~ ";" }
 generic_flag_annotation = { "$" ~ key:identifier ~ ";" }
 
 // Rule for key-value arguments inside annotations like $validate, $db, $meta, $route
@@ -97,22 +105,19 @@ annotation_args = { annotation_arg ~ ("," ~ annotation_arg)* }
 annotation_arg = { identifier ~ ":" ~ annotation_value }
 
 // Updated annotation values (needs expansion for bool, list, object)
-annotation_value = _{ string_literal | integer_literal | boolean_literal | list_literal | object_literal } // Added list and object
+annotation_value = _{ string_literal | integer_literal | boolean_literal | list_literal | object_literal }
 boolean_literal = { "true" | "false" }
-list_literal = { "[" ~ (annotation_value ~ ("," ~ annotation_value)*)? ~ "]" } // Added list literal rule (allows empty list)
-object_literal = { "{" ~ annotation_args? ~ "}" } // Reuse annotation_args for key:value structure (basic)
+list_literal = { "[" ~ (annotation_value ~ ("," ~ annotation_value)*)? ~ "]" }
+object_literal = { "{" ~ annotation_args? ~ "}" }
 
 // --- New Specific Annotation Rules ---
-identifier_list = { identifier ~ ("," ~ identifier)* } // Helper rule for list of identifiers
+identifier_list = { identifier ~ ("," ~ identifier)* }
 
 // --- Machine Definitions (Basic) ---
-
 machine_definition = { annotation* ~ "machine" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ machine_element* ~ "}" }
-// Updated placeholder for elements inside a machine block
-machine_element = { context_definition | states_definition | actions_definition | guards_definition | invokes_definition } // Added invokes
+machine_element = { context_definition | states_definition | actions_definition | guards_definition | invokes_definition }
 
 context_definition = { annotation* ~ "context" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ context_field_definition* ~ "}" }
-// Context fields are similar to struct fields, but might have $default
 context_field_definition = { annotation* ~ identifier ~ ":" ~ type_specifier ~ "@id(" ~ integer_literal ~ ")" ~ annotation* ~ ";" }
 
 // --- State Machine States Definitions (Added) ---
@@ -121,149 +126,105 @@ states_definition = { annotation* ~ "states" ~ "@id(" ~ integer_literal ~ ")" ~ 
 
 state_definition = { annotation* ~ "state" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ state_element* ~ "}" }
 
-// Placeholder for elements inside a state block
 state_element = { initial_annotation | final_annotation | parallel_annotation | on_entry | on_exit | on_transition | after_transition | state_invoke | states_definition | history_definition }
 
-// Basic event transition
 on_transition = { "on" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ transition_details ~ ";" }
 
-// --- Delayed Transition (Added) ---
 after_transition = { "after" ~ duration_literal ~ "@id(" ~ integer_literal ~ ")" ~ transition_details ~ ";" }
 
-// --- Entry/Exit Actions (Added) ---
 on_entry = { "onEntry" ~ "{" ~ action_ref* ~ "}" ~ ";" }
 on_exit = { "onExit" ~ "{" ~ action_ref* ~ "}" ~ ";" }
 
-// Details following the transition keyword
 transition_details = { "transition" ~ transition_target ~ transition_block? }
 
-// Target of a transition (StateName, .history, Parent.history)
 transition_target = { qualified_history_target | current_history_target | state_name_target }
 state_name_target = { identifier }
 current_history_target = { "." ~ "history" }
 qualified_history_target = { identifier ~ "." ~ "history" }
 
-// Details of the transition (actions, guards)
 transition_block = { "{" ~ (action_ref | guard_ref)* ~ "}" }
-action_ref = { "action" ~ identifier ~ ";" } // Assuming actions are predefined identifiers for now
-guard_ref = { "guard" ~ identifier ~ ";" }  // Assuming guards are predefined identifiers for now
+action_ref = { "action" ~ identifier ~ ";" }
+guard_ref = { "guard" ~ identifier ~ ";" }
 
-// --- Action Definitions (Added) ---
 actions_definition = { annotation* ~ "actions" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ action_definition* ~ "}" }
-action_definition = { annotation* ~ "action" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ ";" } // Simple identifier-based for now
+action_definition = { annotation* ~ "action" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ ";" }
 
-// --- Guard Definitions (Added) ---
 guards_definition = { annotation* ~ "guards" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ guard_definition* ~ "}" }
-guard_definition = { annotation* ~ "guard" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ ";" } // Simple identifier-based for now
+guard_definition = { annotation* ~ "guard" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ ";" }
 
-// --- Invoke Definitions (Added) ---
 invokes_definition = { annotation* ~ "invokes" ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ invoke_definition* ~ "}" }
 
-// invoke Name @id(N) { src: Source; input?: {...}; onDone?: ...; onError?: ...; }
 invoke_definition = { annotation* ~ "invoke" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ invoke_body ~ ";" }
 
-// Body of the invoke definition: { src: ... }
-invoke_body = { "{" ~ invoke_src ~ invoke_param* ~ "}" } 
+invoke_body = { "{" ~ invoke_src ~ invoke_param* ~ "}" }
+invoke_src = { "src" ~ ":" ~ (service_method_ref | string_literal | identifier) ~ ";" }
+service_method_ref = { identifier ~ "." ~ identifier }
 
-// Source of the invocation (service.method, "string", MachineName)
-invoke_src = { "src" ~ ":" ~ (service_method_ref | string_literal | identifier) ~ ";" } // Allow identifier for MachineName
-service_method_ref = { identifier ~ "." ~ identifier } 
-
-// Other invoke parameters (input, onDone, onError)
 invoke_param = { (input_mapping | on_done | on_error) }
-input_mapping = { "input" ~ ":" ~ object_literal ~ ";" } // Placeholder: simple object literal
-// on_done = { "onDone" ~ ":" ~ transition_ref ~ ";" } // Placeholder: references a transition (needs defining) 
-// on_error = { "onError" ~ ":" ~ transition_ref ~ ";" } // Placeholder: references a transition
-on_done = { "onDone" ~ ":" ~ invoke_transition_details ~ ";" } // Use detailed structure
-on_error = { "onError" ~ ":" ~ invoke_transition_details ~ ";" } // Use detailed structure
+input_mapping = { "input" ~ ":" ~ object_literal ~ ";" }
+on_done = { "onDone" ~ ":" ~ invoke_transition_details ~ ";" }
+on_error = { "onError" ~ ":" ~ invoke_transition_details ~ ";" }
 
-// Details for invoke transitions (target + optional actions/guards block)
-invoke_transition_details = { transition_target ~ transition_block? } // Reuse transition target and block rules
+invoke_transition_details = { transition_target ~ transition_block? }
 
-// --- State Invocation (Added) ---
-// invoke StateInvokeName @id(N) { src: invokes.DefinedInvokeName; input?: {...}; onDone?: ...; onError?: ... }
 state_invoke = { "invoke" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ state_invoke_body ~ ";" }
 
-// Similar to invoke_body but src must reference a defined invoke
-state_invoke_body = { "{" ~ state_invoke_src ~ invoke_param* ~ "}" } 
-state_invoke_src = { "src" ~ ":" ~ invoke_ref ~ ";" } // Reference defined invoke: invokes.Name
+state_invoke_body = { "{" ~ state_invoke_src ~ invoke_param* ~ "}" }
+state_invoke_src = { "src" ~ ":" ~ invoke_ref ~ ";" }
 invoke_ref = { "invokes" ~ "." ~ identifier }
 
-// --- History State Definition (Added) ---
-// history [shallow|deep] @id(N) target DefaultTargetState;
 history_definition = { "history" ~ history_type ~ "@id(" ~ integer_literal ~ ")" ~ "target" ~ identifier ~ ";" }
 history_type = { "shallow" | "deep" }
 
-// --- Service Block Definitions (Added) ---
 service_item = { interface_definition | service_definition }
-
-// interface Name @id(N) { method ... ; }
 interface_definition = { annotation* ~ "interface" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ method_definition* ~ "}" }
 
-// method Name @id(N) (param: Type @id(N), ...) -> ReturnType? { ... }? ;
 method_definition = { annotation* ~ "method" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "(" ~ parameter_list? ~ ")" ~ method_return? ~ method_body? ~ ";" }
 parameter_list = { parameter ~ ("," ~ parameter)* }
-parameter = { identifier ~ ":" ~ type_specifier ~ ("@id(" ~ integer_literal ~ ")")? } // ID on param is optional for now
+parameter = { identifier ~ ":" ~ type_specifier ~ ("@id(" ~ integer_literal ~ ")")? }
 method_return = { "->" ~ type_specifier }
-method_body = { "{" ~ annotation* ~ "}" } // Placeholder for potential method-specific annotations/details
+method_body = { "{" ~ annotation* ~ "}" }
 
-// service Name @id(N) extends Base { $implements(Iface); ... }
 service_definition = { annotation* ~ "service" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ service_extends? ~ service_body }
 service_extends = { "extends" ~ identifier }
 service_body = { "{" ~ service_element* ~ "}" }
-// Service elements are primarily annotations for now ($implements, $route, etc.)
-service_element = { annotation } // TODO: Add method overrides if needed later
+service_element = { annotation }
 
-// Specific service annotations (can also be generic kv)
-implements_annotation = { "$" ~ "implements" ~ "(" ~ identifier ~ ")" ~ ";" }
-channel_annotation = { "$" ~ "channel" ~ "(" ~ identifier ~ ")" ~ ";" } // Added $channel annotation
-
-// --- Communication Block Definitions (Added) ---
 communication_item = { protocol_definition | channel_definition | event_definition }
-
-// protocol Name @id(N) { ... };
 protocol_definition = { annotation* ~ "protocol" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ protocol_body ~ ";" }
-protocol_body = { "{" ~ annotation* ~ "}" } // Body mainly for annotations for now
+protocol_body = { "{" ~ annotation* ~ "}" }
 
-// channel Name @id(N) { description: "..."; parameters: {...}; ... };
 channel_definition = { annotation* ~ "channel" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ channel_body ~ ";" }
 channel_body = { "{" ~ channel_element* ~ "}" }
 channel_element = { description_element | parameters_element | annotation }
-// Simple key-value like elements for description/parameters
 description_element = { "description" ~ ":" ~ string_literal ~ ";" }
-parameters_element = { "parameters" ~ ":" ~ object_literal ~ ";" } // Reuse object_literal { key: type; ... }
+parameters_element = { "parameters" ~ ":" ~ object_literal ~ ";" }
 
-// event Name @id(N) { field: Type @id(N); ... };
 event_definition = { annotation* ~ "event" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ "{" ~ event_field_definition* ~ "}" }
-// Reuse field_definition structure for event fields
 event_field_definition = { field_definition }
 
-// --- Actor Block Definitions (Added) ---
 actor_definition = { annotation* ~ "actor" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ actor_body ~ ";" }
-actor_body = { "{" ~ annotation* ~ "}" } // Body mainly for annotations
+actor_body = { "{" ~ annotation* ~ "}" }
 
-// --- Deployment Config Block Definitions (Added) ---
 environment_definition = { annotation* ~ "environment" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ environment_extends? ~ environment_body ~ ";" }
 environment_extends = { "extends" ~ identifier }
 environment_body = { "{" ~ environment_element* ~ "}" }
 environment_element = { variables_element | annotation }
-variables_element = { "variables" ~ ":" ~ object_literal ~ ";" } // Reuse object_literal { key: value; ... }
+variables_element = { "variables" ~ ":" ~ object_literal ~ ";" }
 
-// infrastructure Name @id(N) extends Base { type: "..."; ... };
 infrastructure_definition = { annotation* ~ "infrastructure" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ infrastructure_extends? ~ infrastructure_body ~ ";" }
 infrastructure_extends = { "extends" ~ identifier }
 infrastructure_body = { "{" ~ infrastructure_element* ~ "}" }
-infrastructure_element = { attribute_kv_pair | annotation } // Allow generic key-value pairs for attributes
-attribute_kv_pair = { identifier ~ ":" ~ annotation_value ~ ";" } // Simple key: value; structure
+infrastructure_element = { attribute_kv_pair | annotation }
+attribute_kv_pair = { identifier ~ ":" ~ annotation_value ~ ";" }
 
-// deployment Name @id(N) { targetEnvironment: Env; targetInfrastructure: {...}; deployable: Serv; ... };
 deployment_definition = { annotation* ~ "deployment" ~ identifier ~ "@id(" ~ integer_literal ~ ")" ~ deployment_body ~ ";" }
 deployment_body = { "{" ~ deployment_element* ~ "}" }
 deployment_element = { target_env_element | target_infra_element | deployable_element | attribute_kv_pair | config_element | annotation }
 target_env_element = { "targetEnvironment" ~ ":" ~ identifier ~ ";" }
-target_infra_element = { "targetInfrastructure" ~ ":" ~ object_literal ~ ";" } // Complex structure, parse as key-value for now
+target_infra_element = { "targetInfrastructure" ~ ":" ~ object_literal ~ ";" }
 deployable_element = { "deployable" ~ ":" ~ identifier ~ ";" }
-config_element = { "config" ~ ":" ~ object_literal ~ ";" } // Reuse object_literal
+config_element = { "config" ~ ":" ~ object_literal ~ ";" }
 
 // TODO: Add rules for all other elements from DSL.md:
 // - enums, machines, services, interfaces, protocols, actors, channels, events

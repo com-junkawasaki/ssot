@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 thiserror = "1.0.69"
 # Add pest and pest_derive (ensure versions match)
+# pest = "2.7.0"
+# pest_derive = "2.7.0"
 pest = "2.8.0"
 pest_derive = "2.8.0"
 # Add proc_macro2 and syn for Ident/Span and parsing helpers

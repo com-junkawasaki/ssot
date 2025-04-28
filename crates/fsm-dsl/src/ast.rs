@@ -287,8 +287,7 @@ pub struct ContextFieldDefinition {
     pub type_spec: TypeSpecifier,
     pub id: NumericId,
     pub annotations: Vec<Annotation>,
-    // TODO: Potentially add parsed default value
-    // pub default_value: Option<AnnotationValue>,
+    pub default_value: Option<AnnotationValue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
