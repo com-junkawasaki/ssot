@@ -1,37 +1,63 @@
 #![allow(dead_code, unused_variables, unused_imports)] // Keep module level for now, specific ones below too
 use crate::ast::{
     // --- Structs/Enums Present in ast.rs ---
-    ActionsBlock, ActorDefinition, ActorsBlock, AfterTransitionDefinition, Annotation,
-    AnnotationValue, Argument, AttributeDefinition, // Added AttributeDefinition
-    ChannelDefinition, // Added ChannelDefinition
-    CommunicationBlock, CommunicationItem, // Added CommunicationItem
+    ActionsBlock,
+    ActorDefinition,
+    ActorsBlock,
+    AfterTransitionDefinition,
+    Annotation,
+    AnnotationValue,
+    Argument,
+    AttributeDefinition,  // Added AttributeDefinition
+    ChannelDefinition,    // Added ChannelDefinition
     CommunicatesWithArgs, // Added CommunicatesWithArgs
-    ContextDefinition, ContextFieldDefinition,
-    DeploymentConfigBlock, DeploymentDefinition, DeploymentItem, // Added DeploymentItem
-    Duration, // Added Duration
-    EnumDefinition, EnumVariant, EnvironmentDefinition, // Added EnvironmentDefinition
-    EventDefinition, // Added EventDefinition
-    FieldDefinition, FileId,
-    GuardDefinition, GuardsBlock, // Added GuardDefinition, GuardsBlock
-    HistoryDefinition, HistoryType,
-    Identifier, ImportStatement, // Replaced Imports/ImportsEntry with ImportStatement
+    CommunicationBlock,
+    CommunicationItem, // Added CommunicationItem
+    ContextDefinition,
+    ContextFieldDefinition,
+    DeploymentConfigBlock,
+    DeploymentDefinition,
+    DeploymentItem, // Added DeploymentItem
+    Duration,       // Added Duration
+    EnumDefinition,
+    EnumVariant,
+    EnvironmentDefinition, // Added EnvironmentDefinition
+    EventDefinition,       // Added EventDefinition
+    FieldDefinition,
+    FileId,
+    GuardDefinition,
+    GuardsBlock, // Added GuardDefinition, GuardsBlock
+    HistoryDefinition,
+    HistoryType,
+    Identifier,
+    ImportStatement,          // Replaced Imports/ImportsEntry with ImportStatement
     InfrastructureDefinition, // Added InfrastructureDefinition
-    InterfaceDefinition, // Added InterfaceDefinition
-    InvokeDefinition, InvokeSource, InvokeTransitionTarget, // Replaced InvokeSrc etc. with InvokeSource/InvokeTransitionTarget
-    InvokesBlock, // Added InvokesBlock
-    MachineDefinition, MachinesBlock, // Added MachinesBlock
+    InterfaceDefinition,      // Added InterfaceDefinition
+    InvokeDefinition,
+    InvokeSource,
+    InvokeTransitionTarget, // Replaced InvokeSrc etc. with InvokeSource/InvokeTransitionTarget
+    InvokesBlock,           // Added InvokesBlock
+    MachineDefinition,
+    MachinesBlock, // Added MachinesBlock
     MethodDefinition,
-    NumericId, // Added NumericId
+    NumericId,           // Added NumericId
     ParameterDefinition, // Replaced Parameter/MethodParameter
-    ProtocolDefinition, // Kept ProtocolDefinition struct
-    ServiceDefinition, ServiceItem, ServicesBlock, // Added ServiceItem, ServicesBlock
-    SsotAst, // Added SsotAst (top-level)
-    StateDefinition, StateInvokeDefinition, // Kept StateInvokeDefinition
-    StatesBlock, StructDefinition,
-    TimeUnit, // Added TimeUnit
+    ProtocolDefinition,  // Kept ProtocolDefinition struct
+    ServiceDefinition,
+    ServiceItem,
+    ServicesBlock, // Added ServiceItem, ServicesBlock
+    SsotAst,       // Added SsotAst (top-level)
+    StateDefinition,
+    StateInvokeDefinition, // Kept StateInvokeDefinition
+    StatesBlock,
+    StructDefinition,
+    TimeUnit,           // Added TimeUnit
     TopLevelDefinition, // Added TopLevelDefinition
-    TransitionDefinition, TransitionTarget, // Kept TransitionDefinition/Target
-    TypeDefinition, TypeSpecifier, TypesBlock,
+    TransitionDefinition,
+    TransitionTarget, // Kept TransitionDefinition/Target
+    TypeDefinition,
+    TypeSpecifier,
+    TypesBlock,
     // --- Removed/Renamed imports (Not found or different in ast.rs) ---
     // Imports, ImportsEntry, InitialAnnotation, InvokeInputMapping, InvokeOnDoneTransition,
     // InvokeOnErrorTransition, InvokeParam, InvokeSrc, ListType, MapType, MethodParameter,
@@ -99,7 +125,10 @@ pub enum SsotParserError {
 pub struct SsotParser;
 
 // --- Main Parsing Function ---
-pub fn parse_ssot_content(content: &str, source_path: Option<PathBuf>) -> Result<SsotAst, SsotParserError> {
+pub fn parse_ssot_content(
+    content: &str,
+    source_path: Option<PathBuf>,
+) -> Result<SsotAst, SsotParserError> {
     let pairs = SsotParser::parse(Rule::ssot_entry_rule, content)?;
 
     // Expecting a single 'file' rule at the top level
@@ -159,11 +188,13 @@ fn parse_identifier(pair: Pair<Rule>) -> Result<Identifier, SsotParserError> {
             rule_str: pair.as_str().to_string(),
         });
     }
-    Ok(Identifier { name: pair.as_str().to_string() })
+    Ok(Identifier {
+        name: pair.as_str().to_string(),
+    })
 }
 
 fn parse_numeric_id(pair: Pair<Rule>) -> Result<NumericId, SsotParserError> {
-   Ok(NumericId { value: 0 })
+    Ok(NumericId { value: 0 })
 }
 
 fn parse_import_statement(pair: Pair<Rule>) -> Result<ImportStatement, SsotParserError> {
@@ -180,10 +211,7 @@ fn parse_import_statement(pair: Pair<Rule>) -> Result<ImportStatement, SsotParse
         .into_inner()
         .find(|p| p.as_rule() == Rule::STRING_LITERAL)
         .ok_or_else(|| {
-            SsotParserError::MissingRule(
-                Rule::STRING_LITERAL,
-                "in import statement".to_string(),
-            )
+            SsotParserError::MissingRule(Rule::STRING_LITERAL, "in import statement".to_string())
         })?;
 
     // Extract the string content, removing quotes
@@ -193,9 +221,7 @@ fn parse_import_statement(pair: Pair<Rule>) -> Result<ImportStatement, SsotParse
         // TODO: Handle escape sequences if needed
         Ok(ImportStatement { path })
     } else {
-        Err(SsotParserError::InvalidImportPath(
-            path_str.to_string(),
-        ))
+        Err(SsotParserError::InvalidImportPath(path_str.to_string()))
     }
 }
 
@@ -216,7 +242,11 @@ fn parse_top_level_definition(pair: Pair<Rule>) -> Result<TopLevelDefinition, Ss
 
     // Find the actual definition rule (machine_definition, type_definition, etc.)
     let definition_pair = inner_pairs
-        .find(|p| p.as_rule() != Rule::annotation && p.as_rule() != Rule::COMMENT && p.as_rule() != Rule::WHITESPACE)
+        .find(|p| {
+            p.as_rule() != Rule::annotation
+                && p.as_rule() != Rule::COMMENT
+                && p.as_rule() != Rule::WHITESPACE
+        })
         .ok_or_else(|| {
             SsotParserError::MissingRule(
                 Rule::machine_definition, // Or any other expected definition rule
@@ -243,31 +273,21 @@ fn parse_top_level_definition(pair: Pair<Rule>) -> Result<TopLevelDefinition, Ss
                 "Parsing for type_definition not yet implemented".to_string(),
             ))
         }
-        Rule::actor_definition => {
-             Err(SsotParserError::AstConstructionError(
-                "Parsing for actor_definition not yet implemented".to_string(),
-            ))
-        }
-         Rule::service_definition => {
-             Err(SsotParserError::AstConstructionError(
-                "Parsing for service_definition not yet implemented".to_string(),
-            ))
-        }
-         Rule::communication_definition => {
-             Err(SsotParserError::AstConstructionError(
-                "Parsing for communication_definition not yet implemented".to_string(),
-            ))
-        }
-         Rule::deployment_definition => {
-             Err(SsotParserError::AstConstructionError(
-                "Parsing for deployment_definition not yet implemented".to_string(),
-            ))
-        }
-         Rule::infrastructure_definition => {
-             Err(SsotParserError::AstConstructionError(
-                "Parsing for infrastructure_definition not yet implemented".to_string(),
-            ))
-        }
+        Rule::actor_definition => Err(SsotParserError::AstConstructionError(
+            "Parsing for actor_definition not yet implemented".to_string(),
+        )),
+        Rule::service_definition => Err(SsotParserError::AstConstructionError(
+            "Parsing for service_definition not yet implemented".to_string(),
+        )),
+        Rule::communication_definition => Err(SsotParserError::AstConstructionError(
+            "Parsing for communication_definition not yet implemented".to_string(),
+        )),
+        Rule::deployment_definition => Err(SsotParserError::AstConstructionError(
+            "Parsing for deployment_definition not yet implemented".to_string(),
+        )),
+        Rule::infrastructure_definition => Err(SsotParserError::AstConstructionError(
+            "Parsing for infrastructure_definition not yet implemented".to_string(),
+        )),
         rule => Err(SsotParserError::InvalidRule {
             expected: Rule::machine_definition,
             found: rule,
@@ -301,13 +321,13 @@ fn parse_machine_definition(pair: Pair<Rule>) -> Result<MachineDefinition, SsotP
     // TODO: Parse optional machine_body
     let mut context: Option<ContextDefinition> = None;
     let mut initial_state: Option<Identifier> = None;
-    let mut final_states: Vec<Identifier> = Vec::new();
+    let final_states: Vec<Identifier> = Vec::new();
     let mut states: Vec<StateDefinition> = Vec::new();
-    let mut transitions: Vec<TransitionDefinition> = Vec::new(); // For machine-level transitions?
-    let mut actions: Option<ActionsBlock> = None;
-    let mut guards: Option<GuardsBlock> = None;
-    let mut invokes: Option<InvokesBlock> = None;
-    let mut history: Option<HistoryDefinition> = None;
+    let transitions: Vec<TransitionDefinition> = Vec::new(); // For machine-level transitions?
+    let actions: Option<ActionsBlock> = None;
+    let guards: Option<GuardsBlock> = None;
+    let invokes: Option<InvokesBlock> = None;
+    let history: Option<HistoryDefinition> = None;
 
     if let Some(body_pair) = inner_pairs.find(|p| p.as_rule() == Rule::machine_body) {
         for element_pair in body_pair.into_inner() {
@@ -321,28 +341,28 @@ fn parse_machine_definition(pair: Pair<Rule>) -> Result<MachineDefinition, SsotP
                     context = Some(parse_context_definition(element_pair)?);
                 }
                 Rule::initial_definition => {
-                     if initial_state.is_some() {
+                    if initial_state.is_some() {
                         return Err(SsotParserError::AstConstructionError(
                             "Duplicate initial state definition found in machine".to_string(),
                         ));
                     }
                     initial_state = Some(parse_initial_definition(element_pair)?);
                 }
-                 Rule::final_states_definition => {
-                     // TODO: Implement parse_final_states_definition
-                     return Err(SsotParserError::AstConstructionError(
+                Rule::final_states_definition => {
+                    // TODO: Implement parse_final_states_definition
+                    return Err(SsotParserError::AstConstructionError(
                         "Parsing for final_states_definition not yet implemented".to_string(),
                     ));
-                 }
-                 Rule::state_definition => {
-                     states.push(parse_state_definition(element_pair)?);
-                 }
-                 Rule::transition_definition => {
-                     // transitions.push(parse_transition_definition(element_pair)?);
-                     return Err(SsotParserError::AstConstructionError(
+                }
+                Rule::state_definition => {
+                    states.push(parse_state_definition(element_pair)?);
+                }
+                Rule::transition_definition => {
+                    // transitions.push(parse_transition_definition(element_pair)?);
+                    return Err(SsotParserError::AstConstructionError(
                         "Parsing for machine transition_definition not yet implemented".to_string(),
                     ));
-                 }
+                }
                 Rule::actions_block => {
                     // TODO: Implement parse_actions_block
                     return Err(SsotParserError::AstConstructionError(
@@ -361,12 +381,12 @@ fn parse_machine_definition(pair: Pair<Rule>) -> Result<MachineDefinition, SsotP
                         "Parsing for invokes_block not yet implemented".to_string(),
                     ));
                 }
-                 Rule::history_definition => {
+                Rule::history_definition => {
                     // TODO: Implement parse_history_definition
-                     return Err(SsotParserError::AstConstructionError(
+                    return Err(SsotParserError::AstConstructionError(
                         "Parsing for history_definition not yet implemented".to_string(),
                     ));
-                 }
+                }
                 Rule::COMMENT | Rule::WHITESPACE | Rule::annotation => { /* Skip for now */ }
                 _ => {
                     return Err(SsotParserError::AstConstructionError(format!(
@@ -409,7 +429,10 @@ fn parse_context_definition(pair: Pair<Rule>) -> Result<ContextDefinition, SsotP
         });
     }
     let mut fields = Vec::new();
-    if let Some(body_pair) = pair.into_inner().find(|p| p.as_rule() == Rule::context_body) {
+    if let Some(body_pair) = pair
+        .into_inner()
+        .find(|p| p.as_rule() == Rule::context_body)
+    {
         for field_pair in body_pair.into_inner() {
             match field_pair.as_rule() {
                 Rule::context_field_definition => {
@@ -417,7 +440,7 @@ fn parse_context_definition(pair: Pair<Rule>) -> Result<ContextDefinition, SsotP
                 }
                 Rule::COMMENT | Rule::WHITESPACE | Rule::annotation => { /* Skip */ }
                 _ => {
-                     return Err(SsotParserError::AstConstructionError(format!(
+                    return Err(SsotParserError::AstConstructionError(format!(
                         "Unexpected rule {:?} inside context_body",
                         field_pair.as_rule()
                     )));
@@ -432,8 +455,10 @@ fn parse_context_definition(pair: Pair<Rule>) -> Result<ContextDefinition, SsotP
     })
 }
 
-fn parse_context_field_definition(pair: Pair<Rule>) -> Result<ContextFieldDefinition, SsotParserError> {
-     if pair.as_rule() != Rule::context_field_definition {
+fn parse_context_field_definition(
+    pair: Pair<Rule>,
+) -> Result<ContextFieldDefinition, SsotParserError> {
+    if pair.as_rule() != Rule::context_field_definition {
         return Err(SsotParserError::InvalidRule {
             expected: Rule::context_field_definition,
             found: pair.as_rule(),
@@ -450,12 +475,12 @@ fn parse_context_field_definition(pair: Pair<Rule>) -> Result<ContextFieldDefini
     })?;
     let type_spec = parse_type_ref(type_ref_pair)?;
     let mut default_value: Option<AnnotationValue> = None;
-     if let Some(next_pair) = inner.peek() {
-         if next_pair.as_rule() == Rule::literal_value {
-             let literal_pair = inner.next().unwrap();
-             default_value = Some(parse_literal_value(literal_pair)?);
-         }
-     }
+    if let Some(next_pair) = inner.peek() {
+        if next_pair.as_rule() == Rule::literal_value {
+            let literal_pair = inner.next().unwrap();
+            default_value = Some(parse_literal_value(literal_pair)?);
+        }
+    }
     Ok(ContextFieldDefinition {
         name,
         type_spec,
@@ -474,16 +499,16 @@ fn parse_type_ref(pair: Pair<Rule>) -> Result<TypeSpecifier, SsotParserError> {
         });
     }
     let mut inner = pair.into_inner();
-    let type_pair = inner.next().ok_or_else(||{
-         SsotParserError::AstConstructionError("Missing inner type in type_ref".to_string())
+    let type_pair = inner.next().ok_or_else(|| {
+        SsotParserError::AstConstructionError("Missing inner type in type_ref".to_string())
     })?;
     let is_optional = inner.next().is_some();
     let base_type = match type_pair.as_rule() {
-        Rule::primitive_type => {
-            TypeSpecifier::Simple(Identifier { name: type_pair.as_str().to_string() })
-        }
+        Rule::primitive_type => TypeSpecifier::Simple(Identifier {
+            name: type_pair.as_str().to_string(),
+        }),
         Rule::list_type => {
-            let inner_type_pair = type_pair.into_inner().next().ok_or_else(||{
+            let inner_type_pair = type_pair.into_inner().next().ok_or_else(|| {
                 SsotParserError::MissingRule(Rule::type_ref, "in list_type".to_string())
             })?;
             let inner_type = parse_type_ref(inner_type_pair)?;
@@ -491,15 +516,15 @@ fn parse_type_ref(pair: Pair<Rule>) -> Result<TypeSpecifier, SsotParserError> {
         }
         Rule::map_type => {
             let mut map_inner = type_pair.into_inner();
-            let key_type_pair = map_inner.next().ok_or_else(||{
-                 SsotParserError::MissingRule(Rule::type_ref, "in map_type key".to_string())
+            let key_type_pair = map_inner.next().ok_or_else(|| {
+                SsotParserError::MissingRule(Rule::type_ref, "in map_type key".to_string())
             })?;
-             let value_type_pair = map_inner.next().ok_or_else(||{
-                 SsotParserError::MissingRule(Rule::type_ref, "in map_type value".to_string())
-             })?;
-             let key_type = parse_type_ref(key_type_pair)?;
-             let value_type = parse_type_ref(value_type_pair)?;
-             TypeSpecifier::Map(Box::new(key_type), Box::new(value_type))
+            let value_type_pair = map_inner.next().ok_or_else(|| {
+                SsotParserError::MissingRule(Rule::type_ref, "in map_type value".to_string())
+            })?;
+            let key_type = parse_type_ref(key_type_pair)?;
+            let value_type = parse_type_ref(value_type_pair)?;
+            TypeSpecifier::Map(Box::new(key_type), Box::new(value_type))
         }
         Rule::IDENTIFIER => TypeSpecifier::Simple(parse_identifier(type_pair)?),
         rule => {
@@ -518,7 +543,7 @@ fn parse_type_ref(pair: Pair<Rule>) -> Result<TypeSpecifier, SsotParserError> {
 }
 
 fn parse_literal_value(pair: Pair<Rule>) -> Result<AnnotationValue, SsotParserError> {
-     if pair.as_rule() != Rule::literal_value {
+    if pair.as_rule() != Rule::literal_value {
         return Err(SsotParserError::InvalidRule {
             expected: Rule::literal_value,
             found: pair.as_rule(),
@@ -531,11 +556,15 @@ fn parse_literal_value(pair: Pair<Rule>) -> Result<AnnotationValue, SsotParserEr
     match inner_pair.as_rule() {
         Rule::STRING_LITERAL => {
             let str_val = inner_pair.as_str();
-             if str_val.len() >= 2 && str_val.starts_with('"') && str_val.ends_with('"') {
-                 Ok(AnnotationValue::String(str_val[1..str_val.len() - 1].to_string()))
-             } else {
-                 Err(SsotParserError::InvalidLiteralValue("Malformed string literal".to_string()))
-             }
+            if str_val.len() >= 2 && str_val.starts_with('"') && str_val.ends_with('"') {
+                Ok(AnnotationValue::String(
+                    str_val[1..str_val.len() - 1].to_string(),
+                ))
+            } else {
+                Err(SsotParserError::InvalidLiteralValue(
+                    "Malformed string literal".to_string(),
+                ))
+            }
         }
         Rule::INTEGER_LITERAL => {
             let int_str = inner_pair.as_str();
@@ -543,32 +572,29 @@ fn parse_literal_value(pair: Pair<Rule>) -> Result<AnnotationValue, SsotParserEr
                 .map(AnnotationValue::Integer)
                 .map_err(|e| SsotParserError::InvalidIntLiteral(int_str.to_string(), e.to_string()))
         }
-        Rule::FLOAT_LITERAL => {
-             Err(SsotParserError::AstConstructionError("Float literal parsing not supported in AST AnnotationValue yet".to_string()))
-        }
-        Rule::BOOLEAN_LITERAL => {
-             match inner_pair.as_str() {
-                 "true" => Ok(AnnotationValue::Boolean(true)),
-                 "false" => Ok(AnnotationValue::Boolean(false)),
-                 _ => Err(SsotParserError::InvalidBooleanLiteral(inner_pair.as_str().to_string()))
-             }
-        }
-        Rule::NULL_LITERAL => {
-             Err(SsotParserError::AstConstructionError("Null literal parsing not supported in AST AnnotationValue yet".to_string()))
-        }
-        Rule::DURATION_LITERAL => {
-             Err(SsotParserError::AstConstructionError("Duration literal parsing not supported in AST AnnotationValue yet".to_string()))
-        }
-        Rule::IDENTIFIER => {
-             Ok(AnnotationValue::String(inner_pair.as_str().to_string()))
-        }
+        Rule::FLOAT_LITERAL => Err(SsotParserError::AstConstructionError(
+            "Float literal parsing not supported in AST AnnotationValue yet".to_string(),
+        )),
+        Rule::BOOLEAN_LITERAL => match inner_pair.as_str() {
+            "true" => Ok(AnnotationValue::Boolean(true)),
+            "false" => Ok(AnnotationValue::Boolean(false)),
+            _ => Err(SsotParserError::InvalidBooleanLiteral(
+                inner_pair.as_str().to_string(),
+            )),
+        },
+        Rule::NULL_LITERAL => Err(SsotParserError::AstConstructionError(
+            "Null literal parsing not supported in AST AnnotationValue yet".to_string(),
+        )),
+        Rule::DURATION_LITERAL => Err(SsotParserError::AstConstructionError(
+            "Duration literal parsing not supported in AST AnnotationValue yet".to_string(),
+        )),
+        Rule::IDENTIFIER => Ok(AnnotationValue::String(inner_pair.as_str().to_string())),
         rule => Err(SsotParserError::InvalidRule {
             expected: Rule::STRING_LITERAL,
             found: rule,
             rule_str: inner_pair.as_str().to_string(),
         }),
     }
-
 }
 
 fn parse_initial_definition(pair: Pair<Rule>) -> Result<Identifier, SsotParserError> {
@@ -579,9 +605,12 @@ fn parse_initial_definition(pair: Pair<Rule>) -> Result<Identifier, SsotParserEr
             rule_str: pair.as_str().to_string(),
         });
     }
-    let identifier_pair = pair.into_inner().find(|p| p.as_rule() == Rule::IDENTIFIER).ok_or_else(|| {
-        SsotParserError::MissingRule(Rule::IDENTIFIER, "in initial_definition".to_string())
-    })?;
+    let identifier_pair = pair
+        .into_inner()
+        .find(|p| p.as_rule() == Rule::IDENTIFIER)
+        .ok_or_else(|| {
+            SsotParserError::MissingRule(Rule::IDENTIFIER, "in initial_definition".to_string())
+        })?;
     parse_identifier(identifier_pair)
 }
 
@@ -595,33 +624,33 @@ fn parse_state_definition(pair: Pair<Rule>) -> Result<StateDefinition, SsotParse
     }
     let mut inner = pair.into_inner();
 
-    let annotations : Vec<Annotation> = vec![];
+    let annotations: Vec<Annotation> = vec![];
 
     let type_or_name_pair = inner.next().ok_or_else(|| {
         SsotParserError::AstConstructionError("Missing state type/name".to_string())
     })?;
 
-     let name = if type_or_name_pair.as_rule() == Rule::IDENTIFIER {
-         parse_identifier(type_or_name_pair)?
-     } else {
-         let name_pair = inner.next().ok_or_else(|| {
-             SsotParserError::MissingRule(Rule::IDENTIFIER, "in state definition name".to_string())
-         })?;
-         parse_identifier(name_pair)?
-     };
+    let name = if type_or_name_pair.as_rule() == Rule::IDENTIFIER {
+        parse_identifier(type_or_name_pair)?
+    } else {
+        let name_pair = inner.next().ok_or_else(|| {
+            SsotParserError::MissingRule(Rule::IDENTIFIER, "in state definition name".to_string())
+        })?;
+        parse_identifier(name_pair)?
+    };
 
     let mut transitions: Vec<TransitionDefinition> = vec![];
     let mut on_entry: Vec<Identifier> = vec![];
     let mut on_exit: Vec<Identifier> = vec![];
-    let mut invokes: Vec<StateInvokeDefinition> = vec![];
-    let mut history: Option<HistoryDefinition> = None;
-    let mut regions: Vec<StatesBlock> = vec![];
+    let invokes: Vec<StateInvokeDefinition> = vec![];
+    let history: Option<HistoryDefinition> = None;
+    let regions: Vec<StatesBlock> = vec![];
 
     if let Some(body_pair) = inner.find(|p| p.as_rule() == Rule::state_body) {
         for element_pair in body_pair.into_inner() {
             match element_pair.as_rule() {
                 Rule::state_definition => {
-                     return Err(SsotParserError::AstConstructionError(
+                    return Err(SsotParserError::AstConstructionError(
                         "Parsing for nested state_definition not yet implemented".to_string(),
                     ));
                 }
@@ -645,22 +674,22 @@ fn parse_state_definition(pair: Pair<Rule>) -> Result<StateDefinition, SsotParse
                 }
                 Rule::history_definition => {
                     // TODO: Implement parse_history_definition
-                     return Err(SsotParserError::AstConstructionError(
+                    return Err(SsotParserError::AstConstructionError(
                         "Parsing for history_definition not yet implemented".to_string(),
                     ));
                 }
                 Rule::actions_block => {
-                     return Err(SsotParserError::AstConstructionError(
+                    return Err(SsotParserError::AstConstructionError(
                         "Parsing for actions_block inside state not yet implemented".to_string(),
                     ));
                 }
                 Rule::guards_block => {
-                     return Err(SsotParserError::AstConstructionError(
+                    return Err(SsotParserError::AstConstructionError(
                         "Parsing for guards_block inside state not yet implemented".to_string(),
                     ));
                 }
-                 Rule::invokes_block => {
-                     return Err(SsotParserError::AstConstructionError(
+                Rule::invokes_block => {
+                    return Err(SsotParserError::AstConstructionError(
                         "Parsing for invokes_block inside state not yet implemented".to_string(),
                     ));
                 }
@@ -711,7 +740,8 @@ fn parse_transition_definition(pair: Pair<Rule>) -> Result<TransitionDefinition,
 
     // --- Parse Event --- (Mandatory)
     let event_pair = inner.next().ok_or_else(|| {
-        SsotParserError::MissingRule(Rule::IDENTIFIER, "in transition event".to_string()) // Or STRING_LITERAL
+        SsotParserError::MissingRule(Rule::IDENTIFIER, "in transition event".to_string())
+        // Or STRING_LITERAL
     })?;
     let event = match event_pair.as_rule() {
         Rule::IDENTIFIER => parse_identifier(event_pair)?,
@@ -719,16 +749,22 @@ fn parse_transition_definition(pair: Pair<Rule>) -> Result<TransitionDefinition,
             // Represent string literal event as Identifier for now? AST uses Identifier.
             let str_val = event_pair.as_str();
             if str_val.len() >= 2 && str_val.starts_with('"') && str_val.ends_with('"') {
-                Identifier { name: str_val[1..str_val.len() - 1].to_string() }
+                Identifier {
+                    name: str_val[1..str_val.len() - 1].to_string(),
+                }
             } else {
-                return Err(SsotParserError::InvalidLiteralValue("Malformed string literal event".to_string()));
+                return Err(SsotParserError::InvalidLiteralValue(
+                    "Malformed string literal event".to_string(),
+                ));
             }
         }
-        rule => return Err(SsotParserError::InvalidRule {
-            expected: Rule::IDENTIFIER, // Or STRING_LITERAL
-            found: rule,
-            rule_str: event_pair.as_str().to_string(),
-        }),
+        rule => {
+            return Err(SsotParserError::InvalidRule {
+                expected: Rule::IDENTIFIER, // Or STRING_LITERAL
+                found: rule,
+                rule_str: event_pair.as_str().to_string(),
+            })
+        }
     };
 
     // --- Parse Optional Target, Guard, Action --- //
@@ -736,7 +772,7 @@ fn parse_transition_definition(pair: Pair<Rule>) -> Result<TransitionDefinition,
     let mut guard: Option<Identifier> = None;
     let mut actions: Vec<Identifier> = vec![];
 
-    while let Some(part_pair) = inner.next() {
+    for part_pair in inner {
         match part_pair.as_rule() {
             // Target: "->" ~ IDENTIFIER
             Rule::IDENTIFIER if target.is_none() => {
@@ -746,12 +782,12 @@ fn parse_transition_definition(pair: Pair<Rule>) -> Result<TransitionDefinition,
             }
             // Guard: "[" ~ IDENTIFIER ~ "]"
             Rule::IDENTIFIER if target.is_some() && guard.is_none() => {
-                 // This assumes IDENTIFIER after target MUST be the guard if present.
-                 // Grammar is ambiguous: ("[" ~ IDENTIFIER ~ "]")?
-                 // Need a specific rule for guard content.
-                 // For now, assuming this IDENTIFIER is the guard.
-                 guard = Some(parse_identifier(part_pair)?);
-                 // TODO: Fix grammar/parsing for explicit guard structure
+                // This assumes IDENTIFIER after target MUST be the guard if present.
+                // Grammar is ambiguous: ("[" ~ IDENTIFIER ~ "]")?
+                // Need a specific rule for guard content.
+                // For now, assuming this IDENTIFIER is the guard.
+                guard = Some(parse_identifier(part_pair)?);
+                // TODO: Fix grammar/parsing for explicit guard structure
             }
             // Action: "/" ~ IDENTIFIER
             Rule::IDENTIFIER if target.is_some() && guard.is_some() => {
@@ -759,8 +795,8 @@ fn parse_transition_definition(pair: Pair<Rule>) -> Result<TransitionDefinition,
                 // Grammar is ambiguous: ("/" ~ IDENTIFIER)?
                 // Need a specific rule for action content.
                 // For now, assuming this IDENTIFIER is the action.
-                 actions.push(parse_identifier(part_pair)?);
-                 // TODO: Fix grammar/parsing for explicit action structure
+                actions.push(parse_identifier(part_pair)?);
+                // TODO: Fix grammar/parsing for explicit action structure
             }
             Rule::COMMENT | Rule::WHITESPACE => { /* Skip */ }
             // Handle semicolon or unexpected rules
@@ -770,13 +806,15 @@ fn parse_transition_definition(pair: Pair<Rule>) -> Result<TransitionDefinition,
 
     // --- Construct TransitionDefinition --- //
     // Default to internal transition if no target specified?
-    let final_target = target.unwrap_or(TransitionTarget::State(Identifier { name: "#".to_string() })); // Placeholder for internal?
+    let final_target = target.unwrap_or(TransitionTarget::State(Identifier {
+        name: "#".to_string(),
+    })); // Placeholder for internal?
 
     Ok(TransitionDefinition {
         event,
         target: final_target,
-        id: NumericId { value: 0 }, // Placeholder
-        annotations: vec![], // Placeholder
+        id: NumericId { value: 0 },                // Placeholder
+        annotations: vec![],                       // Placeholder
         actions, // Assign parsed actions (currently only one possible)
         guards: guard.map_or(vec![], |g| vec![g]), // Convert Option<Id> to Vec<Id>
     })
@@ -784,31 +822,35 @@ fn parse_transition_definition(pair: Pair<Rule>) -> Result<TransitionDefinition,
 
 // Updated parse_on_action helper for on_entry / on_exit
 fn parse_on_action(pair: Pair<Rule>) -> Result<Vec<Identifier>, SsotParserError> {
-     if pair.as_rule() != Rule::on_entry && pair.as_rule() != Rule::on_exit {
-         return Err(SsotParserError::InvalidRule {
-             expected: Rule::on_entry, // or on_exit
-             found: pair.as_rule(),
-             rule_str: pair.as_str().to_string(),
-         });
-     }
-     // Grammar:
-     // on_entry = { "entry" ~ WHITESPACE* ~ action_block ~ ";" }
-     // on_exit = { "exit" ~ WHITESPACE* ~ action_block ~ ";" }
-     // action_block = { IDENTIFIER | "{" ~ any_content ~ "}" }
+    if pair.as_rule() != Rule::on_entry && pair.as_rule() != Rule::on_exit {
+        return Err(SsotParserError::InvalidRule {
+            expected: Rule::on_entry, // or on_exit
+            found: pair.as_rule(),
+            rule_str: pair.as_str().to_string(),
+        });
+    }
+    // Grammar:
+    // on_entry = { "entry" ~ WHITESPACE* ~ action_block ~ ";" }
+    // on_exit = { "exit" ~ WHITESPACE* ~ action_block ~ ";" }
+    // action_block = { IDENTIFIER | "{" ~ any_content ~ "}" }
 
     // Store rule name before moving pair
     let rule_name_str = format!("{:?}", pair.as_rule());
 
     // Find the inner action_block
-    let action_block_pair = pair.into_inner().find(|p| p.as_rule() == Rule::action_block).ok_or_else(|| {
-         // Use the stored rule name string here
-         SsotParserError::MissingRule(Rule::action_block, format!("inside {}", rule_name_str))
-    })?;
+    let action_block_pair = pair
+        .into_inner()
+        .find(|p| p.as_rule() == Rule::action_block)
+        .ok_or_else(|| {
+            // Use the stored rule name string here
+            SsotParserError::MissingRule(Rule::action_block, format!("inside {}", rule_name_str))
+        })?;
 
     // Check what the action_block contains
-    let inner_action = action_block_pair.into_inner().next().ok_or_else(|| {
-        SsotParserError::AstConstructionError("Empty action_block".to_string())
-    })?;
+    let inner_action = action_block_pair
+        .into_inner()
+        .next()
+        .ok_or_else(|| SsotParserError::AstConstructionError("Empty action_block".to_string()))?;
 
     match inner_action.as_rule() {
         Rule::IDENTIFIER => {
@@ -820,15 +862,16 @@ fn parse_on_action(pair: Pair<Rule>) -> Result<Vec<Identifier>, SsotParserError>
             // TODO: Implement parsing of actions within a block.
             // This requires a more specific grammar than `any_content`.
             // For now, return empty or error.
-             Err(SsotParserError::AstConstructionError(
-                 "Parsing block actions requires a more specific grammar than 'any_content'".to_string()
+            Err(SsotParserError::AstConstructionError(
+                "Parsing block actions requires a more specific grammar than 'any_content'"
+                    .to_string(),
             ))
         }
-         rule => Err(SsotParserError::InvalidRule {
-             expected: Rule::IDENTIFIER, // or the rule for the block if grammar changes
-             found: rule,
-             rule_str: inner_action.as_str().to_string(),
-         }),
+        rule => Err(SsotParserError::InvalidRule {
+            expected: Rule::IDENTIFIER, // or the rule for the block if grammar changes
+            found: rule,
+            rule_str: inner_action.as_str().to_string(),
+        }),
     }
 }
 
