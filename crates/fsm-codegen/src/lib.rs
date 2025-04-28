@@ -2,7 +2,10 @@ use fsm_dsl::ast::{
     // Import directly from the ast module
     Annotation,
     AnnotationValue,
-    TypeSpecifier,
+    ContextDefinition,
+    ContextFieldDefinition,
+    EventDefinition,
+    EventsBlock,
     Identifier,
     // FieldType, // Removed - Replace with actual types if needed
     // QualifiedIdent, // Removed - Likely replaced by simple Identifier
@@ -10,15 +13,13 @@ use fsm_dsl::ast::{
     // StateMachine, // Removed - Use MachineDefinition directly
     // TransitionElement, // Removed - Integrated into TransitionDefinition
     MachineDefinition,
-    ContextDefinition,
-    ContextFieldDefinition,
-    StatesBlock,
-    StateDefinition,
-    TransitionDefinition,
-    EventDefinition,
-    EventsBlock,
     PrimitiveType,
     SsotAst,
+    StateDefinition,
+    StatesBlock,
+    TransitionDefinition,
+    TypeSpecifier,
+    TransitionTarget,
 };
 use proc_macro2::{Ident as TokenIdent, TokenStream};
 use quote::{format_ident, quote};
@@ -27,7 +28,8 @@ use std::fmt::Write;
 // Needed for parsing generated code before formatting // For collecting unique guard/action names
 
 pub mod codegen_capnp; // Add new module
-pub mod codegen_plantuml; // Assuming this exists
+                       // TODO: Create src/codegen_plantuml.rs or remove this line if unused.
+                       // pub mod codegen_plantuml; // Assuming this exists
 pub mod codegen_scxml;
 pub mod codegen_ts; // Add new module
 pub mod codegen_xstate; // Add new module for XState // Add new module for SCXML
@@ -66,13 +68,15 @@ impl From<std::fmt::Error> for CodegenError {
 fn find_annotation_value<'a>(
     annotations: &'a [Annotation],
     name: &str,
-) -> Option<&'a AnnotationValue> { // Keep returning Option<&'a AnnotationValue> for now
+) -> Option<&'a AnnotationValue> {
+    // Keep returning Option<&'a AnnotationValue> for now
     annotations.iter().find_map(|anno| match anno {
         // This function is less useful now. Specific helpers might be better.
         // Example: Find a specific key in $validate, $db, $meta
-        Annotation::Validate(args) | Annotation::Db(args) | Annotation::Meta(args) => {
-            args.iter().find(|arg| arg.key.name == name).map(|arg| &arg.value)
-        }
+        Annotation::Validate(args) | Annotation::Db(args) | Annotation::Meta(args) => args
+            .iter()
+            .find(|arg| arg.key.name == name)
+            .map(|arg| &arg.value),
         // Example: Find a specific $generic(value) - requires AST change for AnnotationValue return
         Annotation::GenericKeyValue(key, _value_str) if key.name == name => {
             // Cannot return AnnotationValue easily as _value_str is String
@@ -105,9 +109,7 @@ fn generate_rust_doc_comment(annotations: &[Annotation]) -> TokenStream {
 }
 
 // Helper function to map DSL TypeSpecifier to Rust type TokenStream
-fn map_type_specifier_to_rust_type(
-    type_spec: &TypeSpecifier,
-) -> Result<TokenStream, CodegenError> {
+fn map_type_specifier_to_rust_type(type_spec: &TypeSpecifier) -> Result<TokenStream, CodegenError> {
     match type_spec {
         TypeSpecifier::Simple(ident) => {
             // Map basic types or assume custom types
@@ -142,6 +144,13 @@ fn map_type_specifier_to_rust_type(
             let inner_rust_type = map_type_specifier_to_rust_type(inner)?;
             Ok(quote! { Option<#inner_rust_type> })
         } // TODO: Add Map type if needed
+        TypeSpecifier::Map(key, value) => {
+            // Placeholder: Map complex types like BTreeMap, needs import
+            // For now, return an error or a placeholder type
+            let key_rust_type = map_type_specifier_to_rust_type(key)?;
+            let value_rust_type = map_type_specifier_to_rust_type(value)?;
+            Ok(quote! { std::collections::BTreeMap<#key_rust_type, #value_rust_type> })
+        }
     }
 }
 
@@ -165,14 +174,20 @@ fn generate_impl_block(
     let event_enum_name = format_ident!("Event");
 
     // Find $initial annotation specifically
-    let initial_state_ident = ast.annotations.iter().find_map(|anno| match anno {
-        Annotation::GenericKeyValue(key, value_str) if key.name == "initial" => {
-            Some(format_ident!("{}", value_str))
-        }
-        _ => None,
-    }).ok_or_else(|| CodegenError::AstValidationError(
-            "Missing or invalid '$initial(StateName)' annotation on machine.".to_string()
-    ))?;
+    let initial_state_ident = ast
+        .annotations
+        .iter()
+        .find_map(|anno| match anno {
+            Annotation::GenericKeyValue(key, value_str) if key.name == "initial" => {
+                Some(format_ident!("{}", value_str))
+            }
+            _ => None,
+        })
+        .ok_or_else(|| {
+            CodegenError::AstValidationError(
+                "Missing or invalid '$initial(StateName)' annotation on machine.".to_string(),
+            )
+        })?;
 
     // TODO: Update state checking logic
     // if !ast.states.iter().any(|s| &s.name == initial_state_ident) { ... }
@@ -180,16 +195,16 @@ fn generate_impl_block(
 
     // TODO: Refactor transition mapping completely
     let on_event_match_arms = quote! {}; // Placeholder
-    /*
-        .map(|transition| -> Result<TokenStream, CodegenError> {
-            // ... existing complex logic using TransitionElement, get_simple_ident ...
-            // This whole block needs to be rewritten based on TransitionDefinition
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    */
+                                         /*
+                                             .map(|transition| -> Result<TokenStream, CodegenError> {
+                                                 // ... existing complex logic using TransitionElement, get_simple_ident ...
+                                                 // This whole block needs to be rewritten based on TransitionDefinition
+                                             })
+                                             .collect::<Result<Vec<_>, _>>()?;
+                                         */
 
     // TODO: Refactor context field generation
-    let context_fields = quote!{}; // Placeholder
+    let context_fields = quote! {}; // Placeholder
 
     Ok(quote! {
         // ... (impl block structure, but content needs rewrite) ...
@@ -208,7 +223,7 @@ fn generate_impl_block(
 
             // TODO: Rewrite on_event based on new AST
             /*
-            pub fn on_event(mut self, event: &#event_enum_name) -> Result<Self, String> { 
+            pub fn on_event(mut self, event: &#event_enum_name) -> Result<Self, String> {
                 let mut next_state_machine = self.clone(); // Clone for potential state change
                 match (&self.current_state, event) {
                     #(#on_event_match_arms)*
@@ -323,7 +338,9 @@ pub fn generate_rust_code(machine_ast: &MachineDefinition) -> Result<String, Cod
     let _derive_tokens = quote! { #[derive(Debug, Clone, PartialEq)] };
 
     // State enum generation
-    let states_block = machine_ast.states.as_ref().ok_or_else(|| CodegenError::AstValidationError("Machine definition requires a 'states' block".to_string()))?;
+    let states_block = machine_ast.states.as_ref().ok_or_else(|| {
+        CodegenError::AstValidationError("Machine definition requires a 'states' block".to_string())
+    })?;
     let state_variants = states_block.states.iter().map(|s| {
         let variant_name = format_ident!("{}", s.name.name);
         let doc_comment = generate_rust_doc_comment(&s.annotations);
@@ -359,7 +376,8 @@ pub fn generate_rust_code(machine_ast: &MachineDefinition) -> Result<String, Cod
     // Machine struct definition (Context)
     let machine_struct_doc_comment = generate_rust_doc_comment(&machine_ast.annotations);
     let context_fields = if let Some(context_def) = &machine_ast.context {
-        let fields_results: Result<Vec<TokenStream>, CodegenError> = context_def.fields
+        let fields_results: Result<Vec<TokenStream>, CodegenError> = context_def
+            .fields
             .iter()
             .map(|field| {
                 let field_name = format_ident!("{}", field.name.name);
@@ -416,7 +434,7 @@ pub fn generate_rust_code(machine_ast: &MachineDefinition) -> Result<String, Cod
             }
             for action_ident in &transition.actions {
                 actions.insert(action_ident.name.clone());
-                 // callback_event_map.entry(action_name).or_default().push(transition.event.clone());
+                // callback_event_map.entry(action_name).or_default().push(transition.event.clone());
             }
         }
     }
@@ -524,7 +542,7 @@ fn determine_callback_event_signature<'a>(
 }
 */
 
-// --- Refactored generate_impl_block --- 
+// --- Refactored generate_impl_block ---
 // Renamed to avoid conflict during refactoring
 fn generate_impl_block_refactored(
     machine_ast: &MachineDefinition,
@@ -534,20 +552,32 @@ fn generate_impl_block_refactored(
     let state_enum_name = format_ident!("State");
     let event_enum_name = format_ident!("Event"); // Assumes Event enum exists
 
-    let states_block = machine_ast.states.as_ref().ok_or_else(|| CodegenError::AstValidationError("Machine definition requires a 'states' block".to_string()))?;
+    let states_block = machine_ast.states.as_ref().ok_or_else(|| {
+        CodegenError::AstValidationError("Machine definition requires a 'states' block".to_string())
+    })?;
 
     // Find initial state from annotation
-    let initial_state_ident = machine_ast.annotations.iter().find_map(|anno| match anno {
-         Annotation::GenericKeyValue(key, value_str) if key.name == "initial" => {
-             Some(format_ident!("{}", value_str))
-         }
-        _ => None,
-    }).ok_or_else(|| CodegenError::AstValidationError(
-            "Missing or invalid '$initial(StateName)' annotation on machine.".to_string()
-    ))?;
+    let initial_state_ident = machine_ast
+        .annotations
+        .iter()
+        .find_map(|anno| match anno {
+            Annotation::GenericKeyValue(key, value_str) if key.name == "initial" => {
+                Some(format_ident!("{}", value_str))
+            }
+            _ => None,
+        })
+        .ok_or_else(|| {
+            CodegenError::AstValidationError(
+                "Missing or invalid '$initial(StateName)' annotation on machine.".to_string(),
+            )
+        })?;
 
     // Check if initial state exists
-    if !states_block.states.iter().any(|s| s.name.name == initial_state_ident.to_string()) {
+    if !states_block
+        .states
+        .iter()
+        .any(|s| s.name.name == initial_state_ident.to_string())
+    {
         return Err(CodegenError::AstValidationError(format!(
             "Initial state '{}' defined in $initial annotation is not a declared state.",
             initial_state_ident
@@ -606,11 +636,19 @@ fn generate_impl_block_refactored(
         .flat_map(move |state| { // Add move here
             let current_state_ident = format_ident!("{}", state.name.name);
             // Clone again for the inner closure if needed, or rely on the outer move
-            let state_enum_name_inner = state_enum_name_clone.clone(); 
+            let state_enum_name_inner = state_enum_name_clone.clone();
             let event_enum_name_inner = event_enum_name_clone.clone();
             state.transitions.iter().map(move |transition| { // Add move here
                 let event_ident = format_ident!("{}", transition.event.name);
-                let target_state_ident = format_ident!("{}", transition.target.name);
+                // Extract target state name, handling non-state targets if needed
+                let target_state_ident = match &transition.target {
+                    TransitionTarget::State(ident) => format_ident!("{}", ident.name),
+                    // Handle other target types (e.g., history) if necessary
+                    // For now, we might panic or return an error, or use a placeholder.
+                    // Let's use a placeholder that will likely cause a compile error
+                    // if used incorrectly, prompting proper handling later.
+                    _ => format_ident!("__INVALID_TARGET__"),
+                };
 
                 // Generate guard checks
                 let guard_checks = transition.guards.iter().map(|guard_ident| {
@@ -717,7 +755,8 @@ pub fn generate_capnp_schema(ast: &SsotAst) -> Result<String, CodegenError> {
 ///
 /// A `Result` containing the PlantUML diagram string or a `CodegenError`.
 pub fn generate_plantuml(ast: &SsotAst) -> Result<String, CodegenError> {
-    codegen_plantuml::generate_plantuml_internal(ast)
+    // codegen_plantuml::generate_plantuml_internal(ast)
+    Err(CodegenError::NotImplemented("PlantUML generation".to_string()))
 }
 
 /// Generates TypeScript types from the FSM AST.
@@ -730,7 +769,9 @@ pub fn generate_plantuml(ast: &SsotAst) -> Result<String, CodegenError> {
 pub fn generate_typescript_types(ast: &SsotAst) -> Result<String, CodegenError> {
     // TODO: Implement or call the actual TS generation logic
     // codegen_ts::generate_ts_types_internal(ast)
-    Err(CodegenError::NotImplemented("TypeScript generation".to_string()))
+    Err(CodegenError::NotImplemented(
+        "TypeScript generation".to_string(),
+    ))
 }
 
 /// Generates an XState machine configuration from the FSM AST.
@@ -743,7 +784,9 @@ pub fn generate_typescript_types(ast: &SsotAst) -> Result<String, CodegenError> 
 pub fn generate_xstate_machine(ast: &SsotAst) -> Result<String, CodegenError> {
     // TODO: Implement or call the actual XState generation logic
     // codegen_xstate::generate_xstate_machine_internal(ast)
-    Err(CodegenError::NotImplemented("XState generation".to_string()))
+    Err(CodegenError::NotImplemented(
+        "XState generation".to_string(),
+    ))
 }
 
 /// Generates an SCXML document from the FSM AST.
@@ -1409,4 +1452,3 @@ mod tests {
         // Event union comment
     }
 }
-

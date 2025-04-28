@@ -1,37 +1,43 @@
 //! XState machine definition generation logic.
 
-use crate::{find_annotation_value, get_simple_ident, CodegenError};
-use fsm_dsl::ast::{AnnotationValue, SsotAst, MachineDefinition, TopLevelDefinition, TypeDefinition, StructDefinition, EnumDefinition, EnumVariant, FieldDefinition, TypeSpecifier, Annotation, Argument, NumericId, Identifier, ContextDefinition, ContextFieldDefinition, StatesBlock, StateDefinition, TransitionDefinition};
-// use fsm_dsl::ast::{AnnotationValue, FieldDef, FieldType, StateMachine, TransitionElement}; // Original line commented out
-use heck::ToUpperCamelCase; // For event type casing if needed
-use std::fmt::Write; // For efficient string building
+use crate::{find_annotation_value, /*get_simple_ident,*/ CodegenError}; // get_simple_ident likely unused now
+use fsm_dsl::ast::{
+    ActionDefinition,
+    Annotation, AnnotationValue, Argument, ContextDefinition, ContextFieldDefinition, GuardDefinition,
+    Identifier, InvokeDefinition, MachineDefinition, NumericId, SsotAst, StateDefinition, StatesBlock,
+    TopLevelDefinition, TransitionDefinition, TransitionTarget, TypeSpecifier,
+};
+use heck::{ToLowerCamelCase, ToUpperCamelCase};
+use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 
-// Helper to map DSL FieldType to initial JavaScript value string
-fn map_field_type_to_js_initial_value(field_type: &FieldType) -> String {
-    match field_type {
-        FieldType::Void => "undefined".to_string(),
-        FieldType::Bool => "false".to_string(),
-        FieldType::Int8
-        | FieldType::Int16
-        | FieldType::Int32
-        | FieldType::UInt8
-        | FieldType::UInt16
-        | FieldType::UInt32 => "0".to_string(),
-        FieldType::Int64 | FieldType::UInt64 => "0n".to_string(), // Use BigInt literal
-        FieldType::Float32 | FieldType::Float64 => "0.0".to_string(),
-        FieldType::Text => "\"\"".to_string(), // Empty string
-        FieldType::Data => "new Uint8Array()".to_string(),
-        FieldType::List(_) => "[]".to_string(), // Empty array
-        FieldType::Identifier(_) => "null".to_string(), // Or maybe throw error? Placeholder for now.
+// Helper to map DSL TypeSpecifier to initial JavaScript value string
+fn map_type_specifier_to_js_initial_value(type_spec: &TypeSpecifier) -> String {
+    match type_spec {
+        TypeSpecifier::Simple(ident) => match ident.name.as_str() {
+            "bool" => "false".to_string(),
+            "int" | "i8" | "i16" | "i32" | "u8" | "u16" | "u32" => "0".to_string(),
+            "i64" | "u64" => "0n".to_string(), // Use BigInt literal
+            "f32" | "f64" => "0.0".to_string(),
+            "string" | "text" => "\"\"".to_string(), // Empty string
+            "data" => "new Uint8Array()".to_string(),
+            "void" => "undefined".to_string(),
+            _ => "null".to_string(), // Assume custom types are null initially
+        },
+        TypeSpecifier::List(_) => "[]".to_string(),         // Empty array
+        TypeSpecifier::Optional(_) => "undefined".to_string(), // Or null?
+        TypeSpecifier::Map(_, _) => "{{}}".to_string(),      // Empty object
     }
 }
 
-// Helper to generate JSDoc (can be copied/adapted from codegen_ts.rs if needed)
-fn generate_jsdoc(annotations: &[fsm_dsl::ast::Annotation], indent: &str) -> String {
+// Helper to generate JSDoc (copied/adapted from codegen_ts.rs)
+fn generate_jsdoc(annotations: &[Annotation], indent: &str) -> String {
     let mut doc = String::new();
-    if let Some(AnnotationValue::StringLiteral(desc)) =
-        find_annotation_value(annotations, "description")
-    {
+    let description = annotations.iter().find_map(|anno| match anno {
+        Annotation::Description(desc) => Some(desc),
+        _ => None,
+    });
+    if let Some(desc) = description {
         doc.push_str(indent);
         doc.push_str("/**\n");
         for line in desc.lines() {
@@ -39,313 +45,269 @@ fn generate_jsdoc(annotations: &[fsm_dsl::ast::Annotation], indent: &str) -> Str
             doc.push_str(&format!(" * {}\n", line.trim()));
         }
         doc.push_str(indent);
-        doc.push_str(" */\n"); // Add newline after doc block
+        doc.push_str(" */\n");
     }
     doc
 }
 
-// TODO: Implement XState machine generation
-pub(crate) fn generate_xstate_machine_internal(ast: &StateMachine) -> Result<String, CodegenError> {
+// Updated internal function
+pub(crate) fn generate_xstate_machine_internal(ast: &SsotAst) -> Result<String, CodegenError> {
     let mut output = String::new();
     let indent = "  "; // Using 2 spaces for indentation
-    let machine_name_str = ast.name.to_string();
+
+    // Extract the single MachineDefinition (assuming one per file for now)
+    let machine_ast = ast
+        .definitions
+        .iter()
+        .find_map(|def| {
+            if let TopLevelDefinition::Machines(m_block) = def {
+                m_block.definitions.first()
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| {
+            CodegenError::AstValidationError("No machine definition found in AST".to_string())
+        })?;
+
+    let machine_name_str = &machine_ast.name.name;
+    let machine_name_camel = machine_name_str.to_lower_camel_case(); // e.g., trafficLight
 
     // --- Machine Header ---
     writeln!(output, "// XState machine definition generated from .ssot")?;
     writeln!(output, "// FSM Name: {}", machine_name_str)?;
-    writeln!(
-        output,
-        "// Generated at: {}\
-",
-        chrono::Utc::now()
-    )?; // Add timestamp
-    write!(output, "{}", generate_jsdoc(&ast.annotations, ""))?; // Machine description
-    writeln!(output, "import {{ createMachine }} from 'xstate';")?;
+    writeln!(output, "// Generated at: {}", chrono::Utc::now())?; // Add timestamp
+    write!(output, "{}", generate_jsdoc(&machine_ast.annotations, ""))?; // Machine description
+    writeln!(output, "import {{ createMachine, assign }} from 'xstate';")?; // Import assign
 
     // --- Type Imports (from generated .types.ts) ---
-    // Assume the types file is in the same directory
-    let type_file_name = format!("./{}.types", machine_name_str); // Simple naming convention
-                                                                  // TODO: Make the Context type generation happen in codegen_ts.rs
+    // Assume the types file is in the same directory or appropriately pathed
+    let type_file_name = format!("./{}.types", machine_name_camel); // Use camel case for file name
     writeln!(
         output,
         "import type {{ State as {}State, Event as {}Event, Context as {}Context }} from '{}';\n",
-        machine_name_str, machine_name_str, machine_name_str, type_file_name
+        machine_name_camel, machine_name_camel, machine_name_camel, type_file_name
     )?;
 
     // --- createMachine call ---
-    // Add generic types
     writeln!(
         output,
         "export const {}Machine = createMachine<{}Context, {}Event>({{",
-        machine_name_str, machine_name_str, machine_name_str
+        machine_name_camel, machine_name_camel, machine_name_camel
     )?;
 
     // --- Machine ID ---
     writeln!(output, "{indent}id: '{}',", machine_name_str)?;
-    // Add type predicate for state matching (improves type safety in use)
     writeln!(output, "{indent}predictableActionArguments: true,")?; // Recommended for V5+
     writeln!(output, "{indent}schema: {{")?;
     writeln!(
         output,
         "{indent}{indent}context: {{}} as {}Context, // Define context schema shape",
-        machine_name_str
+        machine_name_camel
     )?;
     writeln!(
         output,
         "{indent}{indent}events: {{}} as {}Event, // Define event schema shape",
-        machine_name_str
+        machine_name_camel
     )?;
-    // Optional: Add states schema if needed, but often inferred
-    // writeln!(output, "{indent}{indent}states: {{}} as {{ [K in {}State]: {{}}; }},", machine_name_str)?;
+    // TODO: Add states schema if desired?
     writeln!(output, "{indent}}},",)?; // Close schema
 
     // --- Initial State ---
-    let initial_state = find_annotation_value(&ast.annotations, "initial")
-        .and_then(|v| match v {
-            AnnotationValue::Identifier(ident) => Some(ident.to_string()),
+     let initial_state_name = machine_ast
+        .annotations
+        .iter()
+        .find_map(|anno| match anno {
+            Annotation::InitialState(ident) => Some(ident.name.clone()),
             _ => None,
         })
         .ok_or_else(|| {
             CodegenError::AstValidationError(
-                "Missing or invalid '$initial(StateName)' annotation on stateMachine.".to_string(),
+                "Missing or invalid '$initial(StateName)' annotation on machine.".to_string(),
             )
         })?;
-    writeln!(output, "{indent}initial: '{}',", initial_state)?;
+    writeln!(output, "{indent}initial: '{}',", initial_state_name)?;
 
     // --- Context ---
     writeln!(output, "{indent}context: {{")?;
-    for field in &ast.context {
-        write!(
-            output,
-            "{}",
-            generate_jsdoc(&field.annotations, indent.repeat(2).as_str())
-        )?; // Field description
-        let initial_value = map_field_type_to_js_initial_value(&field.field_type);
-        writeln!(output, "{indent}{indent}{}: {},", field.name, initial_value)?;
+    if let Some(context_def) = &machine_ast.context {
+        write!(output, "{}", generate_jsdoc(&context_def.annotations, indent))?;
+        for field in &context_def.fields {
+            write!(output, "{}", generate_jsdoc(&field.annotations, &indent.repeat(2)))?; // Field description
+            let initial_value = map_type_specifier_to_js_initial_value(&field.type_spec);
+            writeln!(output, "{indent}{indent}{}: {},", field.name.name, initial_value)?;
+        }
     }
     writeln!(output, "{indent}}},",)?; // Close context object
 
     // --- States ---
     writeln!(output, "{indent}states: {{")?;
-    for state in &ast.states {
-        write!(
-            output,
-            "{}",
-            generate_jsdoc(&state.annotations, indent.repeat(2).as_str())
-        )?; // State description
-        writeln!(output, "{indent}{indent}{}: {{", state.name)?;
+    if let Some(states_block) = &machine_ast.states {
+        write!(output, "{}", generate_jsdoc(&states_block.annotations, indent))?;
+        for state in &states_block.states {
+            write!(output, "{}", generate_jsdoc(&state.annotations, &indent.repeat(2)))?;
+            writeln!(output, "{indent}{indent}{}: {{", state.name.name)?;
+            let state_indent = indent.repeat(3);
 
-        // Entry Actions
-        if !state.entry_actions.is_empty() {
-            let action_list = state
-                .entry_actions
-                .iter()
-                .map(|a| format!("'{}'", a))
-                .collect::<Vec<_>>()
-                .join(", ");
-            writeln!(output, "{indent}{indent}{indent}entry: [{}],", action_list)?;
-        }
-
-        // Exit Actions
-        if !state.exit_actions.is_empty() {
-            let action_list = state
-                .exit_actions
-                .iter()
-                .map(|a| format!("'{}'", a))
-                .collect::<Vec<_>>()
-                .join(", ");
-            writeln!(output, "{indent}{indent}{indent}exit: [{}],", action_list)?;
-        }
-
-        // Transitions (on)
-        writeln!(output, "{indent}{indent}{indent}on: {{")?;
-        for transition in ast.transitions.iter().filter(|t| t.from == state.name) {
-            // Find the 'On' element
-            let on_element = transition.elements.iter().find_map(|el| match el {
-                TransitionElement::On { event, .. } => Some(event),
-                _ => None,
-            });
-            if let Some(event_ident) = on_element {
-                // Find the event definition to check for payload (for potential type hints later)
-                // let event_def = ast.events.iter().find(|e| &e.name == event_ident);
-                let event_name_camel_case = event_ident.to_string().to_upper_camel_case(); // Use PascalCase for event types
-
-                writeln!(
-                    output,
-                    "{indent}{indent}{indent}{indent}'{}': {{",
-                    event_name_camel_case
-                )?; // Event Name as key
-
-                // Target
-                writeln!(
-                    output,
-                    "{indent}{indent}{indent}{indent}{indent}target: '{}',",
-                    transition.to
-                )?;
-
-                // Guard (cond)
-                if let Some(guard_fn) = transition.elements.iter().find_map(|el| match el {
-                    TransitionElement::Guard { function, .. } => Some(function),
-                    _ => None,
-                }) {
-                    writeln!(
-                        output,
-                        "{indent}{indent}{indent}{indent}{indent}cond: '{}',",
-                        guard_fn
-                    )?;
-                }
-
-                // Action
-                if let Some(action_fn) = transition.elements.iter().find_map(|el| match el {
-                    TransitionElement::Action { function, .. } => Some(function),
-                    _ => None,
-                }) {
-                    // XState actions are typically arrays, even for one action
-                    writeln!(
-                        output,
-                        "{indent}{indent}{indent}{indent}{indent}actions: ['{}'],",
-                        action_fn
-                    )?;
-                }
-
-                writeln!(output, "{indent}{indent}{indent}{indent}}},",)?; // Close event object
+            // Entry Actions
+            if !state.on_entry.is_empty() {
+                let action_list = state
+                    .on_entry
+                    .iter()
+                    .map(|a| format!("'{}'", a.name))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(output, "{state_indent}entry: [{}],", action_list)?;
             }
-        }
-        writeln!(output, "{indent}{indent}{indent}}},",)?; // Close 'on' object
 
-        writeln!(output, "{indent}{indent}}},",)?; // Close state object
+            // Exit Actions
+            if !state.on_exit.is_empty() {
+                let action_list = state
+                    .on_exit
+                    .iter()
+                    .map(|a| format!("'{}'", a.name))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(output, "{state_indent}exit: [{}],", action_list)?;
+            }
+
+            // Transitions (on)
+            if !state.transitions.is_empty() {
+                writeln!(output, "{state_indent}on: {{")?;
+                let trans_indent = indent.repeat(4);
+                for transition in &state.transitions {
+                    let event_name = &transition.event.name;
+                    // Use PascalCase for event types in discriminated union
+                    let event_type_name = event_name.to_upper_camel_case();
+
+                    writeln!(output, "{trans_indent}'{}': {{", event_type_name)?;
+                    let detail_indent = indent.repeat(5);
+
+                    // Target
+                    match &transition.target {
+                        TransitionTarget::State(target_ident) => {
+                             writeln!(output, "{detail_indent}target: '{}',", target_ident.name)?;
+                        }
+                        // TODO: Handle history transitions if needed in XState
+                        TransitionTarget::CurrentHistory => {
+                            writeln!(output, "// TODO: Handle CurrentHistory target")?;
+                        }
+                         TransitionTarget::QualifiedHistory(target_ident) => {
+                            writeln!(output, "// TODO: Handle QualifiedHistory target: {}", target_ident.name)?;
+                        }
+                    }
+
+                    // Guard (cond)
+                    if !transition.guards.is_empty() {
+                        // Combine multiple guards with && (assuming AND logic)
+                        let guard_list = transition
+                            .guards
+                            .iter()
+                            .map(|g| format!("'{}'", g.name))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        // Use object syntax for multiple guards or complex conditions
+                        writeln!(output, "{detail_indent}cond: {{ type: 'and', guards: [{}] }},", guard_list)?;
+                        // Or for single guard: writeln!(output, "{detail_indent}cond: '{}',", transition.guards[0].name)?;
+                    }
+
+                    // Actions
+                    if !transition.actions.is_empty() {
+                        let action_list = transition
+                            .actions
+                            .iter()
+                            .map(|a| format!("'{}'", a.name))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        writeln!(output, "{detail_indent}actions: [{}],", action_list)?;
+                    }
+
+                    writeln!(output, "{trans_indent}}},",)?; // Close event object
+                }
+                writeln!(output, "{state_indent}}},",)?; // Close 'on' object
+            }
+
+            // TODO: Add invokes, after, history, etc.
+
+            writeln!(output, "{indent}{indent}}},",)?; // Close state object
+        }
     }
     writeln!(output, "{indent}}},",)?; // Close states object
 
-    // --- Machine Options (Guards & Actions implementations - improved placeholders) ---
-    let all_guards: std::collections::HashMap<String, bool> = ast
-        .transitions
+    // --- Machine Options (Guards & Actions implementations - placeholders) ---
+    let all_guards: HashSet<String> = machine_ast
+        .states
         .iter()
-        .filter_map(|t| {
-            let guard_fn = t.elements.iter().find_map(|el| match el {
-                TransitionElement::Guard { function, .. } => Some(function),
-                _ => None,
-            });
-            let event_name = t.elements.iter().find_map(|el| match el {
-                TransitionElement::On { event, .. } => Some(event),
-                _ => None,
-            });
-            if let (Some(g), Some(e_qident)) = (guard_fn, event_name) {
-                let event_has_payload = ast
-                    .events
+        .flat_map(|s_block| {
+            s_block.states.iter().flat_map(|s| {
+                s.transitions
                     .iter()
-                    // Compare simple names
-                    .any(|evt| &evt.name == get_simple_ident(e_qident) && !evt.fields.is_empty());
-                Some((g.to_string(), event_has_payload))
-            } else {
-                None
-            }
+                    .flat_map(|t| t.guards.iter().map(|g| g.name.clone()))
+            })
         })
-        .collect(); // Collect into HashMap<GuardName, HasPayload>
-                    // For actions, consider entry/exit (no payload) and transition actions (payload possible)
-    let mut all_actions: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
-    // Entry/Exit actions (no payload context)
-    for state in &ast.states {
-        for action in &state.entry_actions {
-            all_actions.entry(action.to_string()).or_insert(false);
-        }
-        for action in &state.exit_actions {
-            all_actions.entry(action.to_string()).or_insert(false);
-        }
-    }
-    // Transition actions (payload context)
-    for transition in &ast.transitions {
-        if let Some(action_fn) = transition.elements.iter().find_map(|el| match el {
-            TransitionElement::Action { function, .. } => Some(function),
-            _ => None,
-        }) {
-            if let Some(event_name_qident) = transition.elements.iter().find_map(|el| match el {
-                TransitionElement::On { event, .. } => Some(event),
-                _ => None,
-            }) {
-                let event_has_payload = ast
-                    .events
+        .collect();
+
+    let all_actions: HashSet<String> = machine_ast
+        .states
+        .iter()
+        .flat_map(|s_block| {
+            s_block.states.iter().flat_map(|s| {
+                s.on_entry
                     .iter()
-                    // Compare simple names
-                    .any(|evt| {
-                        &evt.name == get_simple_ident(event_name_qident) && !evt.fields.is_empty()
-                    });
-                // If the action is already present, update payload flag only if true
-                all_actions
-                    .entry(action_fn.to_string())
-                    .and_modify(|p| *p = *p || event_has_payload)
-                    .or_insert(event_has_payload);
-            }
+                    .map(|a| a.name.clone())
+                    .chain(s.on_exit.iter().map(|a| a.name.clone()))
+                    .chain(
+                        s.transitions
+                            .iter()
+                            .flat_map(|t| t.actions.iter().map(|a| a.name.clone())),
+                    )
+            })
+        })
+        .collect();
+
+    writeln!(output, "{indent}// --- Options (Implementations) ---")?;
+    writeln!(output, "{indent}implementation: {{")?;
+
+    // Guards
+    if !all_guards.is_empty() {
+        writeln!(output, "{indent}{indent}guards: {{")?;
+        for guard_name in all_guards {
+            // Basic placeholder implementation
+            writeln!(output, "{indent}{indent}{indent}'{}': ({{ context, event }}) => {{", guard_name)?;
+            writeln!(output, "{indent}{indent}{indent}  console.log('Guard check:', '{}', {{ context, event }});", guard_name)?;
+            writeln!(output, "{indent}{indent}{indent}  // TODO: Implement guard logic for {}", guard_name)?;
+            writeln!(output, "{indent}{indent}{indent}  return true; // Default to true
+{indent}{indent}{indent}}},",)?; // Close guard function
         }
+        writeln!(output, "{indent}{indent}}},",)?; // Close guards object
     }
 
-    if !all_guards.is_empty() || !all_actions.is_empty() {
-        writeln!(output, "{indent}options: {{")?;
-        if !all_guards.is_empty() {
-            writeln!(output, "{indent}{indent}guards: {{")?;
-            // Sort guards for consistent output
-            let mut sorted_guards: Vec<_> = all_guards.into_iter().collect();
-            sorted_guards.sort_by(|a, b| a.0.cmp(&b.0));
-            for (guard_name, has_payload) in sorted_guards {
-                writeln!(
-                    output,
-                    "{indent}{indent}{indent}// TODO: Implement guard '{}'",
-                    guard_name
-                )?;
-                write!(
-                    output,
-                    "{indent}{indent}{indent}'{}': (context, event) => {{",
-                    guard_name
-                )?;
-                if has_payload {
-                    write!(output, "\n{indent}{indent}{indent}{indent}// This guard might receive events with payloads ('payload' in event ? event.payload : undefined)")?;
-                }
-                write!(output, "\n{indent}{indent}{indent}{indent}console.warn('Guard \'{}\' not implemented, returning true');", guard_name)?;
-                write!(
-                    output,
-                    "\n{indent}{indent}{indent}{indent}return true;\n{indent}{indent}{indent}}},\n",
-                )?; // Close guard func
-            }
-            writeln!(output, "{indent}{indent}}},",)?; // Close guards
+    // Actions
+    if !all_actions.is_empty() {
+        writeln!(output, "{indent}{indent}actions: {{")?;
+        for action_name in all_actions {
+             // Basic placeholder implementation with assign example
+            writeln!(output, "{indent}{indent}{indent}'{}': assign(( {{ context, event }} ) => {{", action_name)?;
+            writeln!(output, "{indent}{indent}{indent}  console.log('Action executed:', '{}', {{ context, event }});", action_name)?;
+            writeln!(output, "{indent}{indent}{indent}  // TODO: Implement action logic for {}", action_name)?;
+            writeln!(output, "{indent}{indent}{indent}  // Example: return {{ someContextField: newValue }};
+{indent}{indent}{indent}  return {{}}; // Return empty object if no context change
+{indent}{indent}{indent}}}),",)?; // Close assign/action function
         }
-        if !all_actions.is_empty() {
-            writeln!(output, "{indent}{indent}actions: {{")?;
-            // Sort actions for consistent output
-            let mut sorted_actions: Vec<_> = all_actions.into_iter().collect();
-            sorted_actions.sort_by(|a, b| a.0.cmp(&b.0));
-            for (action_name, has_payload) in sorted_actions {
-                writeln!(
-                    output,
-                    "{indent}{indent}{indent}// TODO: Implement action '{}'",
-                    action_name
-                )?;
-                write!(
-                    output,
-                    "{indent}{indent}{indent}'{}': (context, event) => {{",
-                    action_name
-                )?;
-                if has_payload {
-                    write!(output, "\n{indent}{indent}{indent}{indent}// This action might receive events with payloads ('payload' in event ? event.payload : undefined)")?;
-                }
-                write!(output, "\n{indent}{indent}{indent}{indent}console.warn('Action \'{}\' not implemented');", action_name)?;
-                write!(output, "\n{indent}{indent}{indent}}},\n",)?; // Close action func
-            }
-            writeln!(output, "{indent}{indent}}},",)?; // Close actions
-        }
-        writeln!(output, "{indent}}},",)?; // Close options
+        writeln!(output, "{indent}{indent}}},",)?; // Close actions object
     }
 
-    // --- Close createMachine call ---
-    writeln!(output, "}});")?;
+    // TODO: Add services (for invokes)
 
-    // Format using prettier (optional, requires prettier installed and in PATH)
-    // format_with_prettier(&output)
+    writeln!(output, "{indent}}} // End of implementation object")?;
+
+    writeln!(output, "}});")?; // Close createMachine call
 
     Ok(output)
 }
 
-// Map DSL field types to TS types
-#[allow(dead_code)]
+/*
+// Helper to map DSL FieldType to TypeScript type string.
 fn map_field_type_to_ts_type(field_type: &fsm_dsl::ast::FieldType) -> String {
     match field_type {
         FieldType::Void => "void".to_string(), // Use void for Void
@@ -363,36 +325,24 @@ fn map_field_type_to_ts_type(field_type: &fsm_dsl::ast::FieldType) -> String {
         FieldType::Text => "string".to_string(),
         FieldType::Data => "Uint8Array".to_string(), // Represent Data as Uint8Array
         FieldType::List(inner) => {
-            format!("{}[]", map_field_type_to_ts_type(inner))
+            let inner_ts_type = map_field_type_to_ts_type(inner);
+            format!("{}[]", inner_ts_type)
         }
-        FieldType::Identifier(ident) => ident.to_string(), // Assume identifier is a valid TS type/interface
+        FieldType::Identifier(ident) => ident.to_string(), // Assume identifier is a valid TS type/interface name
     }
 }
 
-// Format event payload type string for TS interface
-#[allow(dead_code)]
+// Helper function to format event payload type for TypeScript
 fn format_event_payload_type(payload_fields: &[FieldDef]) -> String {
     if payload_fields.is_empty() {
-        return "never".to_string(); // No payload means type is never expected
-    }
-    let fields_str = payload_fields
-        .iter()
-        .map(|field| {
-            let ts_type = map_field_type_to_ts_type(&field.field_type);
-            // Optional: Add JSDoc based on field annotations here if needed
-            format!("  {}: {};", field.name, ts_type)
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    format!("{{\n{}\n}}", fields_str)
-}
-
-// Removed helper: Moved to lib.rs
-/*
-fn get_simple_ident(qident: &fsm_dsl::ast::QualifiedIdent) -> &fsm_dsl::ast::Ident {
-    match qident {
-        fsm_dsl::ast::QualifiedIdent::Simple(id) => id,
-        fsm_dsl::ast::QualifiedIdent::Qualified { name, .. } => name,
+        "never".to_string() // Use never if no payload
+    } else {
+        let fields_str = payload_fields
+            .iter()
+            .map(|f| format!("  {}: {};", f.name, map_field_type_to_ts_type(&f.field_type)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("{{\n{}\n}}", fields_str)
     }
 }
 */

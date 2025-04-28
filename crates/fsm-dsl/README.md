@@ -2,135 +2,136 @@
 
 [![crates.io](https://img.shields.io/crates/v/fsm-dsl.svg)](https://crates.io/crates/fsm-dsl) [![docs.rs](https://docs.rs/fsm-dsl/badge.svg)](https://docs.rs/fsm-dsl)
 
-This crate is a library for parsing the state machine description language (DSL) written in the `.ssot` (Single Source of Truth) file format. It parses `.ssot` files based on the syntax defined in `DSL.md`, generating an abstract syntax tree (AST).
+This crate is a library for parsing the state machine description language (DSL) written in the `.ssot` (Single Source of Truth) file format. It parses `.ssot` files based on the syntax defined in `grammar.pest`, generating an abstract syntax tree (AST). The goal is to provide a foundation for type-safe, model-driven development.
 
-## 目的
+## 目的 (Goals)
 
--   `.ssot` ファイル形式の定義に基づき、ステートマシン、型、サービスなどの定義を一元管理する。
--   `.ssot` ファイルから Rust のデータ構造 (AST) を生成し、他のツール (コードジェネレーター、バリデーター、ビジュアライザーなど) で利用可能にする。
--   型安全なモデル駆動開発を支援する。
+-   Define and manage state machines, types, services, etc., based on the `.ssot` format specification.
+-   Generate a Rust AST from `.ssot` files for use by other tools (code generators, validators, visualizers).
+-   Support type-safe model-driven development practices.
 
-## 現在の機能
+## 現在の機能 (Current Functionality - As of Review)
 
--   `.ssot` ファイルの基本的な構文解析:
-    -   ファイル ID (`file_id: 0x...;`)
-    -   インポート文 (`import "..."`)
-    -   コメント (`# ...`)
--   トップレベルブロックの解析:
-    -   `types {}`
-    -   `actors {}`
-    -   `communication {}`
-    -   `services {}`
-    -   `machines {}`
-    -   `deployment_config {}`
--   `types {}` ブロックの詳細な解析:
-    -   `struct` 定義 (フィールド、ID、アノテーション付き)
-    -   `enum` 定義 (バリアント、ID、アノテーション付き)
-    -   型指定子: 単純型 (例: `string`), `list<T>`, `optional<T>`, `map<K, V>`
-    -   アノテーション:
-        -   `$description("...")`
-        -   `$validate(...)` (キー: 値形式 - 文字列/整数/真偽値/リスト/オブジェクト)
-        -   `$db(...)` (キー: 値形式 - 文字列/整数/真偽値/リスト/オブジェクト)
-        -   `$meta(...)` (キー: 値形式 - 文字列/整数/真偽値/リスト/オブジェクト)
-        -   `$genericFlag;`
-        -   `$genericKeyValue("...")`
-        -   `$implements(Name)`
-        -   `$channel(Name)`
--   `machines {}` ブロックの詳細な解析:
-    -   `machine` 定義
-    -   `context` 定義 (フィールド、`$default` はアノテーションとして取得)
-    -   `actions {}` ブロックと `action` 定義
-    -   `guards {}` ブロックと `guard` 定義
-    -   `invokes {}` ブロックと `invoke` 定義 (src: Service.Method | "literal" | MachineName, onDone/onError ターゲット+アクション/ガード)
-    -   `states {}` ブロックと `state` 定義
-        -   イベント遷移 (`on EVENT ...`)
-        -   遅延遷移 (`after DURATION ...`)
-        -   状態内 `invoke` 呼び出し (src: invokes.Name, input マッピング(基本), onDone/onError ターゲット+アクション/ガード)
-        -   状態内アクション (`onEntry`, `onExit`)
-        -   状態フラグ (`$initial`, `$final`, `$parallel`)
-        -   ネスト状態/リージョン (`state` 内の `states {}`)
-        -   履歴状態 (`history shallow|deep ... target ...`)
-        -   遷移ターゲット (`StateName`, `.history`, `Parent.history`)
-        -   遷移ブロック内のアクション/ガード参照 (`action NAME;`, `guard NAME;`)
--   `services {}` ブロックの解析:
-    -   `interface` 定義
-    -   `method` 定義 (パラメータリスト、戻り値型、メソッドボディ内アノテーション)
-    -   `service` 定義 (`extends`, `$implements` 等アノテーション)
--   `communication {}` ブロックの解析:
-    -   `protocol` 定義
-    -   `channel` 定義 (`description`, `parameters` (基本))
-    -   `event` 定義 (フィールドリスト, `$channel` アノテーション)
--   `actors {}` ブロックの解析:
-    -   `actor` 定義 (アノテーション含む)
--   `deployment_config {}` ブロックの解析:
-    -   `environment` 定義 (`extends`, `variables`)
-    -   `infrastructure` 定義 (`extends`, 属性)
-    -   `deployment` 定義 (`targetEnvironment`, `targetInfrastructure`, `deployable`, `config`, 属性)
--   基本的なテストケースによる実装済み部分の検証。
--   **ASTレベルのバリデーション (部分的実装):**
-    -   IDのスコープ内一意性チェック (部分的)。
-    -   基本的な型名、状態名などの参照存在チェック (部分的)。
-    -   ステートマシンの構造的基本チェック（例：初期状態の存在）。
+-   **Basic `.ssot` Syntax Parsing:**
+    -   File ID (`file_id: 0x...;`) - *Note: Currently not parsed into AST.*
+    -   Import statements (`import "..."`)
+    -   Comments (`// ...`, `/* ... */`) - *Note: Grammar uses different comment style than original DSL.md (#)*
+-   **Top-Level Block Parsing (Structure):**
+    -   Recognizes `types {}`, `actors {}`, `communication {}`, `services {}`, `machines {}`, `deployment_config {}` blocks.
+-   **`types {}` Block Parsing:**
+    -   `struct` definitions (name, ID). Field parsing implemented.
+    -   `enum` definitions (name, ID). Variant parsing implemented.
+    -   Type specifiers: `string`, `integer`, `list<T>`, `optional<T>`, `map<K, V>` are parsed.
+    -   Basic annotation structure (`$name(...)` or `$flag;`) is parsed, but argument value parsing might be incomplete.
+-   **`machines {}` Block Parsing:**
+    -   `machine` definitions (name, ID).
+    -   Parses internal blocks: `context {}`, `actions {}`, `guards {}`, `invokes {}`, `states {}`.
+    -   `context` fields (name, type, ID).
+    -   `action`, `guard`, `invoke` definitions (name, ID within their respective blocks). Invoke `src`, `onDone`, `onError` structure parsed.
+    -   `states` block with `state` definitions (name, ID).
+    -   Parses state elements like transitions (`on EVENT target STATE`), state invokes (`invoke { src: ... }`), history (`history ... target ...`).
+    -   Parses state flags like `$initial`, `$final`, `$parallel` via annotations.
+    -   Parses nested `states` blocks (regions).
+-   **Other Block Parsing (Partial/Placeholder):**
+    -   `services {}`: Recognizes `service` and `interface` items, parses basic structure (name, ID, extends for service). Method parsing is placeholder.
+    -   `communication {}`: Recognizes `protocol`, `channel`, `event` items. Parses only the name (as String). *AST definition lacks ID, fields, annotations.*
+    -   `actors {}`: Recognizes `actor` definitions. Parses only the name. *AST definition lacks details.*
+    -   `deployment_config {}`: Recognizes `environment`, `infrastructure`, `deployment` items. Parses basic structure (name, ID, extends). *Internal parsing is placeholder.*
+-   **AST Validation (Under Refactoring - Incomplete):**
+    -   Currently undergoing a major refactoring to use **ID-based scopes (`ScopeId`)** for robust validation.
+    -   **Phase 1 (Symbol Population):** Partially implemented. Registers major definitions (types, machines, actions, guards, invokes, states, services, etc.) into a symbol table using `ScopeId`. Checks for name/ID duplicates *within the same scope*. `CommunicationItem` registration uses dummy IDs.
+    -   **Phase 2 (Reference Resolution):** Partially implemented. Basic logic for resolving types, state targets, actions, guards, invokes exists but is incomplete and needs thorough testing and refinement for nested structures and complex cases.
 
-## 今後のロードマップ
+## 今後のロードマップ (Roadmap)
 
-1.  **参照解決とバリデーションの強化 (高優先度):**
-    -   型名、サービス名、状態名、アクション/ガード/インボーク名などの完全な参照解決と存在検証。
-    -   インポートされたファイル間の名前解決の完全な実装。
-    -   IDのスコープ内一意性チェックの網羅性向上。
-    -   より詳細なステートマシンの構造的バリデーション（例: 遷移ターゲットの妥当性、履歴状態の制約）。
-    -   循環依存の検出。
-2.  **エラー報告の改善 (高優先度):**
-    -   パースエラーおよびバリデーションエラー発生時に、ファイル名、行番号、列番号、具体的なエラー内容を含む詳細なメッセージを出力。
-3.  **高度な機能の詳細実装 (中優先度):**
-    -   Channel パラメータの型パース。
-    -   アノテーション値としての `map<K, V>` サポート。
-    -   Invoke の `input` マッピングの詳細化。
-    -   並列状態リージョンのAST表現とハンドリングの改善。
-4.  **テストカバレッジの向上 (中優先度):** 特にエッジケース、複雑な組み合わせ、バリデーションロジックに関するテストを追加。
-5.  **(任意) コードジェネレーターの追加 (低優先度):** AST から Rust コードや他の形式 (Mermaid, PlantUML など) を生成する機能。
+1.  **Complete Validation Refactoring (Highest Priority):**
+    -   Finish implementing the `ScopeId`-based validation logic in `validation.rs` (both Phase 1 Population and Phase 2 Resolution for all AST elements and references).
+    -   Align `ast.rs` definitions for `ProtocolDefinition`, `ChannelDefinition`, `EventDefinition` with the DSL/grammar (add ID, fields, annotations) and update parser/validator accordingly.
+    -   Adapt and re-enable integration tests for the new validation system. Write comprehensive tests covering various scope and reference scenarios.
+2.  **Complete Parser Implementation (High Priority):**
+    -   Implement full parsing for `services`, `communication`, `actors`, `deployment_config` blocks according to `grammar.pest`.
+    -   Implement robust parsing for complex annotation arguments (lists, objects).
+    -   Implement parsing for transition details (actions/guards within `{}`).
+    -   Ensure all grammar rules in `grammar.pest` are handled correctly.
+3.  **Error Reporting Improvements (High Priority):**
+    -   Integrate `pest` span information into parser and validation errors (`SsotParserError`, `ValidationError`) to provide precise file, line, and column numbers.
+    -   Make error messages more descriptive and helpful.
+4.  **Increase Test Coverage (Medium Priority):** Add more unit and integration tests for edge cases, complex DSL combinations, and specific validation rules once implemented.
+5.  **(Optional) Code Generation (Low Priority):** Explore adding features to generate Rust code, diagrams (Mermaid, etc.), or other artifacts from the validated AST.
 
-## 使用例
+## 使用例 (Usage Example)
 
 ```rust
-use fsm_dsl::parser::{parse_ssot_content, ParseError};
+// Note: Validation is currently incomplete.
+// Parsing basic structures works, but semantic validation is WIP.
+use fsm_dsl::parser::{parse_ssot_content}; // Removed ParseError for now
 use fsm_dsl::ast::SsotAst;
+use fsm_dsl::validation::{validate_ast, ValidationError}; // Import validator
 
-fn main() -> Result<(), ParseError> {
+fn main() -> Result<(), Vec<ValidationError>> { // Return validation errors
     let ssot_content = r#"
-        @0x1234567890abcdef;
+        // file_id: 0x1234567890abcdef; // File ID parsing not implemented yet
         import "/path/to/base.ssot";
 
         types {
             $description("Example types");
 
             struct Point @id(0) {
-                x: i32 @id(0);
-                y: i32 @id(1);
+                x: integer @id(0); // Assuming 'integer' is treated like a primitive/known type
+                y: integer @id(1);
             }
 
             enum Color @id(1) {
                 RED @id(0);
-                GREEN @id(1);
-                BLUE @id(2) { $description("Primary blue"); };
+                GREEN @id(1); // { $description("Primary green"); } // Annotation parsing needs review
+                BLUE @id(2);
             }
         }
 
-        // machines {}, services {} etc. would follow
+        machines {
+             machine Simple @id(10) {
+                 actions @id(0) { action Log @id(0); }
+                 states @id(1) {
+                     state First @id(0) {
+                         $initial;
+                         on ENTRY target First { action Log; } // Transition detail parsing WIP
+                     }
+                 }
+             }
+        }
     "#;
 
-    let ast: SsotAst = parse_ssot_content(ssot_content, None)?;
+    // 1. Parse the content
+    let ast = match parse_ssot_content(ssot_content, None) {
+         Ok(a) => a,
+         Err(parse_error) => {
+             eprintln!("Parsing Failed: {}", parse_error);
+             // Convert parse error to a generic validation-like error or handle differently
+             return Err(vec![]); // Or a specific error type
+         }
+    };
 
-    println!("Successfully parsed SSOT file!");
+    println!("Successfully parsed SSOT content!");
+
+    // 2. Validate the AST (currently checks basic duplicates and some refs)
+    validate_ast(&ast)?; // Returns Err(Vec<ValidationError>) on failure
+
+    println!("AST Validation Successful (Basic Checks)!");
+
+    // 3. Process the AST (e.g., code generation, analysis)
     println!("File ID: {:?}", ast.file_id);
     println!("Imports: {:?}", ast.imports);
 
     for definition in ast.definitions {
         match definition {
-            fsm_dsl::ast::TopLevelDefinition::Types(types_block) => {
+            TopLevelDefinition::Types(types_block) => {
                 println!("Found types block with {} definitions.", types_block.definitions.len());
                 // Process types...
             }
+             TopLevelDefinition::Machines(machines_block) => {
+                 println!("Found machines block with {} definitions.", machines_block.definitions.len());
+                 // Process machines...
+             }
             // Handle other block types...
             _ => {}
         }
@@ -140,9 +141,9 @@ fn main() -> Result<(), ParseError> {
 }
 ```
 
-## 貢献
+## 貢献 (Contributing)
 
-バグ報告、機能リクエスト、プルリクエストを歓迎します。 
+Bug reports, feature requests, and pull requests are welcome. Please be aware of the ongoing validation refactoring.
 
 # State Machine DSL Syntax (Inspired by Cap'n Proto)
 
