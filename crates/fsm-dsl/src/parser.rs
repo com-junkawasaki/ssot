@@ -1230,7 +1230,10 @@ fn parse_state_invoke(
                 let identifier_pair = inner_src_pairs
                     .find(|p| p.as_rule() == Rule::IDENTIFIER)
                     .ok_or_else(|| {
-                        SsotParserError::MissingRule(Rule::IDENTIFIER, "in state_invoke_src".to_string())
+                        SsotParserError::MissingRule(
+                            Rule::IDENTIFIER,
+                            "in state_invoke_src".to_string(),
+                        )
                     })?;
                 src_ref = Some(parse_identifier(identifier_pair)?);
                 property_annotations = Vec::new(); // Reset annotations after processing the element
@@ -1352,24 +1355,22 @@ fn parse_service_item(
     pair: Pair<Rule>,
     item_annotations: Vec<Annotation>,
 ) -> Result<ServiceItem, SsotParserError> {
-    // service_item should contain either service_definition or interface_definition
-    let inner_pair = pair.into_inner().next().ok_or_else(|| {
-        SsotParserError::MissingRule(
-            Rule::service_definition, /* or interface */
-            "in service_item".to_string(),
-        )
-    })?;
-
+    let inner_pair = pair
+        .into_inner()
+        .next()
+        .ok_or_else(|| SsotParserError::UnexpectedInnerPairCount(Rule::service_item, 0))?;
     match inner_pair.as_rule() {
+        Rule::interface_definition => Ok(ServiceItem::Interface(parse_interface_definition(
+            inner_pair,
+            item_annotations,
+        )?)),
         Rule::service_definition => Ok(ServiceItem::Service(parse_service_definition(
             inner_pair,
             item_annotations,
         )?)),
-        // TODO: Add case for Rule::interface_definition
         _ => Err(SsotParserError::AstConstructionError(format!(
-            "Unexpected rule {:?} inside service_item ({:?})",
-            inner_pair.as_rule(),
-            inner_pair.as_str()
+            "Unexpected rule {:?} inside service_item",
+            inner_pair.as_rule()
         ))),
     }
 }
@@ -1378,10 +1379,150 @@ fn parse_communication_block(
     pair: Pair<Rule>,
     block_annotations: Vec<Annotation>,
 ) -> Result<CommunicationBlock, SsotParserError> {
-    // TODO: Implement actual parsing based on grammar rules for communication_item
+    let mut definitions = Vec::new();
+    let mut current_annotations = Vec::new();
+    for inner_pair in pair.into_inner() {
+        match inner_pair.as_rule() {
+            Rule::annotation => current_annotations.push(parse_annotation(inner_pair)?),
+            Rule::communication_item => {
+                // Parse the specific item (protocol, channel, event)
+                definitions.push(parse_communication_item(inner_pair, current_annotations)?);
+                current_annotations = Vec::new();
+            }
+            Rule::COMMENT | Rule::WHITESPACE => { /* Skip */ }
+            _ => {
+                if !current_annotations.is_empty() {
+                    return Err(SsotParserError::AstConstructionError(format!(
+                        "Annotations found but not attached to a definition: {:?}",
+                        current_annotations
+                    )));
+                }
+                return Err(SsotParserError::AstConstructionError(format!(
+                    "Unexpected rule {:?} inside communication_block",
+                    inner_pair.as_rule()
+                )));
+            }
+        }
+    }
+    if !current_annotations.is_empty() {
+        return Err(SsotParserError::AstConstructionError(
+            "Trailing annotations found at end of communication block".to_string(),
+        ));
+    }
     Ok(CommunicationBlock {
-        definitions: vec![], // Placeholder
+        definitions,
         annotations: block_annotations,
+    })
+}
+
+// New function to parse the inner communication item
+fn parse_communication_item(
+    pair: Pair<Rule>,
+    item_annotations: Vec<Annotation>,
+) -> Result<CommunicationItem, SsotParserError> {
+    let inner_pair = pair
+        .into_inner()
+        .next()
+        .ok_or_else(|| SsotParserError::UnexpectedInnerPairCount(Rule::communication_item, 0))?;
+    match inner_pair.as_rule() {
+        Rule::protocol_definition => Ok(CommunicationItem::Protocol(parse_protocol_definition(
+            inner_pair,
+            item_annotations,
+        )?)),
+        Rule::channel_definition => Ok(CommunicationItem::Channel(parse_channel_definition(
+            inner_pair,
+            item_annotations,
+        )?)),
+        Rule::event_definition => Ok(CommunicationItem::Event(parse_event_definition(
+            inner_pair,
+            item_annotations,
+        )?)),
+        _ => Err(SsotParserError::AstConstructionError(format!(
+            "Unexpected rule {:?} inside communication_item",
+            inner_pair.as_rule()
+        ))),
+    }
+}
+
+// New function to parse protocol definition
+fn parse_protocol_definition(
+    pair: Pair<Rule>,
+    annotations: Vec<Annotation>,
+) -> Result<ProtocolDefinition, SsotParserError> {
+    let mut inner_pairs = pair.into_inner();
+    let name = parse_identifier(inner_pairs.next().unwrap())?;
+    let id = parse_optional_numeric_id(&mut inner_pairs, Rule::numeric_id)?
+        .ok_or_else(|| SsotParserError::MissingElement("Numeric ID for protocol".to_string()))?;
+    // Protocol definition is simple: protocol NAME @id(ID);
+    // No inner elements expected besides name and ID
+    Ok(ProtocolDefinition {
+        name,
+        id,
+        annotations,
+    })
+}
+
+// New function to parse channel definition
+fn parse_channel_definition(
+    pair: Pair<Rule>,
+    mut annotations: Vec<Annotation>,
+) -> Result<ChannelDefinition, SsotParserError> {
+    let mut inner_pairs = pair.into_inner();
+    let name = parse_identifier(inner_pairs.next().unwrap())?;
+    let id = parse_optional_numeric_id(&mut inner_pairs, Rule::numeric_id)?
+        .ok_or_else(|| SsotParserError::MissingElement("Numeric ID for channel".to_string()))?;
+    // Grammar: channel IDENTIFIER numeric_id? { any_content }
+    // For now, ignore any_content, just collect annotations before/within {} if grammar changes
+    for inner_pair in inner_pairs {
+        // Consume the rest, looking for annotations inside {}
+        if inner_pair.as_rule() == Rule::annotation {
+            annotations.push(parse_annotation(inner_pair)?);
+        }
+    }
+    Ok(ChannelDefinition {
+        name,
+        id,
+        annotations,
+    })
+}
+
+// New function to parse event definition
+fn parse_event_definition(
+    pair: Pair<Rule>,
+    mut annotations: Vec<Annotation>,
+) -> Result<EventDefinition, SsotParserError> {
+    let mut inner_pairs = pair.into_inner();
+    let name = parse_identifier(inner_pairs.next().unwrap())?;
+    let id = parse_optional_numeric_id(&mut inner_pairs, Rule::numeric_id)?
+        .ok_or_else(|| SsotParserError::MissingElement("Numeric ID for event".to_string()))?;
+    // Grammar: event IDENTIFIER numeric_id? { (annotation | field_definition)* }
+    let mut fields = Vec::new();
+    let mut field_annotations = Vec::new();
+    for field_pair in inner_pairs {
+        // Iterate within {}
+        match field_pair.as_rule() {
+            Rule::annotation => field_annotations.push(parse_annotation(field_pair)?),
+            Rule::field_definition => {
+                fields.push(parse_field_definition(field_pair, field_annotations)?);
+                field_annotations = Vec::new();
+            }
+            Rule::COMMENT | Rule::WHITESPACE => { /* Skip */ }
+            _ => {
+                return Err(SsotParserError::AstConstructionError(format!(
+                    "Unexpected rule {:?} inside event_definition body",
+                    field_pair.as_rule()
+                )));
+            }
+        }
+    }
+    // Combine annotations defined before the event and those potentially before the first field
+    annotations.extend(field_annotations);
+
+    Ok(EventDefinition {
+        name,
+        id,
+        fields,
+        annotations,
     })
 }
 
@@ -1407,19 +1548,75 @@ fn parse_deployment_config_block(
     })
 }
 
+// Placeholder for parsing an interface definition
+fn parse_interface_definition(
+    pair: Pair<Rule>,
+    interface_annotations: Vec<Annotation>,
+) -> Result<InterfaceDefinition, SsotParserError> {
+    let mut inner_pairs = pair.into_inner();
+    let name = parse_identifier(inner_pairs.next().ok_or_else(||
+        SsotParserError::MissingRule(Rule::IDENTIFIER, "for interface name".to_string())
+    )?)?;
+    let id = parse_optional_numeric_id(&mut inner_pairs, Rule::numeric_id)?
+        .ok_or_else(|| SsotParserError::MissingElement("Numeric ID for interface".to_string()))?;
+
+    let mut methods = Vec::new();
+    let mut current_method_annotations = Vec::new();
+
+    // Iterate within the {} body of the interface
+    for element_pair in inner_pairs {
+        match element_pair.as_rule() {
+            Rule::annotation => {
+                current_method_annotations.push(parse_annotation(element_pair)?);
+            }
+            Rule::method_definition => {
+                methods.push(parse_method_definition(
+                    element_pair,
+                    current_method_annotations,
+                )?);
+                current_method_annotations = Vec::new(); // Reset for next element
+            }
+            Rule::COMMENT | Rule::WHITESPACE => { /* Skip */ }
+            _ => {
+                 if !current_method_annotations.is_empty() {
+                    println!("Warning: Dangling annotations in interface definition: {:?}. Attaching to interface.", current_method_annotations);
+                 } else {
+                    return Err(SsotParserError::AstConstructionError(format!(
+                        "Unexpected rule {:?} inside interface_definition body",
+                        element_pair.as_rule()
+                    )));
+                 }
+            }
+        }
+    }
+
+    // Combine annotations before the interface and any dangling ones inside {}
+     let final_annotations = interface_annotations
+        .into_iter()
+        .chain(current_method_annotations)
+        .collect();
+
+    Ok(InterfaceDefinition {
+        name,
+        id,
+        annotations: final_annotations,
+        methods,
+    })
+}
+
 // Placeholder for parsing a service definition
 fn parse_service_definition(
     pair: Pair<Rule>,
     service_annotations: Vec<Annotation>,
 ) -> Result<ServiceDefinition, SsotParserError> {
     let mut inner_pairs = pair.into_inner();
-    let name = parse_identifier(inner_pairs.next().ok_or_else(|| {
+    let name = parse_identifier(inner_pairs.next().ok_or_else(||
         SsotParserError::MissingRule(Rule::IDENTIFIER, "for service name".to_string())
-    })?)?;
+    )?)?;
     let id = parse_optional_numeric_id(&mut inner_pairs, Rule::numeric_id)?
         .ok_or_else(|| SsotParserError::MissingElement("Numeric ID for service".to_string()))?;
 
-    let mut extends = None;
+    let extends = None; // Removed mut
     let mut methods = Vec::new(); // Assuming ServiceDefinition has a 'methods' field in AST
     let mut current_element_annotations = Vec::new(); // Annotations for the next element (method, etc.)
 

@@ -18,8 +18,8 @@ use fsm_dsl::ast::{
     StateDefinition,
     StatesBlock,
     TransitionDefinition,
-    TypeSpecifier,
     TransitionTarget,
+    TypeSpecifier,
 };
 use proc_macro2::{Ident as TokenIdent, TokenStream};
 use quote::{format_ident, quote};
@@ -756,7 +756,9 @@ pub fn generate_capnp_schema(ast: &SsotAst) -> Result<String, CodegenError> {
 /// A `Result` containing the PlantUML diagram string or a `CodegenError`.
 pub fn generate_plantuml(ast: &SsotAst) -> Result<String, CodegenError> {
     // codegen_plantuml::generate_plantuml_internal(ast)
-    Err(CodegenError::NotImplemented("PlantUML generation".to_string()))
+    Err(CodegenError::NotImplemented(
+        "PlantUML generation".to_string(),
+    ))
 }
 
 /// Generates TypeScript types from the FSM AST.

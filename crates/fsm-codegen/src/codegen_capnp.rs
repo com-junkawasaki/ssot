@@ -2,10 +2,21 @@
 
 use crate::CodegenError;
 use fsm_dsl::ast::{
-    Annotation, AnnotationValue, ContextDefinition, ContextFieldDefinition, EnumDefinition,
-    EnumVariant, FieldDefinition, Identifier, MachineDefinition, //PrimitiveType, // Removed
+    Annotation,
+    AnnotationValue,
+    ContextDefinition,
+    ContextFieldDefinition,
+    EnumDefinition,
+    EnumVariant,
+    FieldDefinition,
+    Identifier,
+    MachineDefinition, //PrimitiveType, // Removed
     SsotAst,
-    StateDefinition, StatesBlock, StructDefinition, TransitionDefinition, TypeDefinition,
+    StateDefinition,
+    StatesBlock,
+    StructDefinition,
+    TransitionDefinition,
+    TypeDefinition,
     TypeSpecifier,
 };
 // use std::fmt::Write; // Removed unused import
@@ -47,12 +58,12 @@ fn map_type_specifier_to_capnp_type(type_spec: &TypeSpecifier) -> String {
         TypeSpecifier::Map(key, value) => {
             // Cap'n Proto Map<K,V> requires K, V to be primitive or Data/Text.
             // Often represented as List(struct { key: K; value: V })
-             let key_capnp_type = map_type_specifier_to_capnp_type(key);
-             let value_capnp_type = map_type_specifier_to_capnp_type(value);
-             // Generate a placeholder struct name based on key/value types
-             let map_entry_struct_name = format!("MapEntry_{}_{}", key_capnp_type, value_capnp_type);
-             // TODO: Ensure this struct is defined elsewhere or generated inline?
-             format!("List({})", map_entry_struct_name)
+            let key_capnp_type = map_type_specifier_to_capnp_type(key);
+            let value_capnp_type = map_type_specifier_to_capnp_type(value);
+            // Generate a placeholder struct name based on key/value types
+            let map_entry_struct_name = format!("MapEntry_{}_{}", key_capnp_type, value_capnp_type);
+            // TODO: Ensure this struct is defined elsewhere or generated inline?
+            format!("List({})", map_entry_struct_name)
         }
     }
 }
@@ -120,9 +131,11 @@ pub(crate) fn generate_capnp_schema_internal(
         if let TopLevelDefinition::Types(types_block) = top_def {
             // Now iterate through the TypeDefinitions within the block
             for type_def in &types_block.definitions {
-                 match type_def { // Match on TypeDefinition
+                match type_def {
+                    // Match on TypeDefinition
                     TypeDefinition::Struct(struct_def) => {
-                        defined_types_code.push_str(&generate_capnp_comment(&struct_def.annotations, ""));
+                        defined_types_code
+                            .push_str(&generate_capnp_comment(&struct_def.annotations, ""));
                         defined_types_code.push_str(&format!(
                             "struct {} @{} {{\n",
                             struct_def.name.name, type_id_counter
@@ -130,8 +143,10 @@ pub(crate) fn generate_capnp_schema_internal(
                         type_id_counter += 1;
                         let mut field_ordinal = 0u16;
                         for field in &struct_def.fields {
-                            defined_types_code.push_str(&generate_capnp_comment(&field.annotations, "  "));
-                            let field_capnp_type = map_type_specifier_to_capnp_type(&field.type_spec);
+                            defined_types_code
+                                .push_str(&generate_capnp_comment(&field.annotations, "  "));
+                            let field_capnp_type =
+                                map_type_specifier_to_capnp_type(&field.type_spec);
                             defined_types_code.push_str(&format!(
                                 "  {} @{} :{};\n",
                                 field.name.name,
@@ -143,7 +158,8 @@ pub(crate) fn generate_capnp_schema_internal(
                         defined_types_code.push_str("}\n\n");
                     }
                     TypeDefinition::Enum(enum_def) => {
-                        defined_types_code.push_str(&generate_capnp_comment(&enum_def.annotations, ""));
+                        defined_types_code
+                            .push_str(&generate_capnp_comment(&enum_def.annotations, ""));
                         defined_types_code.push_str(&format!(
                             "enum {} @{} {{\n",
                             enum_def.name.name, type_id_counter
@@ -162,9 +178,8 @@ pub(crate) fn generate_capnp_schema_internal(
                             variant_ordinal += 1;
                         }
                         defined_types_code.push_str("}\n\n");
-                    }
-                    // TypeDefinition doesn't have Machine variant
-                    // TypeDefinition::Machine(_) => { /* Handled separately */ }
+                    } // TypeDefinition doesn't have Machine variant
+                      // TypeDefinition::Machine(_) => { /* Handled separately */ }
                 }
             }
         }

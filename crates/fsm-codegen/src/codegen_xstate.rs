@@ -2,10 +2,10 @@
 
 use crate::{find_annotation_value, /*get_simple_ident,*/ CodegenError}; // get_simple_ident likely unused now
 use fsm_dsl::ast::{
-    ActionDefinition,
-    Annotation, AnnotationValue, Argument, ContextDefinition, ContextFieldDefinition, GuardDefinition,
-    Identifier, InvokeDefinition, MachineDefinition, NumericId, SsotAst, StateDefinition, StatesBlock,
-    TopLevelDefinition, TransitionDefinition, TransitionTarget, TypeSpecifier,
+    ActionDefinition, Annotation, AnnotationValue, Argument, ContextDefinition,
+    ContextFieldDefinition, GuardDefinition, Identifier, InvokeDefinition, MachineDefinition,
+    NumericId, SsotAst, StateDefinition, StatesBlock, TopLevelDefinition, TransitionDefinition,
+    TransitionTarget, TypeSpecifier,
 };
 use heck::{ToLowerCamelCase, ToUpperCamelCase};
 use std::collections::{HashMap, HashSet};
@@ -24,9 +24,9 @@ fn map_type_specifier_to_js_initial_value(type_spec: &TypeSpecifier) -> String {
             "void" => "undefined".to_string(),
             _ => "null".to_string(), // Assume custom types are null initially
         },
-        TypeSpecifier::List(_) => "[]".to_string(),         // Empty array
+        TypeSpecifier::List(_) => "[]".to_string(), // Empty array
         TypeSpecifier::Optional(_) => "undefined".to_string(), // Or null?
-        TypeSpecifier::Map(_, _) => "{{}}".to_string(),      // Empty object
+        TypeSpecifier::Map(_, _) => "{{}}".to_string(), // Empty object
     }
 }
 
@@ -114,7 +114,7 @@ pub(crate) fn generate_xstate_machine_internal(ast: &SsotAst) -> Result<String, 
     writeln!(output, "{indent}}},",)?; // Close schema
 
     // --- Initial State ---
-     let initial_state_name = machine_ast
+    let initial_state_name = machine_ast
         .annotations
         .iter()
         .find_map(|anno| match anno {
@@ -131,11 +131,23 @@ pub(crate) fn generate_xstate_machine_internal(ast: &SsotAst) -> Result<String, 
     // --- Context ---
     writeln!(output, "{indent}context: {{")?;
     if let Some(context_def) = &machine_ast.context {
-        write!(output, "{}", generate_jsdoc(&context_def.annotations, indent))?;
+        write!(
+            output,
+            "{}",
+            generate_jsdoc(&context_def.annotations, indent)
+        )?;
         for field in &context_def.fields {
-            write!(output, "{}", generate_jsdoc(&field.annotations, &indent.repeat(2)))?; // Field description
+            write!(
+                output,
+                "{}",
+                generate_jsdoc(&field.annotations, &indent.repeat(2))
+            )?; // Field description
             let initial_value = map_type_specifier_to_js_initial_value(&field.type_spec);
-            writeln!(output, "{indent}{indent}{}: {},", field.name.name, initial_value)?;
+            writeln!(
+                output,
+                "{indent}{indent}{}: {},",
+                field.name.name, initial_value
+            )?;
         }
     }
     writeln!(output, "{indent}}},",)?; // Close context object
@@ -143,9 +155,17 @@ pub(crate) fn generate_xstate_machine_internal(ast: &SsotAst) -> Result<String, 
     // --- States ---
     writeln!(output, "{indent}states: {{")?;
     if let Some(states_block) = &machine_ast.states {
-        write!(output, "{}", generate_jsdoc(&states_block.annotations, indent))?;
+        write!(
+            output,
+            "{}",
+            generate_jsdoc(&states_block.annotations, indent)
+        )?;
         for state in &states_block.states {
-            write!(output, "{}", generate_jsdoc(&state.annotations, &indent.repeat(2)))?;
+            write!(
+                output,
+                "{}",
+                generate_jsdoc(&state.annotations, &indent.repeat(2))
+            )?;
             writeln!(output, "{indent}{indent}{}: {{", state.name.name)?;
             let state_indent = indent.repeat(3);
 
@@ -186,14 +206,18 @@ pub(crate) fn generate_xstate_machine_internal(ast: &SsotAst) -> Result<String, 
                     // Target
                     match &transition.target {
                         TransitionTarget::State(target_ident) => {
-                             writeln!(output, "{detail_indent}target: '{}',", target_ident.name)?;
+                            writeln!(output, "{detail_indent}target: '{}',", target_ident.name)?;
                         }
                         // TODO: Handle history transitions if needed in XState
                         TransitionTarget::CurrentHistory => {
                             writeln!(output, "// TODO: Handle CurrentHistory target")?;
                         }
-                         TransitionTarget::QualifiedHistory(target_ident) => {
-                            writeln!(output, "// TODO: Handle QualifiedHistory target: {}", target_ident.name)?;
+                        TransitionTarget::QualifiedHistory(target_ident) => {
+                            writeln!(
+                                output,
+                                "// TODO: Handle QualifiedHistory target: {}",
+                                target_ident.name
+                            )?;
                         }
                     }
 
@@ -207,7 +231,11 @@ pub(crate) fn generate_xstate_machine_internal(ast: &SsotAst) -> Result<String, 
                             .collect::<Vec<_>>()
                             .join(", ");
                         // Use object syntax for multiple guards or complex conditions
-                        writeln!(output, "{detail_indent}cond: {{ type: 'and', guards: [{}] }},", guard_list)?;
+                        writeln!(
+                            output,
+                            "{detail_indent}cond: {{ type: 'and', guards: [{}] }},",
+                            guard_list
+                        )?;
                         // Or for single guard: writeln!(output, "{detail_indent}cond: '{}',", transition.guards[0].name)?;
                     }
 
@@ -273,11 +301,22 @@ pub(crate) fn generate_xstate_machine_internal(ast: &SsotAst) -> Result<String, 
         writeln!(output, "{indent}{indent}guards: {{")?;
         for guard_name in all_guards {
             // Basic placeholder implementation
-            writeln!(output, "{indent}{indent}{indent}'{}': ({{ context, event }}) => {{", guard_name)?;
+            writeln!(
+                output,
+                "{indent}{indent}{indent}'{}': ({{ context, event }}) => {{",
+                guard_name
+            )?;
             writeln!(output, "{indent}{indent}{indent}  console.log('Guard check:', '{}', {{ context, event }});", guard_name)?;
-            writeln!(output, "{indent}{indent}{indent}  // TODO: Implement guard logic for {}", guard_name)?;
-            writeln!(output, "{indent}{indent}{indent}  return true; // Default to true
-{indent}{indent}{indent}}},",)?; // Close guard function
+            writeln!(
+                output,
+                "{indent}{indent}{indent}  // TODO: Implement guard logic for {}",
+                guard_name
+            )?;
+            writeln!(
+                output,
+                "{indent}{indent}{indent}  return true; // Default to true
+{indent}{indent}{indent}}},",
+            )?; // Close guard function
         }
         writeln!(output, "{indent}{indent}}},",)?; // Close guards object
     }
@@ -286,13 +325,24 @@ pub(crate) fn generate_xstate_machine_internal(ast: &SsotAst) -> Result<String, 
     if !all_actions.is_empty() {
         writeln!(output, "{indent}{indent}actions: {{")?;
         for action_name in all_actions {
-             // Basic placeholder implementation with assign example
-            writeln!(output, "{indent}{indent}{indent}'{}': assign(( {{ context, event }} ) => {{", action_name)?;
+            // Basic placeholder implementation with assign example
+            writeln!(
+                output,
+                "{indent}{indent}{indent}'{}': assign(( {{ context, event }} ) => {{",
+                action_name
+            )?;
             writeln!(output, "{indent}{indent}{indent}  console.log('Action executed:', '{}', {{ context, event }});", action_name)?;
-            writeln!(output, "{indent}{indent}{indent}  // TODO: Implement action logic for {}", action_name)?;
-            writeln!(output, "{indent}{indent}{indent}  // Example: return {{ someContextField: newValue }};
+            writeln!(
+                output,
+                "{indent}{indent}{indent}  // TODO: Implement action logic for {}",
+                action_name
+            )?;
+            writeln!(
+                output,
+                "{indent}{indent}{indent}  // Example: return {{ someContextField: newValue }};
 {indent}{indent}{indent}  return {{}}; // Return empty object if no context change
-{indent}{indent}{indent}}}),",)?; // Close assign/action function
+{indent}{indent}{indent}}}),",
+            )?; // Close assign/action function
         }
         writeln!(output, "{indent}{indent}}},",)?; // Close actions object
     }

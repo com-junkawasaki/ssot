@@ -3,11 +3,26 @@
 // use crate::{find_annotation_value, CodegenError}; // find_annotation_value likely still needed
 use crate::CodegenError;
 use fsm_dsl::ast::{
-    Annotation, AnnotationValue, Argument, ContextDefinition, ContextFieldDefinition, EnumDefinition,
-    EnumVariant, FieldDefinition, Identifier, MachineDefinition, NumericId, SsotAst,
-    StateDefinition, StatesBlock, StructDefinition, TopLevelDefinition, TypeDefinition, TypeSpecifier,
+    Annotation,
+    AnnotationValue,
+    Argument,
+    ContextDefinition,
+    ContextFieldDefinition,
+    EnumDefinition,
+    EnumVariant,
+    FieldDefinition,
+    Identifier,
+    MachineDefinition,
+    NumericId,
     // Needed for mapping
     PrimitiveType,
+    SsotAst,
+    StateDefinition,
+    StatesBlock,
+    StructDefinition,
+    TopLevelDefinition,
+    TypeDefinition,
+    TypeSpecifier,
 };
 // use fsm_dsl::ast::{AnnotationValue, FieldType, /* MessageItem, StateItem, */ StateMachine}; // Original line commented out
 use heck::ToUpperCamelCase; // For generating PascalCase type names
@@ -37,9 +52,7 @@ fn generate_jsdoc(annotations: &[Annotation], indent_level: usize) -> String {
 }
 
 // Updated internal generation function to use SsotAst
-pub(crate) fn generate_typescript_types_internal(
-    ast: &SsotAst,
-) -> Result<String, CodegenError> {
+pub(crate) fn generate_typescript_types_internal(ast: &SsotAst) -> Result<String, CodegenError> {
     let mut ts_code = String::new();
     let mut zod_code = String::new(); // Buffer for Zod schemas
 
@@ -81,14 +94,22 @@ pub(crate) fn generate_typescript_types_internal(
                         let struct_name = &struct_def.name.name;
                         write!(ts_code, "{}", generate_jsdoc(&struct_def.annotations, 0))?;
                         writeln!(ts_code, "export interface {} {{", struct_name)?;
-                        writeln!(zod_code, "{}", generate_jsdoc(&struct_def.annotations, 0).replace(" * ", " // "))?;
+                        writeln!(
+                            zod_code,
+                            "{}",
+                            generate_jsdoc(&struct_def.annotations, 0).replace(" * ", " // ")
+                        )?;
                         writeln!(zod_code, "export const {}Schema = z.object({{", struct_name)?;
                         for field in &struct_def.fields {
                             write!(ts_code, "{}", generate_jsdoc(&field.annotations, 1))?;
                             let field_ts_type = map_type_specifier_to_ts_type(&field.type_spec)?;
                             writeln!(ts_code, "  {}: {};", field.name.name, field_ts_type)?;
 
-                            write!(zod_code, "{}", generate_jsdoc(&field.annotations, 1).replace(" * ", " // "))?;
+                            write!(
+                                zod_code,
+                                "{}",
+                                generate_jsdoc(&field.annotations, 1).replace(" * ", " // ")
+                            )?;
                             let field_zod_type = map_type_specifier_to_zod_type(&field.type_spec)?;
                             writeln!(zod_code, "  {}: {},", field.name.name, field_zod_type)?;
                         }
@@ -99,7 +120,11 @@ pub(crate) fn generate_typescript_types_internal(
                         let enum_name = &enum_def.name.name;
                         write!(ts_code, "{}", generate_jsdoc(&enum_def.annotations, 0))?;
                         writeln!(ts_code, "export type {} =", enum_name)?;
-                        writeln!(zod_code, "{}", generate_jsdoc(&enum_def.annotations, 0).replace(" * ", " // "))?;
+                        writeln!(
+                            zod_code,
+                            "{}",
+                            generate_jsdoc(&enum_def.annotations, 0).replace(" * ", " // ")
+                        )?;
                         writeln!(zod_code, "export const {}Schema = z.enum([", enum_name)?;
                         let variants_ts: Vec<String> = enum_def
                             .variants
@@ -109,7 +134,7 @@ pub(crate) fn generate_typescript_types_internal(
                                 format!("{}{} | \"{}\"", "  ", doc, v.name.name)
                             })
                             .collect();
-                         let variants_zod: Vec<String> = enum_def
+                        let variants_zod: Vec<String> = enum_def
                             .variants
                             .iter()
                             .map(|v| format!("  \"{}\",", v.name.name))
@@ -129,7 +154,11 @@ pub(crate) fn generate_typescript_types_internal(
     if let Some(context_def) = &machine_ast.context {
         write!(ts_code, "{}", generate_jsdoc(&context_def.annotations, 0))?;
         writeln!(ts_code, "export interface Context {{")?;
-        writeln!(zod_code, "{}", generate_jsdoc(&context_def.annotations, 0).replace(" * ", " // "))?;
+        writeln!(
+            zod_code,
+            "{}",
+            generate_jsdoc(&context_def.annotations, 0).replace(" * ", " // ")
+        )?;
         writeln!(zod_code, "export const ContextSchema = z.object({{")?;
         for field in &context_def.fields {
             let js_doc = generate_jsdoc(&field.annotations, 1);
@@ -153,7 +182,11 @@ pub(crate) fn generate_typescript_types_internal(
     if let Some(states_block) = &machine_ast.states {
         write!(ts_code, "{}", generate_jsod(&states_block.annotations, 0))?;
         writeln!(ts_code, "export type State =")?;
-        writeln!(zod_code, "{}", generate_jsod(&states_block.annotations, 0).replace(" * ", " // "))?;
+        writeln!(
+            zod_code,
+            "{}",
+            generate_jsod(&states_block.annotations, 0).replace(" * ", " // ")
+        )?;
         writeln!(zod_code, "export const StateSchema = z.enum([")?;
         let state_items_ts: Vec<String> = states_block
             .states
@@ -176,7 +209,10 @@ pub(crate) fn generate_typescript_types_internal(
     } else {
         // Handle case with no states
         writeln!(ts_code, "export type State = never; // No states defined")?;
-        writeln!(zod_code, "export const StateSchema = z.enum([]); // No states defined")?;
+        writeln!(
+            zod_code,
+            "export const StateSchema = z.enum([]); // No states defined"
+        )?;
     }
 
     // --- Generate Event Payloads and Discriminated Union ---
@@ -226,24 +262,38 @@ pub(crate) fn generate_typescript_types_internal(
                 let payload_ts_type = map_type_specifier_to_ts_type(payload_type)?;
                 let payload_zod_schema = map_type_specifier_to_zod_type(payload_type)?;
 
-                 // Check if payload type is a simple type or needs its own interface
+                // Check if payload type is a simple type or needs its own interface
                 // If it's a complex type (struct/enum reference), we assume it was generated above.
                 if let TypeSpecifier::Simple(ident) = payload_type {
                     // Assume it refers to a generated interface/schema
-                    event_union_ts_parts.push(format!("{}{{ type: \"{}\", payload: {} }}", event_doc_ts, type_name, ident.name));
-                    event_union_zod_parts.push(format!("  z.object({{ type: z.literal(\"{}\"), payload: {}Schema }}),", type_name, ident.name));
+                    event_union_ts_parts.push(format!(
+                        "{}{{ type: \"{}\", payload: {} }}",
+                        event_doc_ts, type_name, ident.name
+                    ));
+                    event_union_zod_parts.push(format!(
+                        "  z.object({{ type: z.literal(\"{}\"), payload: {}Schema }}),",
+                        type_name, ident.name
+                    ));
                 } else {
-                     // For primitive lists, optionals, maps, generate inline?
+                    // For primitive lists, optionals, maps, generate inline?
                     // Or generate separate Payload interfaces? For now, treat as any.
-                    event_union_ts_parts.push(format!("{}{{ type: \"{}\", payload: {} }}", event_doc_ts, type_name, payload_ts_type));
+                    event_union_ts_parts.push(format!(
+                        "{}{{ type: \"{}\", payload: {} }}",
+                        event_doc_ts, type_name, payload_ts_type
+                    ));
                     // Zod schema needs careful handling for complex inline types
-                    event_union_zod_parts.push(format!("  z.object({{ type: z.literal(\"{}\"), payload: {} }}),", type_name, payload_zod_schema));
+                    event_union_zod_parts.push(format!(
+                        "  z.object({{ type: z.literal(\"{}\"), payload: {} }}),",
+                        type_name, payload_zod_schema
+                    ));
                 }
-
             } else {
                 // Event without payload
-                 event_union_ts_parts.push(format!("{}{{ type: \"{}\" }}", event_doc_ts, type_name));
-                 event_union_zod_parts.push(format!("  z.object({{ type: z.literal(\"{}\") }}),", type_name));
+                event_union_ts_parts.push(format!("{}{{ type: \"{}\" }}", event_doc_ts, type_name));
+                event_union_zod_parts.push(format!(
+                    "  z.object({{ type: z.literal(\"{}\") }}),",
+                    type_name
+                ));
             }
         }
     }
@@ -252,8 +302,14 @@ pub(crate) fn generate_typescript_types_internal(
     if event_union_ts_parts.is_empty() {
         writeln!(ts_code, "/** Discriminated union of all possible events */")?;
         writeln!(ts_code, "export type Event = never; // No events defined")?;
-        writeln!(zod_code, "// Discriminated union schema for all possible events")?;
-        writeln!(zod_code, "export const EventSchema = z.union([]); // No events defined")?;
+        writeln!(
+            zod_code,
+            "// Discriminated union schema for all possible events"
+        )?;
+        writeln!(
+            zod_code,
+            "export const EventSchema = z.union([]); // No events defined"
+        )?;
     } else {
         writeln!(ts_code, "/** Discriminated union of all possible events */")?;
         writeln!(ts_code, "export type Event =")?;
@@ -264,8 +320,14 @@ pub(crate) fn generate_typescript_types_internal(
         ts_code.pop(); // Remove last newline
         ts_code.push_str(";\n");
 
-        writeln!(zod_code, "// Discriminated union schema for all possible events")?;
-        writeln!(zod_code, "export const EventSchema = z.discriminatedUnion(\"type\", [")?;
+        writeln!(
+            zod_code,
+            "// Discriminated union schema for all possible events"
+        )?;
+        writeln!(
+            zod_code,
+            "export const EventSchema = z.discriminatedUnion(\"type\", ["
+        )?;
         writeln!(zod_code, "{}", event_union_zod_parts.join("\n"))?;
         writeln!(zod_code, "]);\n")?;
     }
@@ -281,7 +343,9 @@ fn map_type_specifier_to_ts_type(type_spec: &TypeSpecifier) -> Result<String, Co
             // Map known primitive types
             match ident.name.as_str() {
                 "bool" => Ok("boolean".to_string()),
-                "int" | "i8" | "i16" | "i32" | "u8" | "u16" | "u32" | "f32" | "f64" => Ok("number".to_string()),
+                "int" | "i8" | "i16" | "i32" | "u8" | "u16" | "u32" | "f32" | "f64" => {
+                    Ok("number".to_string())
+                }
                 "i64" | "u64" => Ok("bigint".to_string()),
                 "string" | "text" => Ok("string".to_string()),
                 "data" => Ok("Uint8Array".to_string()),
@@ -302,9 +366,9 @@ fn map_type_specifier_to_ts_type(type_spec: &TypeSpecifier) -> Result<String, Co
             let key_ts_type = map_type_specifier_to_ts_type(key)?;
             // Ensure map keys are valid types (string, number, symbol, etc.)
             let valid_key_type = match key_ts_type.as_str() {
-                 "string" | "number" | "boolean" => key_ts_type,
-                 // bigint and complex types are not typical JS Map keys
-                 _ => "string".to_string() // Default to string or raise error
+                "string" | "number" | "boolean" => key_ts_type,
+                // bigint and complex types are not typical JS Map keys
+                _ => "string".to_string(), // Default to string or raise error
             };
             let value_ts_type = map_type_specifier_to_ts_type(value)?;
             // Use Record for object-like maps, or Map for Map instances
@@ -320,14 +384,16 @@ fn map_type_specifier_to_zod_type(type_spec: &TypeSpecifier) -> Result<String, C
         TypeSpecifier::Simple(ident) => {
             match ident.name.as_str() {
                 "bool" => Ok("z.boolean()".to_string()),
-                "int" | "i8" | "i16" | "i32" | "u8" | "u16" | "u32" => Ok("z.number().int()".to_string()),
+                "int" | "i8" | "i16" | "i32" | "u8" | "u16" | "u32" => {
+                    Ok("z.number().int()".to_string())
+                }
                 "f32" | "f64" => Ok("z.number()".to_string()),
                 "i64" | "u64" => Ok("z.bigint()".to_string()),
                 "string" | "text" => Ok("z.string()".to_string()),
                 "data" => Ok("z.instanceof(Uint8Array)".to_string()),
                 "void" => Ok("z.undefined()".to_string()),
                 // Assume other simple identifiers refer to schemas defined elsewhere
-                 custom => Ok(format!("{}Schema", custom)), // Assumes schema has "Schema" suffix
+                custom => Ok(format!("{}Schema", custom)), // Assumes schema has "Schema" suffix
             }
         }
         TypeSpecifier::List(inner) => {
@@ -340,17 +406,22 @@ fn map_type_specifier_to_zod_type(type_spec: &TypeSpecifier) -> Result<String, C
         }
         TypeSpecifier::Map(key, value) => {
             let key_zod_type = map_type_specifier_to_zod_type(key)?;
-             // Zod record keys must be string, number, or enum
+            // Zod record keys must be string, number, or enum
             let valid_key_zod_type = match key.as_ref() {
                 TypeSpecifier::Simple(id) => match id.name.as_str() {
                     "string" | "text" => "z.string()".to_string(),
-                    "int" | "i8" | "i16" | "i32" | "u8" | "u16" | "u32" => "z.number().int()".to_string(), // Or z.string() if using string keys
-                    _ => "z.string()".to_string() // Default or perhaps check if it's an enum schema
+                    "int" | "i8" | "i16" | "i32" | "u8" | "u16" | "u32" => {
+                        "z.number().int()".to_string()
+                    } // Or z.string() if using string keys
+                    _ => "z.string()".to_string(), // Default or perhaps check if it's an enum schema
                 },
-                 _ => "z.string()".to_string() // Default for non-simple keys
+                _ => "z.string()".to_string(), // Default for non-simple keys
             };
             let value_zod_type = map_type_specifier_to_zod_type(value)?;
-            Ok(format!("z.record({}, {})", valid_key_zod_type, value_zod_type))
+            Ok(format!(
+                "z.record({}, {})",
+                valid_key_zod_type, value_zod_type
+            ))
         }
     }
 }

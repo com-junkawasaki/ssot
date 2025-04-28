@@ -550,17 +550,24 @@ pub struct SsotAst {
 // Placeholder definitions - TODO: Define based on grammar
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProtocolDefinition {
-    pub name: String,
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ChannelDefinition {
-    pub name: String,
+    pub name: Identifier,
+    pub id: NumericId,
+    pub annotations: Vec<Annotation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EventDefinition {
-    pub name: String,
+    pub name: Identifier,
+    pub id: NumericId,
+    pub fields: Vec<FieldDefinition>,
+    pub annotations: Vec<Annotation>,
 }
 
 #[cfg(test)]
