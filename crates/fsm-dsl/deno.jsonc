@@ -1,0 +1,35 @@
+{
+  "tasks": {
+    "dev": "deno run --watch main.ts",
+    "test": "deno test --allow-read"
+  },
+  "fmt": {
+    "files": {
+      "include": [
+        "src/",
+        "main.ts",
+        "deno.jsonc",
+        "grammar.js" 
+      ]
+    },
+    "options": {
+      "useTabs": false,
+      "lineWidth": 80,
+      "indentWidth": 2,
+      "singleQuote": false
+    }
+  },
+  "lint": {
+     "files": {
+       "include": [
+        "src/",
+        "main.ts",
+        "grammar.js" 
+       ]
+     },
+     "rules": {
+       "tags": ["recommended"],
+       "exclude": ["no-explicit-any"]
+     }
+  }
+} 
