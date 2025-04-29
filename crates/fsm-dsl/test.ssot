@@ -1,0 +1,392 @@
+# Unique ID for this definition file (Cap'n Proto compatible)
+@0xabcdef1234567890; # Must be globally unique across all .ssot files in the project.
+
+# --- Imports ---
+import "/path/to/shared_types.ssot";
+import "/path/to/base_service.ssot";
+import "/path/to/common_actions.ssot";
+
+# --- Output Configuration (Top Level or Per-Block/Element) ---
+$rust_out("src/generated")
+$capnp_out("schema/capnp")
+$ts_out("schema/ts")
+$mermaid_out("docs/diagrams")
+$dot_out("docs/graphs")
+$zod_out("schema/zod")
+$jsonschema_out("schema/json")
+$proto_out("schema/proto")
+$avro_out("schema/avro")
+$openapi_out("schema/openapi")
+$grpc_out("schema/grpc")
+$graphql_out("schema/graphql")
+$asyncapi_out("schema/asyncapi")
+$sql_out("schema/sql")
+$prisma_out("schema/prisma")
+$drizzle_out("schema/drizzle")
+
+# ==========================================
+#  Naming Conventions (Section Added)
+# ==========================================
+# - Types (struct, enum, machine, service, interface, protocol, actor, channel, environment, infrastructure, deployment): PascalCase
+# - Fields, Actions, Guards, Methods, Variables, Parameters: camelCase
+# - Enum Variants: UPPER_SNAKE_CASE or PascalCase (Consistency within the project is key)
+# - File Names: snake_case.ssot or kebab-case.ssot
+
+# ==========================================
+#  Type Definitions Block
+# ==========================================
+types {
+  $description("Contains shared data structures and enumerations.")
+  $ts_out("src/generated/types")
+
+  struct UserCredentials @id(0) {
+    username: string @id(0) {
+      $description("User's login name.")
+      $validate(minLength: 3, maxLength: 50, pattern: "^[a-zA-Z0-9_]+$")
+    };
+    password: string @id(1) {
+      $description("User's password (validation often done server-side).")
+      $validate(minLength: 8)
+      $meta(sensitive: true)
+    };
+  }
+
+  struct AuthToken @id(1) {
+    $db(table: "auth_tokens", primaryKey: "token")
+    token: string @id(0) { $db(column: "auth_token", type: "VARCHAR(255)") };
+    userId: string @id(1) { $db(column: "user_id", type: "UUID", index: true) };
+    expiresAt: timestamp @id(2) { $db(column: "expires_at") };
+  }
+
+  enum LoginStatus @id(2) {
+    SUCCESS @id(0);
+    INVALID_CREDENTIALS @id(1);
+    ACCOUNT_LOCKED @id(2);
+  }
+
+  struct LoginResult @id(3) {
+     status: LoginStatus @id(0);
+     token: optional<AuthToken> @id(1);
+  }
+
+  struct UserProfile @id(4) {
+    $description("Stores user profile information.")
+    $db(
+      table: "user_profiles",
+      primaryKey: "profileId",
+      policies: [
+        { name: "user_select_own", command: "SELECT", using: "userId = current_setting('request.jwt.claims.sub')::uuid", role: "authenticated" },
+        { name: "user_update_own", command: "UPDATE", using: "userId = current_setting('request.jwt.claims.sub')::uuid", withCheck: "userId = current_setting('request.jwt.claims.sub')::uuid", role: "authenticated" },
+        { name: "admin_all_access", command: "ALL", using: "true", role: "service_role" }
+      ]
+    )
+    profileId: u64 @id(0) { $db(column: "profile_id", type: "BIGINT", autoIncrement: true) };
+    userId: string @id(1) { $db(column: "user_id", type: "UUID", unique: true, nullable: false, foreignKey: { references: "auth.users(id)", onDelete: "CASCADE" }) };
+    email: string @id(2) {
+      $db(column: "email_address", type: "VARCHAR(255)", unique: "idx_email_unique")
+      $validate(format: "email", maxLength: 255)
+    };
+    bio: optional<string> @id(3) { $db(type: "TEXT", nullable: true) };
+    createdAt: timestamp @id(4) { $db(default: "CURRENT_TIMESTAMP", index: true) };
+  }
+} # end types block
+
+# ==========================================
+#  Actor Definitions Block
+# ==========================================
+actors {
+  $description("Defines actors (roles, systems) interacting with the system.")
+
+  actor AdminUser @id(0) {
+    $description("Administrator role.")
+    $type("role")
+  }
+
+  actor PaymentGateway @id(1) {
+    $description("External payment processing system.")
+    $type("system")
+  }
+} # end actors block
+
+# ==========================================
+#  Communication Definitions Block
+# ==========================================
+communication {
+  $description("Defines protocols, channels, and events for communication.")
+
+  protocol CapnpRPC @id(0) {
+    $description("Uses Cap'n Proto RPC framework.")
+  }
+
+  channel UserNotifications @id(1) {
+     $description("Channel for user-specific real-time notifications.")
+     # parameters { userId: string }; # Use annotation if needed: $parameters({ userId: string })
+  }
+
+  event UserLoggedIn @id(2) {
+    $description("Published when a user successfully logs in.")
+    $channel(UserNotifications)
+    userId: string @id(0);
+    timestamp: timestamp @id(1);
+  }
+} # end communication block
+
+# ==========================================
+#  Service Definitions Block
+# ==========================================
+services {
+  $description("Defines service interfaces and implementations.")
+
+  interface UserAuthentication @id(0) {
+    $description("Defines user authentication operations.")
+    $protocol(CapnpRPC)
+
+    login @id(0) (credentials: UserCredentials) -> LoginResult {
+      $description("Logs a user in.")
+      $route(method: "POST", path: "/auth/login")
+      $meta(tags: ["Authentication"], operationId: "userLogin", complexity: 5)
+    };
+    logout @id(1) (token: AuthToken);
+    $version("1.1")
+  }
+
+  service AuthService @id(1) extends BaseService {
+    $description("Handles user authentication logic.")
+    $implements(UserAuthentication)
+    $communicatesWith(service: "UserProfileService", protocol: "CapnpRPC")
+    $route(basePath: "/api/v1")
+    $publishes(UserNotifications)
+    $meta(responsibleTeam: "auth-team")
+  }
+
+} # end services block
+
+# ==========================================
+#  State Machine Definitions Block
+# ==========================================
+machines {
+  $description("Defines state machines governing application logic.")
+
+  machine ComplexMachine @id(0) {
+    $initial(Loading)
+    $description("An example complex state machine.")
+
+    context @id(0) {
+        currentUser: optional<UserProfile> @id(0);
+        errorMessage: optional<string> @id(1);
+        retryCount: u8 @id(2) { $default(0) };
+    }
+
+    actions @id(1) {
+        logError @id(0) (ctx, event);
+        incrementRetry @id(1) (ctx);
+        assignUser @id(2) (ctx, event);
+        clearError @id(3) (ctx);
+    }
+
+    guards @id(2) {
+        hasCurrentUser @id(0) (ctx) -> bool;
+        maxRetriesReached @id(1) (ctx) -> bool;
+    }
+
+    invokes @id(3) {
+        fetchUserData @id(0) {
+            $src("UserProfileService.fetchProfile")
+            $input(map: "userId:context.userId")
+            $onDone(transition: "Dashboard", action: ["assignUser", "clearError"])
+            $onError(transition: "Error", action: "logError")
+        }
+        someBackgroundProcess @id(1) {
+            $src("backgroundTaskName")
+         }
+    }
+
+    states @id(4) {
+      Loading @id(0) {
+        $description("Initial loading state.")
+        invoke Loading.fetchUser @id(0) {
+            $src(ref: "invokes.fetchUserData")
+            $input(map: "{ userId: \"some_static_id\" }")
+            $onDone(transition: "Dashboard", action: ["assignUser", "clearError"])
+            $onError(transition: "Error", action: "logError")
+        };
+      }
+
+      Dashboard @id(1) {
+        $description("Main dashboard area.")
+        $meta(uiComponent: "DashboardView")
+        $initial(Idle)
+
+        states @id(0) {
+            Idle @id(0) {
+                on REFRESH @id(0) transition Refreshing;
+                on LOGOUT @id(1) transition LoggingOut {
+                    $allowedActors(AdminUser)
+                 };
+            }
+            Refreshing @id(1) {
+                 invoke Refreshing.fetchData @id(0) {
+                     $src(ref: "invokes.fetchUserData")
+                     $onDone(transition: "Idle")
+                     $onError(transition: "Idle")
+                 };
+            }
+        }
+        history deep @id(1) target Idle;
+      }
+
+      Error @id(2) {
+        $description("Error state.")
+         on RETRY @id(0) transition Loading { # Corrected transition options
+             guard: maxRetriesReached(not)
+             action: [ incrementRetry, clearError ]
+             $allowedActors(AdminUser)
+         };
+         on RETRY @id(1) transition Failure { # Corrected transition options
+             guard: maxRetriesReached
+         };
+         after 5s @id(2) transition Failure { # Corrected transition options
+             action: logError
+         };
+      }
+
+      LoggingOut @id(3) { /* ... Define behavior ... */ }
+      Failure @id(4) { $final; }
+
+    } # end states block for ComplexMachine
+
+  } # end machine ComplexMachine
+
+} # end machines block
+
+# ==========================================
+#  Deployment Configuration Block
+# ==========================================
+deployment_config {
+  $description("Defines environments, infrastructure, and deployment strategies.")
+
+  environment Production @id(0) {
+    $provider("aws")
+    $region("us-east-1")
+     variables {
+        logLevel: "info";
+        apiEndpoint: "https://api.example.com";
+     }
+  }
+
+  environment Staging @id(1) extends Production {
+    $region("us-west-2")
+     variables {
+        logLevel: "debug";
+        apiEndpoint: "https://staging.api.example.com";
+     }
+  }
+
+  infrastructure ComputeCluster @id(0) {
+    $description("Blueprint for a K8s cluster.")
+    # Using annotations
+     $type("kubernetes")
+     $instanceType("t3.medium")
+     $minSize(2)
+     $maxSize(10)
+     # Or alternative using direct attributes:
+     # type: "kubernetes";
+     # instanceType: "t3.medium";
+     # minSize: 2;
+     # maxSize: 10;
+  }
+
+  infrastructure Database @id(1) {
+     $description("Blueprint for a Postgres DB.")
+     # Using annotations
+      $type("rds")
+      $engine("postgres")
+      $version("15")
+      $storage(100)
+      # Or alternative:
+      # type: "rds";
+      # engine: "postgres";
+      # version: "15";
+      # storage: 100;
+  }
+
+  deployment DeployAuthServiceProd @id(0) {
+     $targetEnvironment("Production")
+     $targetInfrastructure([ { name: "cluster", blueprint: "ComputeCluster", id: 0 }, { name: "database", blueprint: "Database", id: 1, overrides: { storage: 200 } } ]) # Still potentially problematic for value parser
+     $deployable("AuthService")
+     $replicas(3)
+     $strategy("blue_green")
+     $config({ db_connection_string: "$secret(PROD_DB_CONN_STRING)" }) # Still potentially problematic for value parser
+  }
+
+} # end deployment_config block
+
+# ==========================================
+#  Dependencies Definition Block (NEW)
+# ==========================================
+dependencies {
+  $description("Defines project dependencies for different targets (e.g., Rust crates, Node.js packages).")
+
+  rust "crates/web" @id(0) {
+    $description("Dependencies for the main web service crate.")
+
+    actix_web @id(0) {
+        version: "4.10.x";
+    }
+    sea_orm @id(1) {
+      version: "1.1.x";
+      features: ["runtime-tokio-rustls", "sqlx-postgres"]; # Semicolon removed
+      $meta(reason: "Required for database access and web framework integration.")
+    }
+    serde @id(2) {
+        version: "1.0";
+        features: ["derive"]; # Semicolon removed
+    }
+    local_utils @id(3) {
+        path: "../utils";
+    }
+    some_git_dep @id(4) {
+        git: "https://github.com/example/repo.git";
+        branch: "main";
+    }
+  }
+
+  rust "crates/cli" @id(1) {
+    clap @id(0) {
+        version: "4.5";
+        features: ["derive"]; # Semicolon removed
+    }
+    tokio @id(1) {
+        version: "1";
+        features: ["full"]; # Semicolon removed
+    }
+  }
+
+  nodejs "frontend" @id(2) {
+    $description("Dependencies for the Next.js frontend package.")
+
+    next @id(0) {
+        version: "^15.0.0";
+    }
+    react @id(1) {
+        version: "18.2.x";
+    }
+    tailwindcss @id(2) {
+        version: "^3.3.0";
+        dev: true;
+    }
+    typescript @id(3) {
+        version: "5.x.x";
+        dev: true;
+    }
+    zustand @id(4) {
+        version: "4.3.x";
+    }
+  }
+
+  nodejs "workers/image-processor" @id(3) {
+     sharp @id(0) {
+         version: "^0.33.0";
+      }
+  }
+} # end dependencies block
