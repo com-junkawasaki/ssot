@@ -233,17 +233,43 @@ module.exports = grammar({
         repeat($.annotation),
         'action',
         field('name', $.identifier),
-        field('id', $.numeric_id)
-        // TODO: Optional parameters/body
+        field('id', $.numeric_id),
+        // Optional body for inline implementation or config
+        optional(field('body', $.action_body))
       )
     ),
+
+    // Placeholder for action body content (can be expanded later)
+    action_body: $ => seq(
+      '{',
+      // Allow multiple statements within the action body
+      repeat($._action_statement),
+      '}'
+    ),
+
+    // Define possible statements within an action body
+    _action_statement: $ => semi( // Each statement ends with an optional semicolon
+        choice(
+            $.assignment_statement,
+            $.action_call_statement
+            // Add other statement types here if needed (e.g., send, raise)
+        )
+    ),
+
+    assignment_statement: $ => seq(
+        field('assignee', $.identifier_path), // e.g., context.user.name
+        '=',
+        field('value', $.expression)
+    ),
+
+    // Represents calling a predefined action like a function
+    action_call_statement: $ => $.function_call,
 
     guards_block: $ => seq(
       repeat($.annotation),
       'guards',
       field('id', $.numeric_id),
       '{',
-      // TODO: guard_definition
       repeat($.guard_definition),
       '}'
     ),
@@ -253,9 +279,16 @@ module.exports = grammar({
         repeat($.annotation),
         'guard',
         field('name', $.identifier),
-        field('id', $.numeric_id)
-        // TODO: Optional expression/body
+        field('id', $.numeric_id),
+        // Optional expression for the guard condition
+        optional(field('condition', $.guard_condition))
       )
+    ),
+
+    guard_condition: $ => seq(
+        '{',
+        field('expression', $.expression),
+        '}'
     ),
 
     invokes_block: $ => seq(
@@ -268,13 +301,44 @@ module.exports = grammar({
       '}'
     ),
 
-    invocation_definition: $ => semi(seq(
-      repeat($.annotation),
-      'invoke', // Keyword consistency
-      field('name', $.identifier), // Name for this invocation setup?
-      field('id', $.numeric_id)
-      // TODO: Define details of what is invoked (src, etc.)
-    )),
+    invocation_definition: $ => semi(
+      seq(
+        repeat($.annotation),
+        'invoke',
+        // Optional identifier for this specific invocation instance
+        optional(field('instance_id', $.identifier)),
+        field('id', $.numeric_id),
+        '{',
+        $.invoke_body,
+        '}'
+      )
+    ),
+    invoke_body: $ => repeat1($._invoke_element),
+
+    _invoke_element: $ => choice(
+        $.invoke_src,
+        $.invoke_params, // Added params
+        $.invoke_on_done,
+        $.invoke_on_error
+    ),
+
+    // Refined invoke elements
+    invoke_src: $ => semi(seq('src', ':', field('source', choice($.string_literal, $.identifier_path)))), // Can be URL or reference
+    invoke_params: $ => semi(seq('params', ':', field('parameters', $.expression))), // Example: Pass data via an expression (e.g., a map literal or function call)
+    invoke_on_done: $ => semi(seq('onDone', ':', field('target', $.invoke_target_definition))),
+    invoke_on_error: $ => semi(seq('onError', ':', field('target', $.invoke_target_definition))),
+
+    // Definition for what onDone/onError can target
+    invoke_target_definition: $ => seq(
+        '{',
+        optional(field('transition', $.transition_target)), // Optional state transition
+        optional(field('actions', $.action_list)),      // Optional list of actions
+        '}'
+    ),
+
+    action_list: $ => seq(
+        'actions', ':', '[', optional(sepBy(',', $.identifier)), ']' // List of action identifiers
+    ),
 
     // --- State Definitions ---
     states_block: $ => seq(
@@ -374,10 +438,6 @@ module.exports = grammar({
     transition_action: $ => seq(
       'action', ':',
       choice($.identifier, $.action_list)
-    ),
-
-    action_list: $ => seq(
-      '[', sepBy(',', $.identifier), ']'
     ),
 
     transition_guard: $ => seq(
@@ -489,23 +549,70 @@ module.exports = grammar({
 
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
 
-    string_literal: $ => seq(
-      '"',
-      repeat(choice(
-        token.immediate(/[^"\\]+/), // Match characters that are not double quote or backslash
-        $.escape_sequence
-      )),
-      '"'
-    ),
-    // Define escape sequence rule separately
-    escape_sequence: $ => token.immediate(/\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})/),
-
-    integer_literal: $ => /-?[0-9]+/,
-
+    string_literal: $ => /\"([^\\\"]|\\.)*\"/,
+    number_literal: $ => /\d+(\.\d+)?/,
     boolean_literal: $ => choice('true', 'false'),
+    null_literal: $ => 'null',
 
-    // DURATION_LITERAL from grammar: INTEGER_LITERAL ~ ("ms" | "s" | "m" | "h")
-    duration_literal: $ => seq($.integer_literal, choice('ms', 's', 'm', 'h')),
+    _literal: $ => choice(
+        $.string_literal,
+        $.number_literal,
+        $.boolean_literal,
+        $.null_literal
+    ),
+
+    // --- Expressions (Expanded with operators) ---
+    expression: $ => $._logical_or_expression,
+
+    _primary_expression: $ => choice(
+      $._literal,
+      $.identifier_path,
+      $.function_call,
+      seq('(', $.expression, ')') // Parenthesized expression
+    ),
+
+    unary_expression: $ => prec.left(5, seq(
+      field('operator', '!'),
+      field('operand', $._primary_expression)
+    )),
+
+    // TODO: Add multiplicative/additive if needed (*, /, +, -)
+
+    comparison_expression: $ => prec.left(4, seq(
+      field('left', $._primary_expression), // Or higher precedence level if additive/multiplicative added
+      field('operator', choice('==', '!=', '<', '>', '<=', '>=')),
+      field('right', $._primary_expression)
+    )),
+
+    logical_and_expression: $ => prec.left(3, seq(
+      field('left', choice($.comparison_expression, $.unary_expression, $._primary_expression)), // Operands can be results of higher precedence ops
+      field('operator', '&&'),
+      field('right', choice($.comparison_expression, $.unary_expression, $._primary_expression))
+    )),
+
+    logical_or_expression: $ => prec.left(2, seq(
+      field('left', choice($.logical_and_expression, $.comparison_expression, $.unary_expression, $._primary_expression)),
+      field('operator', '||'),
+      field('right', choice($.logical_and_expression, $.comparison_expression, $.unary_expression, $._primary_expression))
+    )),
+
+    _logical_or_expression: $ => choice(
+        $.logical_or_expression,
+        $.logical_and_expression,
+        $.comparison_expression,
+        $.unary_expression,
+        $._primary_expression
+    ),
+
+    identifier_path: $ => sepBy1('.', $.identifier), // e.g., context.user.id
+
+    function_call: $ => seq(
+        field('function_name', $.identifier),
+        '(',
+        // TODO: Define arguments more precisely if needed
+        optional(sepBy(',', $.expression)),
+        ')'
+    ),
 
     // --- Annotations ---
     annotation: $ =>
@@ -581,4 +688,13 @@ function sepBy(sep, rule) {
 function kw(keyword) {
   // return alias(prec(1, new RegExp(keyword, 'i')), keyword); // Case-insensitive example
   return alias(keyword, keyword); // Simple alias for now
-} 
+}
+
+// Helper rule used in action_body (example)
+_expression_or_property: $ => choice(
+    $.expression,
+    seq($.identifier, ':', $.expression) // Simple key-value property
+)
+
+// --- Literals ---
+// ... existing code ... 

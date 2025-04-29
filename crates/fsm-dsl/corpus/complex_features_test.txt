@@ -1,0 +1,75 @@
+======================
+Complex Expressions Test
+======================
+
+--- Valid ---
+
+guard complex_guard @id(1) {
+  { context.value > 10 && ( !user.isAdmin || event.type == "OVERRIDE" ) }
+};
+
+guard comparison_guard @id(2) {
+  { item.price <= 100.50 && item.name != "deprecated" }
+}
+
+guard precedence_guard @id(3) {
+  { a == b || c && d > e } // Should parse as a == b || (c && (d > e))
+}
+
+guard parenthesis_guard @id(4) {
+  { (a == b || c) && d > e }
+}
+
+======================
+Action Body Test
+======================
+
+--- Valid ---
+
+action assign_and_call @id(10) {
+  {
+    context.count = context.count + 1;
+    notifyUser(context.user.id, "Updated count");
+    isValid = checkStatus(item.id); // Calling another guard/function
+  }
+};
+
+action simple_assign @id(11) {
+  { counter = 5; }
+};
+
+action simple_call @id(12) {
+  { logEvent("simple_call executed"); }
+};
+
+
+======================
+Invoke Details Test
+======================
+
+--- Valid ---
+
+invoke fetchUserData @id(20) {
+  src: "http://example.com/api/users";
+  params: { userId: context.userId, token: env.API_TOKEN }; // Assuming expression allows object literal style or function call returns map
+  onDone: { target: UserLoaded, actions: [processUserData, notifySuccess] };
+  onError: { target: ErrorState, actions: [logError] };
+}
+
+invoke internalMachine @id(21) {
+  src: childMachine; // Reference to another machine definition
+  id: child_instance; // Optional instance ID
+  onDone: { actions: [markChildComplete] };
+}
+
+state InvokingState @id(100) {
+    // Invocation within a state
+    INVOKE userService @id(101) {
+        src: "UserService.getUser"; // Example service invocation
+        params: context.requestData;
+        onDone: { target: nextState, actions: [updateContext] };
+        onError: { target: failureState };
+    };
+
+    ON UserData EVENT_A GOTO nextState IF someGuard DO someAction;
+} 

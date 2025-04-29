@@ -37,9 +37,9 @@ The project involves the following major steps:
 4.  **Implement CST-to-AST Transformation (`src/parser.ts`) (High Priority):** Write TypeScript code to traverse the Tree-sitter CST and construct the TypeScript AST, including accurate source map (span) information.
 5.  **Implement Validation Logic (`src/validation.ts`) (High Priority):** Implement validation rules using the TypeScript AST. Checks should include duplicate IDs/names, undefined references, type checking (where applicable), structural consistency based on the DSL rules (e.g., initial state requirements).
 6.  **Implement Testing (High Priority):**
-    *   **Grammar Tests:** Create `.ssot` test files with valid and invalid syntax snippets and use `tree-sitter test` to verify the grammar. (Needs Creation/Execution)
-    *   **Parser/AST Tests:** Write Deno tests to verify the CST-to-AST transformation produces the correct AST structure.
-    *   **Validation Tests:** Write Deno tests to verify the validation logic correctly identifies errors and validates correct definitions.
+    *   **Grammar Tests:** Create `.ssot` test files with valid and invalid syntax snippets and use `tree-sitter test` to verify the grammar. (Initial test passing, needs more cases)
+    *   **Parser/AST Tests:** Write Deno tests to verify the CST-to-AST transformation produces the correct AST structure. (Not Started)
+    *   **Validation Tests:** Write Deno tests to verify the validation logic correctly identifies errors and validates correct definitions. (Not Started)
 7.  **Error Reporting Improvements (Medium Priority):** Ensure parser and validator errors provide clear messages and precise location information using AST span information.
 8.  **(Optional) Code Generation (Low Priority):** Explore adding features to generate code or other artifacts from the validated AST.
 
