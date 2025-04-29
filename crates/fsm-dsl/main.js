@@ -1,6 +1,6 @@
-import { parseSsotContent } from "./src/parser.ts"; // Assuming parser entry point
-import { validateAst } from "./src/validation.ts"; // Assuming validator entry point
-import { SsotAst } from "./src/ast.ts"; // Assuming AST definition
+import { parseSsotContent } from "./src/parser.js"; // Assuming parser entry point
+import { validateAst } from "./src/validation.js"; // Assuming validator entry point
+import { SsotAst } from "./src/ast.js"; // Assuming AST definition
 
 async function main() {
   const ssotFilePath = Deno.args[0] ?? "example.ssot"; // Get path from args or use default

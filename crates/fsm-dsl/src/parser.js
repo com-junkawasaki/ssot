@@ -20,7 +20,7 @@ import {
   CustomTypeReferenceNode, // Added CustomTypeReferenceNode
   TopLevelBlockNode, // Added TopLevelBlockNode
   // ... add other types used in the transformation
-} from "./ast.ts";
+} from "./ast.js";
 
 // Helper to get __dirname in ESM modules (if needed, depends on how script is run)
 // const __filename = fileURLToPath(import.meta.url);
