@@ -1,0 +1,19 @@
+communication {
+  $description("Defines protocols, channels, and events for communication.")
+
+  protocol CapnpRPC @id(0) {
+    $description("Uses Cap'n Proto RPC framework.")
+  }
+
+  channel UserNotifications @id(1) {
+     $description("Channel for user-specific real-time notifications.")
+     # parameters { userId: string }; // Use annotation if needed: $parameters({ userId: string })
+  }
+
+  event UserLoggedIn @id(2) {
+    $description("Published when a user successfully logs in.")
+    // $channel(UserNotifications) // <- Line removed for testing
+    userId: string @id(0);
+    timestamp: timestamp @id(1);
+  }
+} 

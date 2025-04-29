@@ -26,16 +26,20 @@ definitionBlock
     ;
 
 // --- Annotations ---
+annotationName
+    : ID | CHANNEL | PROTOCOL | DESCRIPTION | VALIDATE | DB | META | ROUTE | PUBLISHES | INPUT | ONDONE | ONERROR | SRC | VERSION | TYPE | PARAMETERS | IMPLEMENTS | COMMUNICATESWITH | TAGS | OPERATIONID | COMPLEXITY | RESPONSIBLETEAM | FINAL | DEFAULT | TS_OUT | CAPNP_OUT | MERMAID_OUT | DOT_OUT | ZOD_OUT | JSONSCHEMA_OUT | PROTO_OUT | AVRO_OUT | OPENAPI_OUT | GRPC_OUT | GRAPHQL_OUT | ASYNCAPI_OUT | SQL_OUT | PRISMA_OUT | DRIZZLE_OUT // Added known keywords
+    ;
+
 annotation
     : AT ID LPAREN INT RPAREN // @id(integer) - No semicolon
-    | DOLLAR ID LPAREN annotationValue? RPAREN // $name(...) - No semicolon
-    | DOLLAR ID SEMI // $flag; - Has semicolon
+    | DOLLAR annotationName LPAREN annotationValue? RPAREN // $name(...) - No semicolon
+    | DOLLAR annotationName SEMI // $flag; - Has semicolon
     ;
 
 // Annotation values: Assume a list of key:value pairs OR a single value inside parentheses
 annotationValue
-    : attributePairList
-    | value             // Allow single value like $description("text")
+    : {_input.LA(2) == COLON}? attributePairList // Use _input.LA(2) for Java target
+    | value                             // Otherwise, it's a single value
     ;
 
 // Value definition: handles primitives, references, objects, and arrays recursively
@@ -50,8 +54,9 @@ attributePairList
     : attributePair (COMMA attributePair)*
     ;
 
+// Modify attributePair for debugging
 attributePair
-    : ID COLON value // Key is ID, value can be complex
+    : ID COLON (primitiveValue | referenceValue | objectValue | arrayValue) // Explicitly list value alternatives
     ;
 
 primitiveValue
@@ -86,7 +91,7 @@ typeDefinition
     ;
 
 structDefinition
-    : STRUCT ID annotation+ LBRACE annotation* fieldDefinition* RBRACE
+    : STRUCT ID annotation* LBRACE annotation* fieldDefinition* RBRACE
     ;
 
 fieldDefinition // Semicolon is now required at the end
@@ -94,11 +99,11 @@ fieldDefinition // Semicolon is now required at the end
     ;
 
 enumDefinition
-    : ENUM ID annotation+ LBRACE annotation* enumVariant* RBRACE
+    : ENUM ID annotation* LBRACE annotation* enumVariant* RBRACE
     ;
 
 enumVariant // Semicolon is now required at the end
-    : ID annotation+ SEMI
+    : ID annotation* SEMI
     ;
 
 // --- Type Expressions ---
@@ -128,7 +133,7 @@ actorsBlock
 
 // Actor details primarily defined via annotations ($description, $type)
 actorDefinition
-    : ACTOR ID annotation+ LBRACE annotation* RBRACE
+    : ACTOR ID annotation* LBRACE annotation* RBRACE
     ;
 
 // --- Communication Definitions Block ---
@@ -144,12 +149,12 @@ communicationDefinition
 
 // Protocol details primarily via annotations
 protocolDefinition
-    : PROTOCOL ID annotation+ LBRACE annotation* RBRACE
+    : PROTOCOL ID annotation* LBRACE annotation* RBRACE
     ;
 
 // Channel details primarily via annotations ($description, $parameters if needed)
 channelDefinition
-    : CHANNEL ID annotation+ LBRACE annotation* channelBodyElement* RBRACE
+    : CHANNEL ID annotation* LBRACE annotation* channelBodyElement* RBRACE
     ;
 
 // Allow parameters definition inside channel block if needed (alternative to annotation)
@@ -164,7 +169,7 @@ channelParameterDefinition
 
 // Event definition contains fields similar to structs
 eventDefinition
-    : EVENT ID annotation+ LBRACE annotation* fieldDefinition* RBRACE
+    : EVENT ID annotation* LBRACE annotation* fieldDefinition* RBRACE
     ;
 
 
@@ -179,12 +184,12 @@ serviceElement
     ;
 
 interfaceDefinition
-    : INTERFACE ID annotation+ LBRACE annotation* methodDefinition* RBRACE
+    : INTERFACE ID annotation* LBRACE annotation* methodDefinition* RBRACE
     ;
 
 // Method definition requires semicolon at the end
 methodDefinition
-    : ID annotation+ LPAREN parameterList? RPAREN (ARROW typeExpr)? (LBRACE annotation* RBRACE)? SEMI
+    : ID annotation* LPAREN parameterList? RPAREN (ARROW typeExpr)? (LBRACE annotation* RBRACE)? SEMI
     ;
 
 parameterList
@@ -197,7 +202,7 @@ parameter
 
 // Service details via annotations ($implements, $communicatesWith, $route, etc.)
 serviceDefinition
-    : SERVICE ID annotation+ (EXTENDS referenceValue)? LBRACE annotation* RBRACE
+    : SERVICE ID annotation* (EXTENDS referenceValue)? LBRACE annotation* RBRACE
     ;
 
 // --- State Machine Definitions Block ---
@@ -206,7 +211,7 @@ machinesBlock
     ;
 
 machineDefinition
-    : MACHINE ID annotation+ LBRACE annotation* machineBodyElement* RBRACE
+    : MACHINE ID annotation* LBRACE annotation* machineBodyElement* RBRACE
     ;
 
 machineBodyElement
@@ -219,7 +224,7 @@ machineBodyElement
     ;
 
 contextDefinition
-    : CONTEXT annotation+ LBRACE annotation* contextField* RBRACE
+    : CONTEXT annotation* LBRACE annotation* contextField* RBRACE
     ;
 
 // Context field requires semicolon at the end
@@ -228,38 +233,38 @@ contextField
     ;
 
 actionsDefinition
-    : ACTIONS annotation+ LBRACE annotation* actionDefinition* RBRACE
+    : ACTIONS annotation* LBRACE annotation* actionDefinition* RBRACE
     ;
 
 // Action definition requires semicolon at the end
 actionDefinition
-    : ID annotation+ (LPAREN ID? (COMMA ID)? RPAREN)? (COLON typeExpr)? SEMI
+    : ID annotation* (LPAREN ID? (COMMA ID)? RPAREN)? (COLON typeExpr)? SEMI
     ;
 
 guardsDefinition
-    : GUARDS annotation+ LBRACE annotation* guardDefinition* RBRACE
+    : GUARDS annotation* LBRACE annotation* guardDefinition* RBRACE
     ;
 
 // Guard definition requires semicolon at the end
 guardDefinition
-    : ID annotation+ (LPAREN ID? RPAREN)? ARROW T_BOOL SEMI
+    : ID annotation* (LPAREN ID? RPAREN)? ARROW T_BOOL SEMI
     ;
 
 invokesDefinition
-    : INVOKES annotation+ LBRACE annotation* invokeDefinition* RBRACE
+    : INVOKES annotation* LBRACE annotation* invokeDefinition* RBRACE
     ;
 
 // Invoke definition details primarily via annotations
 invokeDefinition
-    : ID annotation+ LBRACE annotation* RBRACE
+    : ID annotation* LBRACE annotation* RBRACE
     ;
 
 statesDefinition
-    : STATES annotation+ LBRACE annotation* stateDefinition* RBRACE
+    : STATES annotation* LBRACE annotation* stateDefinition* RBRACE
     ;
 
 stateDefinition
-    : stateName=ID annotation+ LBRACE annotation* stateBodyElement* RBRACE
+    : stateName=ID annotation* LBRACE annotation* stateBodyElement* RBRACE
     ;
 
 stateBodyElement
@@ -277,14 +282,14 @@ onEntryExit : (ON_ENTRY | ON_EXIT) actionReference SEMI;
 actionReference : referenceValue; // e.g., actionName, actions.actionName
 
 // Invocation within a state requires semicolon
-invokeState : INVOKE ID annotation+ LBRACE annotation* RBRACE SEMI;
+invokeState : INVOKE ID annotation* LBRACE annotation* RBRACE SEMI;
 
 onTransition // Requires semicolon
-    : ON event=ID annotation+ transitionSpec SEMI
+    : ON event=ID annotation* transitionSpec SEMI
     ;
 
 afterTransition // Requires semicolon
-    : AFTER duration annotation+ transitionSpec SEMI
+    : AFTER duration annotation* transitionSpec SEMI
     ;
 
 // Transition requires target state, options must be in a block {}
@@ -300,7 +305,7 @@ targetState
 // Options within the transition block {}
 transitionOptions
     : transitionOption (COMMA? transitionOption)* // Allow options separated by comma or just space/newline
-    | annotation+ // Allow only annotations inside the block as well
+    | annotation* // Allow only annotations inside the block as well
     ;
 
 transitionOption
@@ -323,7 +328,7 @@ duration
 
 // History definition requires semicolon
 historyDefinition
-    : HISTORY (SHALLOW | DEEP)? annotation+ TARGET ID SEMI
+    : HISTORY (SHALLOW | DEEP)? annotation* TARGET ID SEMI
     ;
 
 // --- Deployment Configuration Block ---
@@ -339,7 +344,7 @@ deploymentElement
 
 // Environment attributes via annotations or variables block
 environmentDefinition
-    : ENVIRONMENT ID annotation+ (EXTENDS referenceValue)? LBRACE annotation* variablesBlock? RBRACE
+    : ENVIRONMENT ID annotation* (EXTENDS referenceValue)? LBRACE annotation* variablesBlock? RBRACE
     ;
 
 variablesBlock
@@ -353,12 +358,12 @@ variableAssignment
 
 // Infrastructure attributes via annotations or direct attribute assignments
 infrastructureDefinition
-    : INFRASTRUCTURE ID annotation+ LBRACE (annotation | attributeAssignment)* RBRACE
+    : INFRASTRUCTURE ID annotation* LBRACE (annotation | attributeAssignment)* RBRACE
     ;
 
 // Deployment attributes via annotations or direct attribute assignments
 deploymentDefinition
-    : DEPLOYMENT ID annotation+ LBRACE (annotation | attributeAssignment)* RBRACE
+    : DEPLOYMENT ID annotation* LBRACE (annotation | attributeAssignment)* RBRACE
     ;
 
 // Reusable attribute assignment rule requires semicolon
@@ -372,7 +377,7 @@ dependenciesBlock
     ;
 
 targetDependencyBlock
-    : targetType STRING annotation+ LBRACE annotation* dependencyEntry* RBRACE
+    : targetType STRING annotation* LBRACE annotation* dependencyEntry* RBRACE
     ;
 
 targetType
@@ -382,7 +387,7 @@ targetType
 
 // Dependency entry details via annotations or direct attribute assignments
 dependencyEntry
-    : ID annotation+ LBRACE (annotation | dependencyAttribute)* RBRACE
+    : ID annotation* LBRACE (annotation | dependencyAttribute)* RBRACE
     ;
 
 // Dependency attributes: specific handling for features, rest use attributeAssignment
@@ -400,6 +405,12 @@ dependencyAttribute
 // --- Keywords ---
 IMPORT: 'import';
 TYPES: 'types';
+ACTORS: 'actors';
+COMMUNICATION: 'communication';
+SERVICES: 'services';
+MACHINES: 'machines';
+DEPLOYMENT_CONFIG: 'deployment_config';
+DEPENDENCIES: 'dependencies';
 STRUCT: 'struct';
 ENUM: 'enum';
 MACHINE: 'machine';
@@ -422,11 +433,9 @@ ACTOR: 'actor';
 CHANNEL: 'channel';
 EVENT: 'event';
 EXTENDS: 'extends';
-DEPLOYMENT_CONFIG: 'deployment_config';
 ENVIRONMENT: 'environment';
 INFRASTRUCTURE: 'infrastructure';
 DEPLOYMENT: 'deployment';
-DEPENDENCIES: 'dependencies';
 RUST: 'rust';
 NODEJS: 'nodejs';
 VARIABLES: 'variables';
@@ -482,10 +491,10 @@ ARROW   : '->';
 
 // --- Comments ---
 COMMENT
-    : '#' ~[\r\n]* -> skip // Skip single-line comments
+    : ('#' | '//') ~[\r\n]* -> skip // Combine patterns and apply skip once
     ;
 ML_COMMENT
-    : '/*' .*? '*/' -> skip // Corrected: Removed unnecessary backslashes
+    : '/*' .*? '*/' -> skip
     ;
 
 // --- Whitespace ---
