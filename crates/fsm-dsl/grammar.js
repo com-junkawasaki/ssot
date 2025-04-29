@@ -24,7 +24,8 @@ module.exports = grammar({
       $.services_block,
       $.communication_block,
       $.actors_block,
-      $.deployment_config_block
+      $.deployment_config_block,
+      $.dependencies_block
     ),
 
     file_id: $ => semi(
@@ -77,6 +78,63 @@ module.exports = grammar({
       '{',
       repeat($._deployment_item),
       '}'
+    ),
+
+    // --- Dependencies Block (NEW) ---
+    dependencies_block: $ => seq(
+      repeat($.annotation), // Allow annotations on the block itself
+      'dependencies',
+      '{',
+      repeat($._target_dependency_block),
+      '}'
+    ),
+
+    _target_dependency_block: $ => choice(
+      $.rust_dependency_block,
+      $.nodejs_dependency_block
+      // Add other target types like python, go etc. if needed
+    ),
+
+    rust_dependency_block: $ => seq(
+      repeat($.annotation),
+      'rust',
+      field('target_path', $.string_literal),
+      field('id', $.numeric_id),
+      '{',
+      repeat($.dependency_entry),
+      '}'
+    ),
+
+    nodejs_dependency_block: $ => seq(
+      repeat($.annotation),
+      'nodejs',
+      field('target_path', $.string_literal),
+      field('id', $.numeric_id),
+      '{',
+      repeat($.dependency_entry),
+      '}'
+    ),
+
+    dependency_entry: $ => seq(
+      field('name', $.identifier),
+      field('id', $.numeric_id),
+      '{',
+      repeat($.dependency_attribute),
+      '}'
+    ),
+
+    dependency_attribute: $ => semi( // Attributes end with optional semicolon
+      seq(
+        field('key', $.identifier),
+        ':',
+        field('value', choice(
+          $.string_literal,
+          $.boolean_literal,
+          $.list_literal // For features list
+          // Add other potential value types if needed
+        )),
+        repeat($.annotation) // Allow annotations on attributes like $meta
+      )
     ),
 
     // --- Items within Blocks ---
@@ -331,7 +389,8 @@ module.exports = grammar({
     // Definition for what onDone/onError can target
     invoke_target_definition: $ => seq(
         '{',
-        optional(field('transition', $.transition_target)), // Optional state transition
+        // Target state name should be an identifier
+        optional(field('transition', $.identifier)),
         optional(field('actions', $.action_list)),      // Optional list of actions
         '}'
     ),
@@ -384,14 +443,27 @@ module.exports = grammar({
     exit_action: $ => semi(seq(kw('EXIT'), repeat1($.identifier))),  // Simple identifier list for now
     activity_definition: $ => semi(seq(kw('ACTIVITY'), repeat1($.identifier))), // Simple identifier list for now
 
-    transition_definition: $ => semi(seq(
-        repeat($.annotation),
+    transition_definition: $ => semi(choice(
+      // ON EVENT transition
+      seq(
+        repeat($.annotation), // Annotations before ON apply here
         kw('ON'),
-        field('event', $.identifier), // Or maybe event specifier?
+        field('event', $.identifier),
         kw('GOTO'),
-        field('target', $.identifier), // Or target specifier?
-        optional(seq(kw('IF'), field('guard', $.identifier))), // Or expression?
-        optional(seq(kw('DO'), field('action', repeat1($.identifier)))) // Or action list/expression?
+        field('target', $.identifier),
+        optional(seq(kw('IF'), field('guard', $.identifier))),
+        optional(seq(kw('DO'), field('action', repeat1($.identifier))))
+      ),
+      // AFTER DURATION transition
+      seq(
+        repeat($.annotation), // Annotations before AFTER apply here
+        kw('AFTER'),
+        field('delay', $.duration_literal),
+        kw('GOTO'),
+        field('target', $.identifier),
+        optional(seq(kw('IF'), field('guard', $.identifier))),
+        optional(seq(kw('DO'), field('action', repeat1($.identifier))))
+      )
     )),
 
     state_invoke: $ => semi(seq(
@@ -554,6 +626,13 @@ module.exports = grammar({
     boolean_literal: $ => choice('true', 'false'),
     null_literal: $ => 'null',
 
+    // Duration Literal (e.g., 100ms, 5s, 2m, 1h)
+    integer_literal: $ => /-?\d+/,
+    duration_literal: $ => seq(
+      field('value', $.integer_literal),
+      field('unit', choice('ms', 's', 'm', 'h'))
+    ),
+
     _literal: $ => choice(
         $.string_literal,
         $.number_literal,
@@ -604,7 +683,14 @@ module.exports = grammar({
         $._primary_expression
     ),
 
-    identifier_path: $ => sepBy1('.', $.identifier), // e.g., context.user.id
+    identifier_path: $ => prec.left(1,
+      seq(
+        $.identifier,
+        repeat1(
+          seq('.', $.identifier)
+        )
+      )
+    ),
 
     function_call: $ => seq(
         field('function_name', $.identifier),

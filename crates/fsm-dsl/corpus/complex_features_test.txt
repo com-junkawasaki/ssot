@@ -72,4 +72,52 @@ state InvokingState @id(100) {
     };
 
     ON UserData EVENT_A GOTO nextState IF someGuard DO someAction;
+}
+
+======================
+Duration Transition Test
+======================
+
+--- Valid ---
+
+state Waiting @id(200) {
+    after 100ms @id(0) GOTO CheckStatus;
+    after 5s @id(1) GOTO Timeout IF isUrgent DO notifySlow;
+    after 2m @id(2) GOTO Cleanup;
+    after 1h @id(3) GOTO SystemReset $meta(critical: true);
+}
+
+======================
+Dependencies Block Test
+======================
+
+--- Valid ---
+
+dependencies {
+  $description("Project wide dependencies");
+
+  rust "crates/core" @id(0) {
+    $description("Core library deps");
+    serde @id(0) { version: "1.0.190"; features: ["derive"]; };
+    tokio @id(1) { version: "1.35.1"; features: ["full"]; $meta(optional: true); };
+    thiserror @id(2) { version: "1.0"; };
+  }
+
+  rust "./utils" @id(1) { # Path can be relative
+    local_helper @id(0) { path: "../local_helper_crate"; };
+    git_dep @id(1) { git: "https://example.com/repo.git", branch: "dev"; };
+  }
+
+  nodejs "frontend" @id(2) {
+    react @id(0) { version: "^18.2.0"; };
+    next @id(1) { version: "14.0.4"; };
+    tailwindcss @id(2) { version: "3.4.0"; dev: true; };
+  }
+
+  nodejs "backend/service-a" @id(3) {
+    $ts_out("generated/deps.ts"); # Annotation on target block
+    express @id(0) { version: "4.18.2"; };
+    zod @id(1) { version: "3.22.4"; };
+    some_internal_lib @id(2) { version: "workspace:*"; }; # Example workspace link
+  }
 } 
