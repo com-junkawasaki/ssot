@@ -23,16 +23,25 @@ This project is being rewritten using the following technologies:
 
 ## 今後のロードマップ (Roadmap)
 
-The rewrite involves the following major steps:
+The project involves the following major steps:
 
-1.  **Define Tree-sitter Grammar (High Priority):** Create `grammar.js` based on the existing `.ssot` syntax specification, resolving ambiguities and defining node types.
-2.  **Generate Tree-sitter Parser (High Priority):** Use the Tree-sitter CLI to generate the parser (e.g., WASM binary).
-3.  **Define TypeScript AST (High Priority):** Create `src/ast.ts` defining the structure of the Abstract Syntax Tree corresponding to the DSL elements.
-4.  **Implement CST-to-AST Transformation (High Priority):** Write TypeScript code (`src/parser.ts`) to traverse the Tree-sitter CST and construct the TypeScript AST, including span information.
-5.  **Implement Validation Logic (High Priority):** Re-implement validation rules (`src/validation.ts`) using the TypeScript AST and symbol table/scope management appropriate for TypeScript. Implement comprehensive checks (duplicate IDs/names, undefined references, type checking, structural consistency).
-6.  **Implement Testing (High Priority):** Create comprehensive unit and integration tests using Deno's testing framework for the grammar, parser, AST construction, and validation logic.
-7.  **Error Reporting Improvements (Medium Priority):** Ensure parser and validator errors provide clear messages and precise location information (file, line, column) using Tree-sitter's node positions.
-8.  **(Optional) Code Generation (Low Priority):** Explore adding features to generate code (TypeScript, Mermaid, etc.) or other artifacts from the validated AST.
+1.  **Define Tree-sitter Grammar (`grammar.js`) (In Progress):**
+    *   Define core structure (top-level blocks, imports). (Done)
+    *   Define type system (`struct`, `enum`, `type specifiers). (Done)
+    *   Define machine structure (`machine`, `context`, `actions`, `guards`, `invokes`). (Done)
+    *   Define state machine specifics (`states`, `state`, `initial`, `final`, `transition`, `invoke`, `history`, `entry`, `exit`, `activity`). (Done)
+    *   Define annotations and basic literals. (Done)
+    *   **TODO:** Refine action/guard/invoke bodies, service/communication/deployment details, potentially complex expressions.
+2.  **Generate Tree-sitter Parser (High Priority):** Use the Tree-sitter CLI to generate the parser (e.g., WASM binary) and keep it updated as the grammar evolves.
+3.  **Define TypeScript AST (`src/ast.ts`) (High Priority):** Create TypeScript interfaces/classes representing the structure of the Abstract Syntax Tree corresponding to the DSL elements defined in the grammar.
+4.  **Implement CST-to-AST Transformation (`src/parser.ts`) (High Priority):** Write TypeScript code to traverse the Tree-sitter CST and construct the TypeScript AST, including accurate source map (span) information.
+5.  **Implement Validation Logic (`src/validation.ts`) (High Priority):** Implement validation rules using the TypeScript AST. Checks should include duplicate IDs/names, undefined references, type checking (where applicable), structural consistency based on the DSL rules (e.g., initial state requirements).
+6.  **Implement Testing (High Priority):**
+    *   **Grammar Tests:** Create `.ssot` test files with valid and invalid syntax snippets and use `tree-sitter test` to verify the grammar. (Needs Creation/Execution)
+    *   **Parser/AST Tests:** Write Deno tests to verify the CST-to-AST transformation produces the correct AST structure.
+    *   **Validation Tests:** Write Deno tests to verify the validation logic correctly identifies errors and validates correct definitions.
+7.  **Error Reporting Improvements (Medium Priority):** Ensure parser and validator errors provide clear messages and precise location information using AST span information.
+8.  **(Optional) Code Generation (Low Priority):** Explore adding features to generate code or other artifacts from the validated AST.
 
 ## 使用例 (Conceptual Usage Example - Deno/TypeScript)
 

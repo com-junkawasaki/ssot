@@ -19,7 +19,6 @@ module.exports = grammar({
 
     _top_level_item: $ => choice(
       $.import_statement,
-      $.annotation, // Allow top-level annotations
       $.types_block,
       $.machines_block,
       $.services_block,
@@ -83,33 +82,27 @@ module.exports = grammar({
     // --- Items within Blocks ---
     _type_definition: $ => choice(
       $.struct_definition,
-      $.enum_definition,
-      // $.annotation // Annotations handled before definitions in blocks
+      $.enum_definition
     ),
     _machine_definition_item: $ => choice(
-      $.machine_definition,
-      $.annotation
+      $.machine_definition
     ),
     _service_item: $ => choice(
       $.interface_definition,
-      $.service_definition,
-      $.annotation
+      $.service_definition
     ),
     _communication_item: $ => choice(
       $.protocol_definition,
       $.channel_definition,
-      $.event_definition,
-      $.annotation
+      $.event_definition
     ),
     _actor_definition_item: $ => choice(
-      $.actor_definition,
-      $.annotation
+      $.actor_definition
     ),
     _deployment_item: $ => choice(
       $.environment_definition,
       $.infrastructure_definition,
-      $.deployment_definition,
-      $.annotation
+      $.deployment_definition
     ),
 
     // --- Definitions (Placeholders - to be detailed) ---
@@ -200,8 +193,7 @@ module.exports = grammar({
       $.states_block,
       $.actions_block,
       $.guards_block,
-      $.invokes_block,
-      $.annotation // Allow annotations between elements
+      $.invokes_block
     ),
 
     context_definition: $ => seq(
@@ -271,70 +263,88 @@ module.exports = grammar({
       'invokes',
       field('id', $.numeric_id),
       '{',
-      // TODO: invoke_definition
-      repeat($.invoke_definition),
+      // TODO: Define invocation definition at machine level if needed
+      repeat($.invocation_definition),
       '}'
     ),
 
-    invoke_definition: $ => seq(
+    invocation_definition: $ => semi(seq(
       repeat($.annotation),
-      'invoke',
-      field('name', $.identifier),
-      field('id', $.numeric_id),
-      '{',
-      // TODO: invoke properties (src, input, onDone, onError)
-      repeat1($._invoke_property), // Must have at least src
-      '}'
-    ),
+      'invoke', // Keyword consistency
+      field('name', $.identifier), // Name for this invocation setup?
+      field('id', $.numeric_id)
+      // TODO: Define details of what is invoked (src, etc.)
+    )),
 
-    _invoke_property: $ => choice(
-      $.invoke_src,
-      $.invoke_input,
-      $.invoke_on_done,
-      $.invoke_on_error,
-      $.annotation
-    ),
-
-    invoke_src: $ => semi(
-      seq('src', ':', $.invoke_source_value)
-    ),
-
-    // Service.Method | "literal" | MachineName
-    invoke_source_value: $ => choice(
-      seq($.identifier, '.', $.identifier),
-      $.string_literal,
-      $.identifier
-    ),
-
-    invoke_input: $ => semi(
-      seq('input', ':', $.object_literal) // Reuse object literal from annotations
-    ),
-
-    invoke_on_done: $ => semi(
-      seq(
-        'onDone',
-        field('id', $.numeric_id),
-        $.transition_target_specifier // Reuse transition target rule
-      )
-    ),
-
-    invoke_on_error: $ => semi(
-      seq(
-        'onError',
-        field('id', $.numeric_id),
-        $.transition_target_specifier // Reuse transition target rule
-      )
-    ),
-
-    // --- Placeholder for States Block --- 
+    // --- State Definitions ---
     states_block: $ => seq(
       repeat($.annotation),
       'states',
-      field('id', $.numeric_id),
+      field('id', $.numeric_id), // ID for the states block itself? Optional?
       '{',
-      // TODO: state_definition
+      repeat($._state_definition_item),
       '}'
     ),
+
+    _state_definition_item: $ => choice(
+      $.state_definition
+    ),
+
+    state_definition: $ => seq(
+      repeat($.annotation),
+      optional(field('initial', kw('initial'))),
+      optional(field('final', kw('final'))),
+      kw('state'),
+      field('name', $.identifier),
+      field('id', $.numeric_id),
+      optional(
+        seq(
+          '{',
+           repeat($._state_body_element),
+          '}'
+        )
+      )
+    ),
+
+    _state_body_element: $ => choice(
+      $.transition_definition,
+      $.state_invoke,
+      $.history_definition,
+      $.entry_action,
+      $.exit_action,
+      $.activity_definition,
+      $.states_block // Allow nested states
+    ),
+
+    entry_action: $ => semi(seq(kw('ENTRY'), repeat1($.identifier))), // Simple identifier list for now
+    exit_action: $ => semi(seq(kw('EXIT'), repeat1($.identifier))),  // Simple identifier list for now
+    activity_definition: $ => semi(seq(kw('ACTIVITY'), repeat1($.identifier))), // Simple identifier list for now
+
+    transition_definition: $ => semi(seq(
+        repeat($.annotation),
+        kw('ON'),
+        field('event', $.identifier), // Or maybe event specifier?
+        kw('GOTO'),
+        field('target', $.identifier), // Or target specifier?
+        optional(seq(kw('IF'), field('guard', $.identifier))), // Or expression?
+        optional(seq(kw('DO'), field('action', repeat1($.identifier)))) // Or action list/expression?
+    )),
+
+    state_invoke: $ => semi(seq(
+      repeat($.annotation),
+      kw('INVOKE'),
+      field('source', $.identifier), // What is being invoked (machine, service, function?)
+      field('id', $.numeric_id),
+      // TODO: Define invocation details (src, data mapping, finalization)
+      optional(seq('{', '/* ... invoke details ... */', '}')) // Placeholder
+    )),
+
+    history_definition: $ => semi(seq(
+      repeat($.annotation),
+      kw('HISTORY'),
+      field('id', $.numeric_id),
+      optional(field('type', choice(kw('shallow'), kw('deep'))))
+    )),
 
     // --- Transition Target (needed by invoke_on_done/error) --- 
     transition_target_specifier: $ => seq(
@@ -498,13 +508,12 @@ module.exports = grammar({
     duration_literal: $ => seq($.integer_literal, choice('ms', 's', 'm', 'h')),
 
     // --- Annotations ---
-    annotation: $ => semi(
+    annotation: $ =>
       seq(
         '$',
         field('name', $.identifier),
         field('arguments', optional($.annotation_args))
-      )
-    ),
+      ),
     annotation_args: $ => seq(
       '(',
       sepBy(',', $.annotation_arg),
@@ -566,4 +575,10 @@ function sepBy1(sep, rule) {
 
 function sepBy(sep, rule) {
   return optional(sepBy1(sep, rule));
+}
+
+// Helper function for keywords to potentially handle case-insensitivity later
+function kw(keyword) {
+  // return alias(prec(1, new RegExp(keyword, 'i')), keyword); // Case-insensitive example
+  return alias(keyword, keyword); // Simple alias for now
 } 
