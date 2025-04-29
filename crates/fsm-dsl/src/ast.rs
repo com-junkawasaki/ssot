@@ -7,10 +7,18 @@ use std::path::PathBuf; // Import fmt
 
 // --- Basic Building Blocks ---
 
+// Simple struct to hold span information (start and end byte position)
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)] // Add Copy
+pub struct SpanInfo {
+    pub start: usize,
+    pub end: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier {
     pub name: String,
     // pub span: Span<'static>, // Consider adding spans later
+    pub span: Option<SpanInfo>, // Added span info
 }
 
 // Implement Display for Identifier
@@ -23,7 +31,8 @@ impl fmt::Display for Identifier {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NumericId {
     pub value: u64, // Using u64 based on DSL.md examples like @0x... and @id(...)
-                    // pub span: Span<'static>,
+    // pub span: Span<'static>,
+    pub span: Option<SpanInfo>, // Added span info
 }
 
 // --- Type Specifiers (Updated) ---
@@ -560,6 +569,8 @@ pub struct ChannelDefinition {
     pub name: Identifier,
     pub id: NumericId,
     pub annotations: Vec<Annotation>,
+    pub description: Option<String>,
+    pub parameters: Vec<ParameterDefinition>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -580,12 +591,13 @@ mod tests {
     fn ident(name: &str) -> Identifier {
         Identifier {
             name: name.to_string(),
+            span: None,
         }
     }
 
     // Helper to create NumericId
     fn num_id(value: u64) -> NumericId {
-        NumericId { value }
+        NumericId { value, span: None }
     }
 
     #[test]

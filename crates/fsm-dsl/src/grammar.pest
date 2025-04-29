@@ -135,7 +135,11 @@ communication_block = { "communication" ~ WHITESPACE* ~ "{" ~ WHITESPACE* ~ (COM
 communication_item = _{ annotation* ~ (protocol_definition | channel_definition | event_definition) }
 
 protocol_definition = { "protocol" ~ WHITESPACE* ~ IDENTIFIER ~ WHITESPACE* ~ numeric_id? ~ WHITESPACE* ~ ";"? }
-channel_definition = { "channel" ~ WHITESPACE* ~ IDENTIFIER ~ WHITESPACE* ~ numeric_id? ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
+channel_definition = { "channel" ~ WHITESPACE* ~ IDENTIFIER ~ WHITESPACE* ~ numeric_id? ~ WHITESPACE* ~ "{" ~ WHITESPACE* ~ (COMMENT | WHITESPACE | annotation | channel_property)* ~ WHITESPACE* ~ "}" }
+channel_property = _{ channel_description | channel_parameters }
+channel_description = { "description" ~ WHITESPACE* ~ ":" ~ WHITESPACE* ~ STRING_LITERAL ~ ";"? }
+channel_parameters = { "parameters" ~ WHITESPACE* ~ ":" ~ WHITESPACE* ~ "{" ~ WHITESPACE* ~ (parameter_definition ~ ("," ~ WHITESPACE* ~ parameter_definition)*)? ~ WHITESPACE* ~ "}" ~ ";"? }
+
 event_definition = { "event" ~ WHITESPACE* ~ IDENTIFIER ~ WHITESPACE* ~ numeric_id? ~ WHITESPACE* ~ "{" ~ WHITESPACE* ~ (COMMENT | WHITESPACE | annotation | field_definition)* ~ WHITESPACE* ~ "}" }
 
 // --- Actors Block ---
@@ -146,9 +150,25 @@ actor_definition = { "actor" ~ WHITESPACE* ~ IDENTIFIER ~ WHITESPACE* ~ numeric_
 deployment_config_block = { "deployment_config" ~ WHITESPACE* ~ "{" ~ WHITESPACE* ~ (COMMENT | WHITESPACE | annotation | deployment_item)* ~ WHITESPACE* ~ "}" }
 deployment_item = _{ annotation* ~ (environment_definition | infrastructure_definition | deployment_definition) }
 
-environment_definition = { "environment" ~ WHITESPACE* ~ IDENTIFIER ~ WHITESPACE* ~ numeric_id? ~ WHITESPACE* ~ ("extends" ~ WHITESPACE* ~ IDENTIFIER)? ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
-infrastructure_definition = { "infrastructure" ~ WHITESPACE* ~ IDENTIFIER ~ WHITESPACE* ~ numeric_id? ~ WHITESPACE* ~ ("extends" ~ WHITESPACE* ~ IDENTIFIER)? ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
-deployment_definition = { "deployment" ~ WHITESPACE* ~ IDENTIFIER ~ WHITESPACE* ~ numeric_id? ~ WHITESPACE* ~ "{" ~ any_content ~ "}" }
+environment_definition = { "environment" ~ WHITESPACE* ~ IDENTIFIER ~ WHITESPACE* ~ numeric_id? ~ WHITESPACE* ~ environment_extends? ~ WHITESPACE* ~ "{" ~ WHITESPACE* ~ (COMMENT | WHITESPACE | annotation | environment_property)* ~ WHITESPACE* ~ "}" }
+environment_extends = { "extends" ~ WHITESPACE* ~ IDENTIFIER }
+environment_property = _{ environment_variables }
+environment_variables = { "variables" ~ WHITESPACE* ~ ":" ~ WHITESPACE* ~ object_literal ~ ";"? }
+
+infrastructure_definition = { "infrastructure" ~ WHITESPACE* ~ IDENTIFIER ~ WHITESPACE* ~ numeric_id? ~ WHITESPACE* ~ infrastructure_extends? ~ WHITESPACE* ~ "{" ~ WHITESPACE* ~ (COMMENT | WHITESPACE | annotation | infrastructure_property)* ~ WHITESPACE* ~ "}" }
+infrastructure_extends = { "extends" ~ WHITESPACE* ~ IDENTIFIER }
+infrastructure_property = _{ attribute_definition }
+attribute_definition = { IDENTIFIER ~ WHITESPACE* ~ ":" ~ WHITESPACE* ~ literal_value ~ ";"? }
+
+deployment_definition = { "deployment" ~ WHITESPACE* ~ IDENTIFIER ~ WHITESPACE* ~ numeric_id? ~ WHITESPACE* ~ "{" ~ WHITESPACE* ~ (COMMENT | WHITESPACE | annotation | deployment_property)* ~ WHITESPACE* ~ "}" }
+deployment_property = _{ dep_target_env | dep_target_infra | dep_deployable | dep_replicas | dep_strategy | dep_config | dep_attribute }
+dep_target_env = { "targetEnvironment" ~ WHITESPACE* ":" ~ WHITESPACE* ~ IDENTIFIER ~ ";"? }
+dep_target_infra = { "targetInfrastructure" ~ WHITESPACE* ":" ~ WHITESPACE* ~ object_literal ~ ";"? }
+dep_deployable = { "deployable" ~ WHITESPACE* ":" ~ WHITESPACE* ~ IDENTIFIER ~ ";"? }
+dep_replicas = { "replicas" ~ WHITESPACE* ":" ~ WHITESPACE* ~ INTEGER_LITERAL ~ ";"? }
+dep_strategy = { "strategy" ~ WHITESPACE* ":" ~ WHITESPACE* ~ STRING_LITERAL ~ ";"? }
+dep_config = { "config" ~ WHITESPACE* ":" ~ WHITESPACE* ~ object_literal ~ ";"? }
+dep_attribute = { attribute_definition }
 
 // --- Type Specifiers ---
 type_specifier = { list_specifier | optional_specifier | map_specifier | simple_specifier }

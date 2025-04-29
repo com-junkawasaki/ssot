@@ -1,8 +1,7 @@
 #![allow(dead_code, unused_variables)] // Keep module level for now
 use crate::ast::{
-    self, Annotation, EnumDefinition,
-    Identifier, InvokeSource, NumericId, SsotAst, StructDefinition, TopLevelDefinition, TransitionTarget, TypeDefinition,
-    TypeSpecifier,
+    self, Annotation, EnumDefinition, Identifier, InvokeSource, NumericId, SsotAst,
+    StructDefinition, TopLevelDefinition, TransitionTarget, TypeDefinition, TypeSpecifier,
 }; // Added Annotation import
 use std::collections::{HashMap, HashSet}; // Added HashMap and HashSet
 use strum_macros::Display;
@@ -66,9 +65,10 @@ pub enum ValidationError {
     DuplicateIdInScope {
         scope: ScopeId,
         kind: SymbolKind,
-        name: String,          // Name of the symbol with the duplicate ID
-        id: u64,               // The duplicate ID value
-        existing_name: String, // Name of the existing symbol with the same ID in this scope/kind
+        name: String,           // Name of the symbol with the duplicate ID
+        id: u64,                // The duplicate ID value
+        existing_name: String,  // Name of the existing symbol with the same ID in this scope/kind
+        span: Option<SpanInfo>, // Span of the duplicate item
     },
     #[error("Duplicate Name '{name}' for {kind} in scope {scope:?}. Existing ID: {existing_id}, New ID: {new_id}")]
     DuplicateNameInScope {
@@ -77,12 +77,14 @@ pub enum ValidationError {
         name: String,
         existing_id: u64,
         new_id: u64,
+        span: Option<SpanInfo>, // Span of the duplicate item
     },
     #[error("Undefined reference to {kind} '{name}' when searching from scope {scope:?}.")]
     UndefinedReference {
-        scope: ScopeId,   // Scope where the reference occurs / search starts
-        kind: SymbolKind, // Kind of symbol being referenced
-        name: String,     // Name of the referenced symbol
+        scope: ScopeId,         // Scope where the reference occurs / search starts
+        kind: SymbolKind,       // Kind of symbol being referenced
+        name: String,           // Name of the referenced symbol
+        span: Option<SpanInfo>, // Span of the reference
     },
     // TODO: Add more specific errors: InvalidType, MissingInitialState, etc.
 }
@@ -142,6 +144,7 @@ impl SymbolTable {
                     name: name.name,
                     id: id.value,
                     existing_name: existing_info.name.name.clone(),
+                    span: id.span, // Use span from the duplicate NumericId
                 });
             }
         }
@@ -161,6 +164,7 @@ impl SymbolTable {
                 name: name.name,
                 existing_id: existing_info.id.value,
                 new_id: id.value,
+                span: name.span, // Use span from the duplicate Identifier
             });
         }
 
@@ -280,8 +284,7 @@ impl<'a> Validator<'a> {
                 }
                 TopLevelDefinition::DeploymentConfig(block) => {
                     self.populate_deployment_config_block(&ScopeId::Global, block)
-                }
-                // _ => {} // Remove this line as we handle all top levels now
+                } // _ => {} // Remove this line as we handle all top levels now
             }
         }
         // Remove the placeholder NotImplemented error if all top levels are handled
@@ -446,7 +449,11 @@ impl<'a> Validator<'a> {
         }
     }
 
-    fn populate_communication_block(&mut self, scope: &ScopeId, block: &'a ast::CommunicationBlock) {
+    fn populate_communication_block(
+        &mut self,
+        scope: &ScopeId,
+        block: &'a ast::CommunicationBlock,
+    ) {
         for item in &block.definitions {
             self.populate_communication_item(scope, item);
         }
@@ -800,21 +807,32 @@ impl<'a> Validator<'a> {
                     // Cannot resolve fields or annotations as they don't exist in current ast::EventDefinition
                     // If EventDefinition is expanded later in ast.rs to include fields/annotations,
                     // uncomment and adapt the following:
-                    /*
+
                     // Resolve event field types
-                    for field in &ev.fields { // Assumes ev has fields: Vec<FieldDefinition>
-                         self.resolve_type_specifier(&global_scope, &field.type_spec);
+                    for field in &ev.fields {
+                        // Assumes ev has fields: Vec<FieldDefinition>
+                        self.resolve_type_specifier(&global_scope, &field.type_spec);
                     }
                     // Resolve $channel annotation
-                     for annotation in &ev.annotations { // Assumes ev has annotations: Vec<Annotation>
+                    for annotation in &ev.annotations {
+                        // Assumes ev has annotations: Vec<Annotation>
                         if let Annotation::Channel(channel_name) = annotation {
-                            self.resolve_reference(&global_scope, SymbolKind::Channel, channel_name);
+                            self.resolve_reference(
+                                &global_scope,
+                                SymbolKind::Channel,
+                                channel_name,
+                            );
                         }
                     }
-                    */
                 }
                 ast::CommunicationItem::Protocol(_) => { /* No internal refs */ }
-                ast::CommunicationItem::Channel(_) => { /* No internal refs */ }
+                ast::CommunicationItem::Channel(ch) => {
+                    // Resolve channel parameter types
+                    for param in &ch.parameters {
+                        self.resolve_type_specifier(&global_scope, &param.type_spec);
+                    }
+                    // TODO: Resolve channel annotations if they contain references
+                }
             }
         }
     }
@@ -827,27 +845,28 @@ impl<'a> Validator<'a> {
         kind: SymbolKind,
         name: &'a Identifier,
     ) {
-        // DEBUG PRINT for reference resolution
-        // println!(
-        //     "[Resolve Ref] Scope: {:?}, Kind: {:?}, Name: {}",
-        //     search_start_scope, kind, name.name
-        // );
+        // Handle guard negation: If looking for a Guard ending in "(not)", lookup the base name.
+        let lookup_name = if kind == SymbolKind::Guard && name.name.ends_with("(not)") {
+            name.name.trim_end_matches("(not)").to_string()
+        } else {
+            name.name.clone()
+        };
 
-        let lookup_result = self
+        // Create an identifier with the potentially stripped name for lookup
+        let lookup_identifier = Identifier { name: lookup_name };
+
+        // if self.symbol_table.lookup_by_name(search_start_scope, &kind, name).is_none() {
+        if self
             .symbol_table
-            .lookup_by_name(search_start_scope, &kind, name);
-
-        // DEBUG PRINT for lookup result
-        // println!(
-        //     "[Resolve Ref Result] Found: {}",
-        //     lookup_result.is_some()
-        // );
-
-        if lookup_result.is_none() {
+            .lookup_by_name(search_start_scope, &kind, &lookup_identifier)
+            .is_none()
+        {
+            // Use original name in error message for clarity
             self.errors.push(ValidationError::UndefinedReference {
                 scope: search_start_scope.clone(),
-                kind,
-                name: name.name.clone(),
+                kind: kind.clone(),
+                name: name.name.clone(), // Report original name (e.g., "myGuard(not)")
+                span: name.span,         // Use span from the Identifier being referenced
             });
         }
     }
@@ -1070,7 +1089,15 @@ mod tests {
         let validator = Validator::new(&ast); // Removed mut
         let errors = validator.validate(); // validate consumes validator
         assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0], ValidationError::DuplicateIdInScope { kind: SymbolKind::Action, id: 10, name: _, existing_name: _ }));
+        assert!(matches!(
+            errors[0],
+            ValidationError::DuplicateIdInScope {
+                kind: SymbolKind::Action,
+                id: 10,
+                name: _,
+                existing_name: _
+            }
+        ));
         if let ValidationError::DuplicateIdInScope { scope, .. } = &errors[0] {
             assert_eq!(*scope, ScopeId::Machine(0)); // Actions are scoped to Machine
         } else {
@@ -1184,5 +1211,187 @@ mod tests {
         assert!(
             matches!(errors[0], ValidationError::UndefinedReference { kind: SymbolKind::Invoke, name: ref n, scope: ScopeId::Machine(0), .. } if n == "UndefinedInvoke")
         );
+    }
+
+    // TODO: Add tests for:
+    // - Complex types in parameters/context
+    // - Nested states and regions
+    // - History states
+    // - Invoke targets (services, machines)
+    // - Deployment config references
+    // - Annotation value validation
+    // - Guard negation validation
+
+    #[test]
+    fn test_validate_channel_with_parameters_ok() {
+        let content = r#"
+            types {
+                struct UserData @id(0) { field: string @id(0); }
+            }
+            communication {
+                channel UserChannel @id(0) {
+                    description: "User specific channel";
+                    parameters: { userId: string @id(0), data: UserData @id(1) };
+                }
+            }
+        "#;
+        let result = run_validation(content); // run_validation parses and validates
+        assert!(
+            result.is_ok(),
+            "Validation failed unexpectedly: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_validate_channel_with_undefined_parameter_type() {
+        let content = r#"
+            communication {
+                channel UserChannel @id(0) {
+                    parameters: { userId: UndefinedType @id(0) }; // UndefinedType is not defined
+                }
+            }
+        "#;
+        let result = run_validation(content);
+        assert!(result.is_err());
+        let errors = result.err().unwrap();
+        assert_eq!(errors.len(), 1);
+        // TODO: Enhance this check when reference resolution for parameters is confirmed
+        // assert!(matches!(errors[0], ValidationError::UndefinedReference { kind: SymbolKind::Type, name, .. } if name == "UndefinedType"));
+        println!("Found expected errors: {:?}", errors); // Temp print
+        assert!(errors.iter().any(|e| matches!(e, ValidationError::UndefinedReference { kind: SymbolKind::Type, name, .. } if name == "UndefinedType")));
+    }
+
+    #[test]
+    fn test_validate_deployment_config_references_ok() {
+        let content = r#"
+            actors {
+                actor AdminUser @id(0);
+            }
+            services {
+                service AuthService @id(0) { }
+            }
+            deployment_config {
+                environment Production @id(0) { }
+                infrastructure ComputeCluster @id(1) { type: "k8s"; }
+
+                deployment DeployAuthServiceProd @id(0) {
+                    targetEnvironment: Production;
+                    targetInfrastructure: { cluster: ComputeCluster, dbStorage: 100 }; // Assuming simple attr for now
+                    deployable: AuthService;
+                    config: { logLevel: "info" };
+                    replicas: 3;
+                }
+            }
+        "#;
+        // Basic check that parsing and potentially basic validation passes
+        // Detailed reference validation needs implementation
+        let result = run_validation(content);
+        assert!(
+            result.is_ok(),
+            "Validation failed unexpectedly: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_validate_transition_with_details_ok() {
+        let content = r#"
+            machines {
+                machine TestMachine @id(0) {
+                    actions @id(0) { action Log @id(0); action Notify @id(1); }
+                    guards @id(1) { guard IsAdmin @id(0); guard HasChanges @id(1); }
+                    states @id(2) {
+                        state A @id(0) {
+                            $initial;
+                            on EVENT1 @id(0) target B { action: Log };
+                            on EVENT2 @id(1) target C { guard: IsAdmin };
+                            on EVENT3 @id(2) target D { action: [Log, Notify], guard: [HasChanges] };
+                            on EVENT4 @id(3) target E { guard: [IsAdmin(not), HasChanges] }; // Test negation
+                        }
+                        state B @id(1);
+                        state C @id(2);
+                        state D @id(3);
+                        state E @id(4);
+                    }
+                }
+            }
+        "#;
+        let result = run_validation(content);
+        assert!(
+            result.is_ok(),
+            "Validation failed unexpectedly: {:?}",
+            result.err()
+        );
+        // Further checks could involve inspecting the resolved actions/guards in the AST
+        // after enhancing the validation logic or AST representation if needed.
+    }
+
+    #[test]
+    fn test_validate_transition_with_undefined_action() {
+        let content = r#"
+            machines {
+                machine TestMachine @id(0) {
+                    actions @id(0) { action Log @id(0); }
+                    states @id(1) {
+                        state A @id(0) {
+                            $initial;
+                            on EVENT1 @id(0) target B { action: UndefinedAction };
+                        }
+                        state B @id(1);
+                    }
+                }
+            }
+        "#;
+        let result = run_validation(content);
+        assert!(result.is_err());
+        let errors = result.err().unwrap();
+        assert!(errors.iter().any(|e| matches!(e, ValidationError::UndefinedReference { kind: SymbolKind::Action, name, .. } if name == "UndefinedAction")));
+    }
+
+    #[test]
+    fn test_validate_transition_with_undefined_guard() {
+        let content = r#"
+            machines {
+                machine TestMachine @id(0) {
+                    guards @id(0) { guard IsAdmin @id(0); }
+                    states @id(1) {
+                        state A @id(0) {
+                            $initial;
+                            on EVENT1 @id(0) target B { guard: UndefinedGuard };
+                        }
+                        state B @id(1);
+                    }
+                }
+            }
+        "#;
+        let result = run_validation(content);
+        assert!(result.is_err());
+        let errors = result.err().unwrap();
+        // Note: The check uses "UndefinedGuard" because we store the full specifier including (not)
+        assert!(errors.iter().any(|e| matches!(e, ValidationError::UndefinedReference { kind: SymbolKind::Guard, name, .. } if name == "UndefinedGuard")));
+    }
+
+    #[test]
+    fn test_validate_transition_with_undefined_negated_guard() {
+        let content = r#"
+            machines {
+                machine TestMachine @id(0) {
+                    guards @id(0) { guard IsAdmin @id(0); }
+                    states @id(1) {
+                        state A @id(0) {
+                            $initial;
+                             on EVENT1 @id(0) target B { guard: UndefinedGuard(not) };
+                        }
+                        state B @id(1);
+                    }
+                }
+            }
+        "#;
+        let result = run_validation(content);
+        assert!(result.is_err());
+        let errors = result.err().unwrap();
+        // Check for the full name including (not)
+        assert!(errors.iter().any(|e| matches!(e, ValidationError::UndefinedReference { kind: SymbolKind::Guard, name, .. } if name == "UndefinedGuard(not)")));
     }
 }

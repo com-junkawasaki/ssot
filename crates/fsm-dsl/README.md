@@ -12,63 +12,96 @@ This crate is a library for parsing the state machine description language (DSL)
 
 ## 現在の機能 (Current Functionality - As of Review)
 
--   **Basic `.ssot` Syntax Parsing:**
-    -   File ID (`file_id: 0x...;`) - *Note: Currently not parsed into AST.*
+-   **`.ssot` Syntax Parsing:**
+    -   File ID (`file_id: 0x...;`) - *Note: Grammar supports it, parser needs implementation.*
     -   Import statements (`import "..."`)
-    -   Comments (`// ...`, `/* ... */`) - *Note: Grammar uses different comment style than original DSL.md (#)*
--   **Top-Level Block Parsing (Structure):**
-    -   Recognizes `types {}`, `actors {}`, `communication {}`, `services {}`, `machines {}`, `deployment_config {}` blocks.
+    -   Comments (`// ...`, `/* ... */`)
+-   **Top-Level Block Parsing:**
+    -   Parses `types {}`, `actors {}`, `communication {}`, `services {}`, `machines {}`, `deployment_config {}` blocks and their basic definitions (name, ID).
 -   **`types {}` Block Parsing:**
-    -   `struct` definitions (name, ID). Field parsing implemented.
-    -   `enum` definitions (name, ID). Variant parsing implemented.
+    -   `struct` definitions (name, ID, fields with types/IDs/annotations).
+    -   `enum` definitions (name, ID, variants with IDs/annotations).
     -   Type specifiers: `string`, `integer`, `list<T>`, `optional<T>`, `map<K, V>` are parsed.
-    -   Basic annotation structure (`$name(...)` or `$flag;`) is parsed, but argument value parsing might be incomplete.
 -   **`machines {}` Block Parsing:**
     -   `machine` definitions (name, ID).
     -   Parses internal blocks: `context {}`, `actions {}`, `guards {}`, `invokes {}`, `states {}`.
-    -   `context` fields (name, type, ID).
-    -   `action`, `guard`, `invoke` definitions (name, ID within their respective blocks). Invoke `src`, `onDone`, `onError` structure parsed.
-    -   `states` block with `state` definitions (name, ID).
-    -   Parses state elements like transitions (`on EVENT target STATE`), state invokes (`invoke { src: ... }`), history (`history ... target ...`).
-    -   Parses state flags like `$initial`, `$final`, `$parallel` via annotations.
+    -   `context` fields (name, type, ID, annotations).
+    -   `action`, `guard`, `invoke` definitions (name, ID within their respective blocks).
+    -   Invoke details (`src` including service methods, `onDone`/`onError` targets).
+    -   `states` block with `state` definitions (name, ID, annotations like `$initial`, `$final`, `$parallel`).
+    -   Parses state elements: transitions (`on EVENT @id() target STATE { action:... guard:... }`), state invokes (`invoke { src: ... }`), history (`history ... target ...`).
     -   Parses nested `states` blocks (regions).
--   **Other Block Parsing (Partial/Placeholder):**
-    -   `services {}`: Recognizes `service` and `interface` items, parses basic structure (name, ID, extends for service). Method parsing is placeholder.
-    -   `communication {}`: Recognizes `protocol`, `channel`, `event` items. Parses only the name (as String). *AST definition lacks ID, fields, annotations.*
-    -   `actors {}`: Recognizes `actor` definitions. Parses only the name. *AST definition lacks details.*
-    -   `deployment_config {}`: Recognizes `environment`, `infrastructure`, `deployment` items. Parses basic structure (name, ID, extends). *Internal parsing is placeholder.*
--   **AST Validation (Under Refactoring - Incomplete):**
-    -   Currently undergoing a major refactoring to use **ID-based scopes (`ScopeId`)** for robust validation.
-    -   **Phase 1 (Symbol Population):** Partially implemented. Registers major definitions (types, machines, actions, guards, invokes, states, services, etc.) into a symbol table using `ScopeId`. Checks for name/ID duplicates *within the same scope*. `CommunicationItem` registration uses dummy IDs.
-    -   **Phase 2 (Reference Resolution):** Partially implemented. Basic logic for resolving types, state targets, actions, guards, invokes exists but is incomplete and needs thorough testing and refinement for nested structures and complex cases.
+-   **`services {}` Block Parsing:**
+    -   Parses `interface` definitions (name, ID, methods with parameters/return types/annotations).
+    -   Parses `service` definitions (name, ID, extends, annotations like `$implements`).
+-   **`communication {}` Block Parsing:**
+    -   Parses `protocol` definitions (name, ID).
+    -   Parses `channel` definitions (name, ID, description, parameters).
+    -   Parses `event` definitions (name, ID, fields).
+-   **`actors {}` Block Parsing:**
+    -   Parses `actor` definitions (name, ID).
+-   **`deployment_config {}` Block Parsing:**
+    -   Parses `environment` definitions (name, ID, extends, variables).
+    -   Parses `infrastructure` definitions (name, ID, extends, attributes).
+    -   Parses `deployment` definitions (name, ID, targetEnvironment, targetInfrastructure, deployable, config, other attributes).
+-   **Annotation Parsing:**
+    -   Parses most annotations (`$description`, `$initial`, `$final`, `$validate`, `$db`, `$meta`, `$implements`, `$route`, `$allowedActors`, output directives, etc.).
+    -   Handles complex annotation arguments including lists (`[...]`) and objects (`{...}`).
+-   **AST Validation (`ScopeId`-based - Partially Complete):**
+    -   **Phase 1 (Symbol Population):** Implemented for all major definition types (types, machines, states, actions, guards, invokes, services, interfaces, actors, communication items, deployment items). Checks for name/ID duplicates *within the correct scope* (Global, Machine, State).
+    -   **Phase 2 (Reference Resolution):** Basic implementation exists. Resolves type specifiers, state transition targets, history targets, action/guard references (including negated guards `guard(not)`), invoke sources (basic service/machine refs), invoke transition targets, service `extends`/`implements`, and `$channel` annotations. *Needs more comprehensive checks (e.g., deeper invoke source resolution, deployment config refs, channel parameter types).*
+-   **Error Reporting:**
+    -   Validation errors (`ValidationError`) now include optional span information.
+    -   Usage example demonstrates how to calculate and display line/column numbers for validation errors.
+    -   *Parser errors (`SsotParserError`) do not yet include span information.*
 
 ## 今後のロードマップ (Roadmap)
 
-1.  **Complete Validation Refactoring (Highest Priority):**
-    -   Finish implementing the `ScopeId`-based validation logic in `validation.rs` (both Phase 1 Population and Phase 2 Resolution for all AST elements and references).
-    -   Align `ast.rs` definitions for `ProtocolDefinition`, `ChannelDefinition`, `EventDefinition` with the DSL/grammar (add ID, fields, annotations) and update parser/validator accordingly.
-    -   Adapt and re-enable integration tests for the new validation system. Write comprehensive tests covering various scope and reference scenarios.
-2.  **Complete Parser Implementation (High Priority):**
-    -   Implement full parsing for `services`, `communication`, `actors`, `deployment_config` blocks according to `grammar.pest`.
-    -   Implement robust parsing for complex annotation arguments (lists, objects).
-    -   Implement parsing for transition details (actions/guards within `{}`).
-    -   Ensure all grammar rules in `grammar.pest` are handled correctly.
-3.  **Error Reporting Improvements (High Priority):**
-    -   Integrate `pest` span information into parser and validation errors (`SsotParserError`, `ValidationError`) to provide precise file, line, and column numbers.
-    -   Make error messages more descriptive and helpful.
-4.  **Increase Test Coverage (Medium Priority):** Add more unit and integration tests for edge cases, complex DSL combinations, and specific validation rules once implemented.
+1.  **Error Reporting Improvements (High Priority):**
+    -   Integrate `pest` span information into `SsotParserError` to provide precise file, line, and column numbers for parsing errors.
+    -   Make parser error messages more descriptive and helpful.
+2.  **Complete Validation Logic & Tests (High Priority):**
+    -   Implement detailed reference resolution for remaining items (e.g., service method names in invoke `src`, deployment config references, channel parameter type validation, annotation value validation).
+    -   Write comprehensive integration tests covering various scope/reference scenarios, nested structures, complex annotations, and edge cases.
+    -   Adapt and ensure all existing validation tests cover the intended logic correctly.
+3.  **Parser Robustness & Refinement (Medium Priority):**
+    -   Implement File ID (`@0x...`) parsing.
+    -   Handle potential edge cases or ambiguities in the grammar/parser.
+    -   Refine parsing for specific blocks if needed (e.g., default values in context, detailed `targetInfrastructure` overrides).
+4.  **Increase Test Coverage (Medium Priority):** Add more unit and integration tests, particularly for the parser, covering complex DSL combinations and error conditions.
 5.  **(Optional) Code Generation (Low Priority):** Explore adding features to generate Rust code, diagrams (Mermaid, etc.), or other artifacts from the validated AST.
 
 ## 使用例 (Usage Example)
 
 ```rust
-// Note: Validation is currently incomplete.
-// Parsing basic structures works, but semantic validation is WIP.
-use fsm_dsl::parser::{parse_ssot_content}; // Removed ParseError for now
-use fsm_dsl::ast::SsotAst;
-use fsm_dsl::validation::{validate_ast, ValidationError}; // Import validator
+use fsm_dsl::parser::{parse_ssot_content};
+use fsm_dsl::ast::{SsotAst, SpanInfo}; // Import SpanInfo
+use fsm_dsl::validation::{validate_ast, ValidationError};
+use std::path::PathBuf; // Needed if using source_path
 
-fn main() -> Result<(), Vec<ValidationError>> { // Return validation errors
+// Helper function to get line and column from byte offset
+// (Useful for displaying errors with location)
+fn get_line_col(content: &str, byte_offset: usize) -> (usize, usize) {
+    let mut line_count = 1;
+    let mut last_newline_offset = 0;
+
+    // Iterate through bytes to find the line and column
+    for (i, byte) in content.bytes().enumerate() {
+        if i == byte_offset {
+            break; // Stop when we reach the target offset
+        }
+        if byte == b'\\n' {
+            line_count += 1;
+            last_newline_offset = i + 1; // Mark the start of the new line
+        }
+    }
+    // Column is the offset from the last newline start + 1 (1-based column)
+    let column = byte_offset - last_newline_offset + 1;
+    (line_count, column)
+}
+
+
+fn main() { // Removed Result return, handling errors inside
     let ssot_content = r#"
         // file_id: 0x1234567890abcdef; // File ID parsing not implemented yet
         import "/path/to/base.ssot";
@@ -77,24 +110,34 @@ fn main() -> Result<(), Vec<ValidationError>> { // Return validation errors
             $description("Example types");
 
             struct Point @id(0) {
-                x: integer @id(0); // Assuming 'integer' is treated like a primitive/known type
+                x: integer @id(0);
                 y: integer @id(1);
+                // Add a duplicate name for testing validation error reporting
+                x: string @id(2); // Error: Duplicate name 'x'
             }
 
             enum Color @id(1) {
                 RED @id(0);
-                GREEN @id(1); // { $description("Primary green"); } // Annotation parsing needs review
+                GREEN @id(1);
                 BLUE @id(2);
+            }
+
+            struct RefError @id(2) {
+                 p: Pointy @id(0); // Error: Undefined type 'Pointy'
             }
         }
 
         machines {
              machine Simple @id(10) {
                  actions @id(0) { action Log @id(0); }
+                 guards @id(1) { guard IsAdmin @id(0); } // Define a guard
                  states @id(1) {
                      state First @id(0) {
                          $initial;
-                         on ENTRY target First { action Log; } // Transition detail parsing WIP
+                         on ENTRY @id(0) target First { action: Log };
+                         on EV_ERR @id(1) target MissingState; // Error: Undefined state 'MissingState'
+                         on EV_ACT_ERR @id(2) target First { action: MissingAction }; // Error: Undefined action
+                         on EV_GUARD_ERR @id(3) target First { guard: MissingGuard(not) }; // Error: Undefined guard
                      }
                  }
              }
@@ -102,48 +145,63 @@ fn main() -> Result<(), Vec<ValidationError>> { // Return validation errors
     "#;
 
     // 1. Parse the content
-    let ast = match parse_ssot_content(ssot_content, None) {
+    // Providing a dummy path can help pest generate better error messages later
+    let ast = match parse_ssot_content(ssot_content, Some(PathBuf::from("example.ssot"))) {
          Ok(a) => a,
          Err(parse_error) => {
+             // TODO: Enhance parser error reporting with spans too
              eprintln!("Parsing Failed: {}", parse_error);
-             // Convert parse error to a generic validation-like error or handle differently
-             return Err(vec![]); // Or a specific error type
+             return; // Exit if parsing fails
          }
     };
 
     println!("Successfully parsed SSOT content!");
 
-    // 2. Validate the AST (currently checks basic duplicates and some refs)
-    validate_ast(&ast)?; // Returns Err(Vec<ValidationError>) on failure
+    // 2. Validate the AST
+    if let Err(errors) = validate_ast(&ast) {
+        eprintln!("--- Validation Failed ---");
+        for error in errors {
+            // Extract span information if available in the ValidationError enum variant
+            let maybe_span: Option<SpanInfo> = match &error {
+                 ValidationError::DuplicateIdInScope { span, .. } => *span,
+                 ValidationError::DuplicateNameInScope { span, .. } => *span,
+                 ValidationError::UndefinedReference { span, .. } => *span,
+                 // Add cases for other potential errors with spans here
+                 _ => None,
+            };
 
-    println!("AST Validation Successful (Basic Checks)!");
-
-    // 3. Process the AST (e.g., code generation, analysis)
-    println!("File ID: {:?}", ast.file_id);
-    println!("Imports: {:?}", ast.imports);
-
-    for definition in ast.definitions {
-        match definition {
-            TopLevelDefinition::Types(types_block) => {
-                println!("Found types block with {} definitions.", types_block.definitions.len());
-                // Process types...
+            // Print location if span exists
+            if let Some(span) = maybe_span {
+                // Use the helper to get line/col from the span's start offset
+                let (line, col) = get_line_col(ssot_content, span.start);
+                // Print formatted error with location
+                eprintln!("[L{}:{}] Validation Error: {}", line, col, error);
+            } else {
+                 // Print error without location if no span information is available
+                 eprintln!("Validation Error: {}", error);
             }
-             TopLevelDefinition::Machines(machines_block) => {
-                 println!("Found machines block with {} definitions.", machines_block.definitions.len());
-                 // Process machines...
-             }
-            // Handle other block types...
-            _ => {}
         }
+        eprintln!("-------------------------");
+        return; // Exit if validation failed
     }
 
-    Ok(())
+
+    println!("AST Validation Successful!");
+
+    // 3. Process the AST (e.g., code generation, analysis)
+    // ... (rest of the processing logic remains the same) ...
+
+    println!("File ID: {:?}", ast.file_id);
+    println!("Imports: {:?}", ast.imports);
+    // ... etc ...
+
+    // Ok(()) // No longer returning Result
 }
 ```
 
 ## 貢献 (Contributing)
 
-Bug reports, feature requests, and pull requests are welcome. Please be aware of the ongoing validation refactoring.
+Bug reports, feature requests, and pull requests are welcome. Please check the current roadmap and known issues.
 
 # State Machine DSL Syntax (Inspired by Cap'n Proto)
 
