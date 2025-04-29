@@ -25,23 +25,21 @@ This project is being rewritten using the following technologies:
 
 The project involves the following major steps:
 
-1.  **Define Tree-sitter Grammar (`grammar.js`) (In Progress):**
-    *   Define core structure (top-level blocks, imports). (Done)
-    *   Define type system (`struct`, `enum`, `type specifiers). (Done)
-    *   Define machine structure (`machine`, `context`, `actions`, `guards`, `invokes`). (Done)
-    *   Define state machine specifics (`states`, `state`, `initial`, `final`, `transition`, `invoke`, `history`, `entry`, `exit`, `activity`). (Done)
-    *   Define annotations and basic literals. (Done)
-    *   **TODO:** Refine action/guard/invoke bodies, service/communication/deployment details, potentially complex expressions.
-2.  **Generate Tree-sitter Parser (High Priority):** Use the Tree-sitter CLI to generate the parser (e.g., WASM binary) and keep it updated as the grammar evolves.
-3.  **Define TypeScript AST (`src/ast.ts`) (High Priority):** Create TypeScript interfaces/classes representing the structure of the Abstract Syntax Tree corresponding to the DSL elements defined in the grammar.
-4.  **Implement CST-to-AST Transformation (`src/parser.ts`) (High Priority):** Write TypeScript code to traverse the Tree-sitter CST and construct the TypeScript AST, including accurate source map (span) information.
-5.  **Implement Validation Logic (`src/validation.ts`) (High Priority):** Implement validation rules using the TypeScript AST. Checks should include duplicate IDs/names, undefined references, type checking (where applicable), structural consistency based on the DSL rules (e.g., initial state requirements).
-6.  **Implement Testing (High Priority):**
-    *   **Grammar Tests:** Create `.ssot` test files with valid and invalid syntax snippets and use `tree-sitter test` to verify the grammar. (Initial test passing, needs more cases)
-    *   **Parser/AST Tests:** Write Deno tests to verify the CST-to-AST transformation produces the correct AST structure. (Not Started)
-    *   **Validation Tests:** Write Deno tests to verify the validation logic correctly identifies errors and validates correct definitions. (Not Started)
+1.  **Define Tree-sitter Grammar (`grammar.js`) (Mostly Done):**
+    *   Core structure, types, machine elements, states, transitions, annotations, literals, dependencies defined. (Done)
+    *   Grammar conflicts resolved. (Done)
+    *   **TODO:** Refine action/guard/invoke bodies, service/communication/deployment details, complex expressions.
+2.  **Generate Tree-sitter Parser (Done):** Parser (`src/parser.c`, `src/tree_sitter/parser.h`) generated successfully using Tree-sitter CLI.
+3.  **Define TypeScript AST (`src/ast.ts`) (High Priority - Not Started):** Create TypeScript interfaces/classes representing the structure of the Abstract Syntax Tree corresponding to the DSL elements defined in the grammar. Placeholder exists.
+4.  **Implement CST-to-AST Transformation (`src/parser.ts`) (High Priority - Not Started):** Write TypeScript code to traverse the Tree-sitter CST and construct the TypeScript AST, including accurate source map (span) information. Placeholder exists.
+5.  **Implement Validation Logic (`src/validation.ts`) (High Priority - Not Started):** Implement validation rules using the TypeScript AST. Checks should include duplicate IDs/names, undefined references, type checking (where applicable), structural consistency based on the DSL rules. Placeholder exists.
+6.  **Implement Testing (Medium Priority):**
+    *   **Grammar Tests:** Use `tree-sitter test`. (Initial tests passing, needs more cases)
+    *   **Parser/AST Tests:** Write Deno tests to verify the CST-to-AST transformation. (Not Started)
+    *   **Validation Tests:** Write Deno tests to verify the validation logic. (Not Started)
 7.  **Error Reporting Improvements (Medium Priority):** Ensure parser and validator errors provide clear messages and precise location information using AST span information.
-8.  **(Optional) Code Generation (Low Priority):** Explore adding features to generate code or other artifacts from the validated AST.
+8.  **Documentation (`DSL.md`) Update (Low Priority):** Ensure `DSL.md` fully reflects the latest `grammar.js` details (e.g., annotation placement on transitions, TODO items).
+9.  **(Optional) Code Generation (Low Priority):** Explore adding features to generate code or other artifacts from the validated AST.
 
 ## 使用例 (Conceptual Usage Example - Deno/TypeScript)
 
@@ -95,65 +93,6 @@ await main();
 
 Bug reports, feature requests, and pull requests are welcome. Please check the current roadmap and known issues before contributing.
 
-# State Machine DSL Syntax (Inspired by Cap'n Proto)
+## State Machine DSL Syntax
 
-This document defines the syntax for the Single Source of Truth (`.ssot`) files used to define state machines, services, interfaces, protocols, types, and their associated configurations for code generation (including visualizations, data schemas, API specifications, and database schemas with RLS). The syntax borrows concepts from Cap'n Proto's schema language for clarity and structure, using `@id` for stable numerical IDs and `$` for metadata and tool directives (annotations).
-
-**This DSL recommends organizing definitions within logical blocks (e.g., `types {}`, `services {}`, `machines {}`). While top-level definitions might be supported for backward compatibility by some tools, using blocks is the standard and preferred approach for clarity and organization.**
-
-## 1. Overall Structure Example (Using Blocks)
-
-```ssot
-# Unique ID for this definition file (Cap'n Proto compatible)
-@0xabcdef1234567890; # Must be globally unique across all .ssot files in the project.
-
-# --- Imports ---
-import "/path/to/shared_types.ssot"; # Import definitions from other files.
-import "/path/to/base_service.ssot";
-import "/path/to/common_actions.ssot";
-
-# --- Output Configuration (Top Level or Per-Block/Element) ---
-# $rust_out("src/generated");         # Removed - Example target language output
-$capnp_out("schema/capnp");       # Optional: Cap'n Proto schemas
-$ts_out("schema/ts");             # Optional: TypeScript types
-$mermaid_out("docs/diagrams");   # Optional: Mermaid diagrams
-$dot_out("docs/graphs");          # Optional: Graphviz DOT graphs
-$zod_out("schema/zod");          # Optional: Zod schemas (TypeScript)
-$jsonschema_out("schema/json"); # Optional: JSON Schema files
-$proto_out("schema/proto");       # Optional: Protocol Buffer definitions
-$avro_out("schema/avro");         # Optional: Avro schemas
-$openapi_out("schema/openapi");   # Optional: OpenAPI specifications
-$grpc_out("schema/grpc");          # Optional: gRPC service definitions (might use $proto_out)
-$graphql_out("schema/graphql");   # Optional: GraphQL schemas
-$asyncapi_out("schema/asyncapi"); # Optional: AsyncAPI specifications
-$sql_out("schema/sql");            # Optional: SQL DDL files
-$prisma_out("schema/prisma");     # Optional: Prisma schema file content
-$drizzle_out("schema/drizzle");   # Optional: Drizzle TS schema files
-// ... rest of the DSL syntax description remains the same ...
-// ... (Sections 2 through 5 are largely unchanged as they describe the DSL itself) ...
-
-### 5.3. Advanced Generator Configuration & Customization
-- **Goal:** Provide more granular control over generated code and artifacts beyond simple output paths.
-- **Proposal:**
-    - Introduce generator-specific configuration blocks or annotations.
-      # - `$rust_out("...") config { derive_serde: true; use_chrono: true; serde_case: "camelCase"; }` # Example removed
-      - `struct UserProfile { ... email: string { $ts(decorator: "@IsEmail()", typeOverride: "EmailString"); } ... }`
-      - `$openapi_out("...") config { default_security_scheme: "jwtAuth"; info: { title: "...", version: ... }; }`
-    - Allow specifying code snippets or templates to be injected at certain points.
-      # - `action customLogic @id(...) { $rust(inline: "/* custom rust code here */"); }` # Example removed
-      - `action customLogic @id(...) { $ts(inline: "// custom TypeScript code here"); }` # Example added
-    - This allows tailoring output for specific frameworks, libraries, or project conventions.
-
-// ... rest of the future extensions ...
-
-### 5.6. Lifecycle Hooks for Tooling Integration
-- **Goal:** Allow integration with external scripts or tools during the SSOT processing lifecycle.
-- **Proposal:**
-    - Introduce a `$hook` annotation attachable to the top-level or specific blocks/elements.
-    # - `$hook(event: "pre_codegen", target: "rust", script: "./scripts/validate_rust_config.sh")` # Example removed
-    - `$hook(event: "pre_codegen", target: "typescript", script: "./scripts/validate_ts_config.sh")` # Example added
-    - `$hook(event: "post_analysis", command: "node ./scripts/generate_docs.js --input $CONTEXT_FILE")`
-    - Possible events: `post_parse`, `pre_validate`, `post_validate`, `pre_codegen`, `post_codegen`.
-    - Tooling would execute the specified script/command at the designated lifecycle stage, potentially passing context information.
-
-These extensions aim to make the SSOT DSL an even more comprehensive and powerful tool for model-driven development, covering aspects from detailed logic and data to testing, security, and deployment integration. Integrating these would require careful consideration of syntax clarity and tooling complexity.
+For the detailed syntax specification of the `.ssot` language, please refer to the [DSL.md](./DSL.md) file.
