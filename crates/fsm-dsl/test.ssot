@@ -40,22 +40,15 @@ types {
   $ts_out("src/generated/types")
 
   struct UserCredentials @id(0) {
-    username: string @id(0) {
-      $description("User's login name.")
-      $validate(minLength: 3, maxLength: 50, pattern: "^[a-zA-Z0-9_]+$")
-    };
-    password: string @id(1) {
-      $description("User's password (validation often done server-side).")
-      $validate(minLength: 8)
-      $meta(sensitive: true)
-    };
+    username: string @id(0) $description("User's login name.") $validate(minLength: 3, maxLength: 50, pattern: "^[a-zA-Z0-9_]+$");
+    password: string @id(1) $description("User's password (validation often done server-side).") $validate(minLength: 8) $meta(sensitive: true);
   }
 
   struct AuthToken @id(1) {
     $db(table: "auth_tokens", primaryKey: "token")
-    token: string @id(0) { $db(column: "auth_token", type: "VARCHAR(255)") };
-    userId: string @id(1) { $db(column: "user_id", type: "UUID", index: true) };
-    expiresAt: timestamp @id(2) { $db(column: "expires_at") };
+    token: string @id(0) $db(column: "auth_token", type: "VARCHAR(255)");
+    userId: string @id(1) $db(column: "user_id", type: "UUID", index: true);
+    expiresAt: timestamp @id(2) $db(column: "expires_at");
   }
 
   enum LoginStatus @id(2) {
@@ -71,23 +64,12 @@ types {
 
   struct UserProfile @id(4) {
     $description("Stores user profile information.")
-    $db(
-      table: "user_profiles",
-      primaryKey: "profileId",
-      policies: [
-        { name: "user_select_own", command: "SELECT", using: "userId = current_setting('request.jwt.claims.sub')::uuid", role: "authenticated" },
-        { name: "user_update_own", command: "UPDATE", using: "userId = current_setting('request.jwt.claims.sub')::uuid", withCheck: "userId = current_setting('request.jwt.claims.sub')::uuid", role: "authenticated" },
-        { name: "admin_all_access", command: "ALL", using: "true", role: "service_role" }
-      ]
-    )
-    profileId: u64 @id(0) { $db(column: "profile_id", type: "BIGINT", autoIncrement: true) };
-    userId: string @id(1) { $db(column: "user_id", type: "UUID", unique: true, nullable: false, foreignKey: { references: "auth.users(id)", onDelete: "CASCADE" }) };
-    email: string @id(2) {
-      $db(column: "email_address", type: "VARCHAR(255)", unique: "idx_email_unique")
-      $validate(format: "email", maxLength: 255)
-    };
-    bio: optional<string> @id(3) { $db(type: "TEXT", nullable: true) };
-    createdAt: timestamp @id(4) { $db(default: "CURRENT_TIMESTAMP", index: true) };
+    $db(table: "user_profiles", primaryKey: "profileId")
+    profileId: u64 @id(0) $db(column: "profile_id", type: "BIGINT", autoIncrement: true);
+    userId: string @id(1) $db(column: "user_id", type: "UUID", unique: true, nullable: false, foreignKey: { references: "auth.users(id)", onDelete: "CASCADE" });
+    email: string @id(2) $db(column: "email_address", type: "VARCHAR(255)", unique: "idx_email_unique") $validate(format: "email", maxLength: 255);
+    bio: optional<string> @id(3) $db(type: "TEXT", nullable: true);
+    createdAt: timestamp @id(4) $db(default: "CURRENT_TIMESTAMP", index: true);
   }
 } # end types block
 

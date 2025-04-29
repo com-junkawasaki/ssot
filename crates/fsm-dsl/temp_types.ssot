@@ -1,0 +1,37 @@
+types {
+  $description("Contains shared data structures and enumerations.")
+  $ts_out("src/generated/types")
+
+  struct UserCredentials @id(0) {
+    username: string @id(0) $description("User's login name.") $validate(minLength: 3, maxLength: 50, pattern: "^[a-zA-Z0-9_]+$");
+    password: string @id(1) $description("User's password (validation often done server-side).") $validate(minLength: 8) $meta(sensitive: true);
+  }
+
+  struct AuthToken @id(1) {
+    $db(table: "auth_tokens", primaryKey: "token")
+    token: string @id(0) $db(column: "auth_token", type: "VARCHAR(255)");
+    userId: string @id(1) $db(column: "user_id", type: "UUID", index: true);
+    expiresAt: timestamp @id(2) $db(column: "expires_at");
+  }
+
+  enum LoginStatus @id(2) {
+    SUCCESS @id(0);
+    INVALID_CREDENTIALS @id(1);
+    ACCOUNT_LOCKED @id(2);
+  }
+
+  struct LoginResult @id(3) {
+     status: LoginStatus @id(0);
+     token: optional<AuthToken> @id(1);
+  }
+
+  struct UserProfile @id(4) {
+    $description("Stores user profile information.")
+    $db(table: "user_profiles", primaryKey: "profileId")
+    profileId: u64 @id(0) $db(column: "profile_id", type: "BIGINT", autoIncrement: true);
+    userId: string @id(1) $db(column: "user_id", type: "UUID", unique: true, nullable: false, foreignKey: { references: "auth.users(id)", onDelete: "CASCADE" });
+    email: string @id(2) $db(column: "email_address", type: "VARCHAR(255)", unique: "idx_email_unique") $validate(format: "email", maxLength: 255);
+    bio: optional<string> @id(3) $db(type: "TEXT", nullable: true);
+    createdAt: timestamp @id(4) $db(default: "CURRENT_TIMESTAMP", index: true);
+  }
+} 
