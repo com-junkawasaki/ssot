@@ -1,6 +1,7 @@
-import Parser, { SyntaxNode, Point, Tree, Language } from "web-tree-sitter";
-// Need to find the correct way to import types like SyntaxNode, Point, Tree
-// Let's assume they are available under the Parser object for now, or potentially need separate imports if available.
+import Parser, { Point, SyntaxNode, Tree, Language } from 'web-tree-sitter'; // Use standard Node.js import
+import * as path from 'node:path'; // Use node:path for paths
+import * as fs from 'node:fs/promises'; // Use node:fs for file access
+import { fileURLToPath } from 'node:url'; // Helper for __dirname in ESM context if needed
 
 import {
   SsotAst,
@@ -17,8 +18,13 @@ import {
   ImportStatementNode,
   PrimitiveTypeNode, // Added PrimitiveTypeNode
   CustomTypeReferenceNode, // Added CustomTypeReferenceNode
+  TopLevelBlockNode, // Added TopLevelBlockNode
   // ... add other types used in the transformation
 } from "./ast.ts";
+
+// Helper to get __dirname in ESM modules (if needed, depends on how script is run)
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = path.dirname(__filename);
 
 // Helper function to create Span from SyntaxNode
 function nodeToSpan(node: SyntaxNode): Span {
@@ -32,25 +38,45 @@ function nodeToText(node: SyntaxNode, sourceCode: string): string {
 
 // Main parser instance (initialize once)
 let parser: Parser | null = null;
-let ssotLanguage: Language | null = null;
+// Language doesn't need to be stored globally if set per parse
+// let ssotLanguage: Language | null = null;
 
 /**
- * Initializes the Tree-sitter parser with the SSOT grammar.
+ * Initializes the Tree-sitter parser with WASM and SSOT grammar.
  * Must be called before parsing.
  */
 export async function initializeParser(): Promise<void> {
-  if (parser && ssotLanguage) return; // Already initialized
+  if (parser) return; // Already initialized
 
-  await Parser.init(); // Initialize the library
-  parser = new Parser();
-
-  const grammarPath = "./src/tree_sitter/ssot.wasm";
   try {
-    ssotLanguage = await Parser.Language.load(grammarPath); // Load language wasm
-    parser.setLanguage(ssotLanguage); // Set it to the parser instance
+    // Initialize the library. It will try to load tree-sitter.wasm automatically.
+    // If this fails, we might need the locateFile option or copy the wasm file.
+    await Parser.init();
+    parser = new Parser();
+    console.log("Tree-sitter WASM runtime initialized.");
+
+    // Load the SSOT grammar WASM file.
+    // Construct the path relative to the current file or use an absolute path.
+    // __dirname might not work directly in all module contexts, adjust as needed.
+    // For simplicity, let's assume it's relative to the project root for now.
+    const grammarPath = path.resolve("src/tree_sitter/ssot.wasm");
+
+    // Check if grammar file exists before attempting to load
+    try {
+        await fs.access(grammarPath);
+    } catch (e) {
+         console.error(`Grammar file not found at: ${grammarPath}`);
+         throw new Error(`SSOT grammar file not found.`);
+    }
+
+
+    const ssotLanguageWasm = await fs.readFile(grammarPath);
+    const ssotLanguage = await Parser.Language.load(ssotLanguageWasm);
+    parser.setLanguage(ssotLanguage);
     console.log("Tree-sitter parser initialized with SSOT grammar.");
+
   } catch (error) {
-    console.error(`Error loading grammar from ${grammarPath}:`, error);
+    console.error("Error initializing Tree-sitter parser:", error);
     throw new Error("Failed to initialize Tree-sitter parser.");
   }
 }
@@ -65,11 +91,11 @@ export async function initializeParser(): Promise<void> {
  * @throws Error if parser is not initialized or parsing fails.
  */
 export function parseSsotContent(ssotContent: string, filePath?: string): SsotAst {
-  if (!parser || !ssotLanguage) { // Check both parser and language
+  if (!parser) {
     throw new Error("Parser not initialized. Call initializeParser() first.");
   }
-  // Ensure the language is set for this parse call, although it should persist
-  parser.setLanguage(ssotLanguage);
+  // Language should be set during initialization, re-setting might not be needed
+  // parser.setLanguage(ssotLanguage);
 
   const tree: Tree = parser.parse(ssotContent);
   const rootNode: SyntaxNode = tree.rootNode;
@@ -125,7 +151,7 @@ function transformNode(node: SyntaxNode, sourceCode: string): AstNode | null {
       if (transformedPath?.kind === "StringLiteral") {
         return {
             kind: "ImportStatement",
-            path: transformedPath,
+            path: transformedPath as StringLiteralNode,
             span: span,
         } satisfies ImportStatementNode;
       }
@@ -201,7 +227,7 @@ function transformNode(node: SyntaxNode, sourceCode: string): AstNode | null {
         if (transformedName?.kind === "Identifier") {
             return {
                 kind: "GenericAnnotation",
-                name: transformedName,
+                name: transformedName as IdentifierNode,
                 value: valueNode ? transformNode(valueNode, sourceCode) ?? undefined : undefined,
                 span: span,
             } satisfies GenericAnnotationNode;
@@ -265,7 +291,7 @@ function transformSourceFile(node: SyntaxNode, sourceCode: string): SsotAst | nu
 
   const fileIdNode = node.childForFieldName("file_id");
   const imports: ImportStatementNode[] = [];
-  const blocks: AstNode[] = []; // Explicitly type blocks array
+  const blocks: TopLevelBlockNode[] = []; // Use specific type
 
   // Iterate over children to find imports and blocks
   node.namedChildren.forEach((child: SyntaxNode) => {
@@ -275,7 +301,7 @@ function transformSourceFile(node: SyntaxNode, sourceCode: string): SsotAst | nu
     const transformedChild = transformNode(child, sourceCode);
     if (transformedChild) {
       if (transformedChild.kind === "ImportStatement") {
-        imports.push(transformedChild);
+        imports.push(transformedChild as ImportStatementNode);
       } else if (isTopLevelBlock(transformedChild)) {
          blocks.push(transformedChild);
       } else if (!(transformedChild.kind === "IdAnnotation" && child.type === 'file_id')) {
@@ -287,18 +313,22 @@ function transformSourceFile(node: SyntaxNode, sourceCode: string): SsotAst | nu
 
   const fileIdAst = fileIdNode ? transformNode(fileIdNode, sourceCode) as IdAnnotationNode | null : null;
 
+  // Transform top-level annotations as well
+  const topLevelAnnotations = transformAnnotations(node, sourceCode)
+                                .filter(a => a.kind === "GenericAnnotation") as GenericAnnotationNode[];
+
   return {
     kind: "SsotRoot",
     fileId: fileIdAst ?? undefined,
     imports: imports,
-    blocks: blocks, // Type matches declaration now
+    blocks: blocks, // Now correctly typed
     span: nodeToSpan(node),
-    annotations: transformAnnotations(node, sourceCode).filter(a => a.kind === "GenericAnnotation") as GenericAnnotationNode[],
+    annotations: topLevelAnnotations, // Add top-level annotations here
   } satisfies SsotAst;
 }
 
 /** Type guard to check if a node is a top-level block */
-function isTopLevelBlock(node: AstNode): boolean {
+function isTopLevelBlock(node: AstNode): node is TopLevelBlockNode {
     // Add all valid top-level block kinds here
     return [
         "TypesBlock",
@@ -315,8 +345,22 @@ function isTopLevelBlock(node: AstNode): boolean {
 /**
  * Placeholder for transforming top-level blocks like 'types {}', 'services {}', etc.
  */
-function transformTopLevelBlock(node: SyntaxNode, sourceCode: string): AstNode | null {
-    const blockKind = node.type.replace('_block', ''); // e.g., 'types_block' -> 'types'
+function transformTopLevelBlock(node: SyntaxNode, sourceCode: string): TopLevelBlockNode | null {
+    const blockKindMapping: { [key: string]: TopLevelBlockNode['kind'] } = { // Use specific kinds
+        "types_block": "TypesBlock",
+        "services_block": "ServicesBlock",
+        "machines_block": "MachinesBlock",
+        "actors_block": "ActorsBlock",
+        "communication_block": "CommunicationBlock",
+        "deployment_config_block": "DeploymentConfigBlock",
+        "dependencies_block": "DependenciesBlock",
+    };
+    const blockKind = blockKindMapping[node.type];
+    if (!blockKind) { // Check if mapping exists
+        console.error(`No AST mapping found for block type: ${node.type}`);
+        return null;
+    }
+
     const definitions: AstNode[] = [];
     const blockBody = node.childForFieldName("body"); // Assuming grammar uses 'body' for the {} content
 
@@ -331,22 +375,22 @@ function transformTopLevelBlock(node: SyntaxNode, sourceCode: string): AstNode |
         });
     }
 
-    // Construct the specific block node type dynamically (or use a switch)
-    const kindPascalCase = blockKind.charAt(0).toUpperCase() + blockKind.slice(1) + 'Block';
-
-    // Basic check if the kind exists in our AST definitions (improve with actual types)
-    if (!isTopLevelBlock({ kind: kindPascalCase } as AstNode)) {
-         console.error(`Cannot create AST block node for unknown kind: ${kindPascalCase}`);
-         return null;
-    }
-
-
-    return {
-        kind: kindPascalCase, // e.g., "TypesBlock", "ServicesBlock"
-        definitions: definitions,
+    // Cast to specific block type - requires more detailed implementation
+    // to be truly type-safe (e.g., ensuring definitions match the block type)
+    const blockNode = {
+        kind: blockKind,
+        definitions: definitions, // This needs validation/casting based on blockKind
         span: nodeToSpan(node),
         annotations: transformAnnotations(node, sourceCode),
-    } as AstNode; // Cast needed until specific types are returned
+    } as TopLevelBlockNode; // Use cast for now, but ideally return specific type
+
+    // Validate the constructed node if possible, or refine return type
+    if (!isTopLevelBlock(blockNode)) {
+        console.error(`Constructed block node is not a valid TopLevelBlockNode: ${blockKind}`);
+        return null;
+    }
+
+    return blockNode;
 }
 
 /**
