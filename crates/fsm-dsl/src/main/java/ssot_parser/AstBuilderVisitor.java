@@ -6,6 +6,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.antlr.v4.runtime.tree.ParseTree; // Import needed for context checks
+import java.util.Map;
+import java.util.HashMap;
+import ssot_parser.SSoTParser.AnnotationContext; // Add import
 
 /**
  * Visits the ANTLR Parse Tree and builds the Abstract Syntax Tree (AST).
@@ -132,6 +135,97 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
        }
 
 
+    // --- Annotation Processing Logic ---
+
+    // Record to hold results from processing a list of annotations
+    private record ProcessedAnnotations(Optional<Long> id, Map<String, Object> annotationMap) {}
+
+    // Helper method to process a list of annotation contexts
+    private ProcessedAnnotations processAnnotations(List<AnnotationContext> annotationCtxs) {
+        Optional<Long> id = Optional.empty();
+        Map<String, Object> annotationMap = new HashMap<>();
+
+        if (annotationCtxs != null) {
+            for (AnnotationContext ctx : annotationCtxs) {
+                Object result = visitAnnotation(ctx); // Returns Long for @id, or Map.Entry<String, Object> for $name
+
+                if (result instanceof Long) {
+                    if (id.isPresent()) {
+                        System.err.println("Warning: Duplicate @id annotation found. Ignoring subsequent IDs. First ID was: " + id.get());
+                    } else {
+                        id = Optional.of((Long) result);
+                    }
+                } else if (result instanceof Map.Entry) {
+                    try {
+                         @SuppressWarnings("unchecked")
+                         Map.Entry<String, Object> entry = (Map.Entry<String, Object>) result;
+                         if (annotationMap.containsKey(entry.getKey())) {
+                             // Handle duplicate annotation names if necessary (e.g., merge lists, overwrite, error)
+                             System.err.println("Warning: Duplicate annotation name found: $" + entry.getKey() + ". Overwriting previous value.");
+                         }
+                         annotationMap.put(entry.getKey(), entry.getValue());
+                     } catch(ClassCastException e){
+                          System.err.println("Warning: visitAnnotation for $name did not return Map.Entry<String, Object>");
+                     }
+                }
+                // Ignore null results from visitAnnotation (e.g., parse errors)
+            }
+        }
+        return new ProcessedAnnotations(id, annotationMap);
+    }
+
+    // Visitor for a single annotation rule: handles @id, $name(value), $flag;
+    // Returns Long for @id, or Map.Entry<String, Object> for $name annotations.
+    @Override
+    public Object visitAnnotation(SSoTParser.AnnotationContext ctx) {
+        if (ctx.AT() != null && ctx.ID() != null && ctx.INT() != null) {
+            // @id(integer) annotation
+            try {
+                long idValue = Long.parseLong(ctx.INT().getText());
+                // We return the Long value directly. processAnnotations will wrap it in Optional.
+                return idValue;
+            } catch (NumberFormatException e) {
+                System.err.println("Warning: Could not parse @id value: " + ctx.INT().getText());
+                return null; // Indicate error
+            }
+        } else if (ctx.DOLLAR() != null && ctx.annotationName() != null) {
+            String name = ctx.annotationName().getText();
+            Object value = null;
+
+            if (ctx.LPAREN() != null && ctx.RPAREN() != null) {
+                // $name(value) annotation
+                if (ctx.annotationValue() != null) {
+                    value = visitAnnotationValue(ctx.annotationValue());
+                } else {
+                    // $name() - empty value, might represent true or an empty structure depending on convention
+                    value = true; // Defaulting to true for now, could be null or empty map/list
+                     System.out.println("Info: Annotation $" + name + " has empty parentheses.");
+                }
+            } else if (ctx.SEMI() != null) {
+                // $flag; annotation - Treat as boolean true
+                value = true;
+            } else {
+                 System.err.println("Warning: Malformed $ annotation rule: " + ctx.getText());
+                 return null;
+            }
+
+            // Return as a Map.Entry
+            return Map.entry(name, value);
+
+        } else {
+            System.err.println("Warning: Unrecognized annotation format: " + ctx.getText());
+            return null; // Indicate error or unrecognized format
+        }
+    }
+
+    // Add visitAnnotationName - Although simple, good practice to have it.
+    @Override
+    public Object visitAnnotationName(SSoTParser.AnnotationNameContext ctx) {
+        // This visitor might not be strictly necessary if we just use getText(),
+        // but useful if we needed to validate the name against allowed keywords later.
+        return ctx.getText(); // Just return the name string
+    }
+
     // --- Implementations for individual definition visitors (Overriding BaseVisitor where appropriate) ---
 
     @Override
@@ -148,37 +242,45 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     @Override
     public AstNode visitStructDefinition(SSoTParser.StructDefinitionContext ctx) {
-        // Revert to simple access, assuming ID() returns TerminalNode
+        // Process annotations first
+        ProcessedAnnotations processed = processAnnotations(ctx.annotation()); // Pass the list of annotation contexts
+
+        // Extract name (handle potential list access based on previous findings)
         String name = "UNKNOWN_STRUCT";
-        if (ctx.ID() != null) { // Check for null TerminalNode
+        if (ctx.ID() != null) { // Assuming ID() returns TerminalNode based on grammar
              name = ctx.ID().getText();
         } else {
              System.err.println("Warning: No ID found for struct definition: " + ctx.getText());
         }
         System.out.println("Visiting StructDefinition: " + name);
+
         List<FieldNode> fields = new ArrayList<>();
         if (ctx.fieldDefinition() != null) {
             for (SSoTParser.FieldDefinitionContext fieldCtx : ctx.fieldDefinition()) {
-                AstNode fieldNode = visitFieldDefinition(fieldCtx); // Use specific visitor
+                AstNode fieldNode = visitFieldDefinition(fieldCtx);
                 if (fieldNode instanceof FieldNode) {
                     fields.add((FieldNode) fieldNode);
                 }
             }
         }
-        // Use the TypeDefNode constructor
-         return new TypeDefNode(Optional.empty(), name, fields);
-         // TODO: Revisit if TypeDefNode should store "struct" explicitly
+        // Pass processed ID and annotations map to constructor
+        return new TypeDefNode(processed.id(), name, fields, processed.annotationMap());
     }
 
     @Override
     public AstNode visitFieldDefinition(SSoTParser.FieldDefinitionContext ctx) {
          // Grammar: ID COLON typeExpr annotation* (LBRACE annotation* RBRACE)? SEMI
-         String name = ctx.ID().getText(); // Use ID()
-         String type = ctx.typeExpr().getText(); // Use typeExpr()
+         String name = ctx.ID().getText();
+         String type = ctx.typeExpr().getText();
          System.out.println("Visiting FieldDefinition: " + name + " (" + type + ")");
-         // No default value expression in grammar rule. Remove that logic.
-         // Constructor: FieldNode(Optional<Long> id, String name, String type)
-         return new FieldNode(Optional.empty(), name, type); // Pass type, not default value
+
+         // Process annotations associated with the field
+         ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+
+        // TODO: Handle annotations inside braces: (LBRACE annotation* RBRACE)?
+
+         // Pass processed ID and annotations map to constructor
+         return new FieldNode(processed.id(), name, type, processed.annotationMap());
      }
 
      // Assuming visitEnumDefinition is needed
@@ -423,6 +525,156 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
              System.err.println("Warning: EventDefinition visitor not implemented.");
              return null;
         }
+
+    // --- Annotation Value Parsing Helpers ---
+
+    // Helper method to strip quotes from STRING literals
+    private String stripQuotes(String text) {
+        if (text != null && text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"")) {
+            // TODO: Handle potential escape sequences inside the string if necessary
+            return text.substring(1, text.length() - 1);
+        }
+        return text;
+    }
+
+    @Override
+    public Object visitValue(SSoTParser.ValueContext ctx) {
+        if (ctx.primitiveValue() != null) {
+            return visitPrimitiveValue(ctx.primitiveValue());
+        } else if (ctx.referenceValue() != null) {
+            // For now, just return the reference text. Validation/resolution happens later.
+            return ctx.referenceValue().getText();
+        } else if (ctx.objectValue() != null) {
+            return visitObjectValue(ctx.objectValue());
+        } else if (ctx.arrayValue() != null) {
+            return visitArrayValue(ctx.arrayValue());
+        }
+        System.err.println("Warning: Unknown value type encountered: " + ctx.getText());
+        return null; // Or throw exception
+    }
+
+    @Override
+    public Object visitPrimitiveValue(SSoTParser.PrimitiveValueContext ctx) {
+        if (ctx.STRING() != null) {
+            return stripQuotes(ctx.STRING().getText());
+        } else if (ctx.INT() != null) {
+            try {
+                return Long.parseLong(ctx.INT().getText()); // Use Long for wider range
+            } catch (NumberFormatException e) {
+                System.err.println("Warning: Could not parse INT: " + ctx.INT().getText());
+                return 0L; // Default or throw
+            }
+        } else if (ctx.FLOAT() != null) {
+            try {
+                return Double.parseDouble(ctx.FLOAT().getText()); // Use Double
+            } catch (NumberFormatException e) {
+                System.err.println("Warning: Could not parse FLOAT: " + ctx.FLOAT().getText());
+                return 0.0; // Default or throw
+            }
+        } else if (ctx.BOOLEAN() != null) {
+            return Boolean.parseBoolean(ctx.BOOLEAN().getText());
+        }
+        return null;
+    }
+
+    // Returns Map<String, Object>
+    @Override
+    public Object visitObjectValue(SSoTParser.ObjectValueContext ctx) {
+        Map<String, Object> objectMap = new HashMap<>();
+        if (ctx.attributePairList() != null) {
+            // visitAttributePairList should return a Map
+            Object result = visitAttributePairList(ctx.attributePairList());
+            if (result instanceof Map) {
+                // Need to cast carefully, assuming Map<String, Object>
+                try {
+                     @SuppressWarnings("unchecked") // Suppress warning, but be cautious
+                     Map<String, Object> resultMap = (Map<String, Object>) result;
+                     objectMap.putAll(resultMap);
+                } catch (ClassCastException e) {
+                     System.err.println("Warning: visitAttributePairList did not return Map<String, Object>");
+                }
+            } else {
+                 System.err.println("Warning: visitAttributePairList did not return a Map for objectValue");
+            }
+        }
+        return objectMap; // Return the map representing the object
+    }
+
+    // Returns List<Object>
+    @Override
+    public Object visitArrayValue(SSoTParser.ArrayValueContext ctx) {
+        List<Object> list = new ArrayList<>();
+        if (ctx.valueList() != null) {
+            for (SSoTParser.ValueContext valueCtx : ctx.valueList().value()) {
+                Object val = visitValue(valueCtx);
+                if (val != null) {
+                    list.add(val);
+                }
+            }
+        }
+        return list;
+    }
+
+    // Returns Map<String, Object> representing the list of pairs
+    @Override
+    public Object visitAttributePairList(SSoTParser.AttributePairListContext ctx) {
+        Map<String, Object> map = new HashMap<>();
+        for (SSoTParser.AttributePairContext pairCtx : ctx.attributePair()) {
+            Object pairResult = visitAttributePair(pairCtx);
+            // visitAttributePair should ideally return a Map.Entry or similar,
+            // but returning a single-entry Map might be simpler here.
+            if (pairResult instanceof Map) {
+                 try {
+                     @SuppressWarnings("unchecked")
+                     Map<String, Object> singleEntryMap = (Map<String, Object>) pairResult;
+                     map.putAll(singleEntryMap); // Add the entry from the pair
+                 } catch (ClassCastException e) {
+                      System.err.println("Warning: visitAttributePair did not return Map<String, Object>");
+                 }
+
+            } else {
+                System.err.println("Warning: visitAttributePair did not return a Map");
+            }
+        }
+        return map;
+    }
+
+    // Returns a single-entry Map<String, Object>
+    @Override
+    public Object visitAttributePair(SSoTParser.AttributePairContext ctx) {
+        String key = ctx.ID().getText();
+        // Grammar: ID COLON (primitiveValue | referenceValue | objectValue | arrayValue)
+        Object value = null;
+         ParseTree valueTree = null;
+         if (ctx.primitiveValue() != null) valueTree = ctx.primitiveValue();
+         else if (ctx.referenceValue() != null) valueTree = ctx.referenceValue();
+         else if (ctx.objectValue() != null) valueTree = ctx.objectValue();
+         else if (ctx.arrayValue() != null) valueTree = ctx.arrayValue();
+
+        if (valueTree != null) {
+             value = visit(valueTree); // Use generic visit to dispatch correctly
+        } else {
+            System.err.println("Warning: Could not determine value type in attributePair for key: " + key);
+        }
+
+        // Return a map containing this single key-value pair
+        Map<String, Object> pairMap = new HashMap<>();
+        pairMap.put(key, value);
+        return pairMap;
+    }
+
+    @Override
+    public Object visitAnnotationValue(SSoTParser.AnnotationValueContext ctx) {
+        if (ctx.attributePairList() != null) {
+            // Returns Map<String, Object>
+            return visitAttributePairList(ctx.attributePairList());
+        } else if (ctx.value() != null) {
+            // Returns the parsed value object (String, Long, List, Map, etc.)
+            return visitValue(ctx.value());
+        }
+        System.err.println("Warning: No value or attribute list found in annotationValue: " + ctx.getText());
+        return null;
+    }
 
     // ... other visit methods as needed ...
 

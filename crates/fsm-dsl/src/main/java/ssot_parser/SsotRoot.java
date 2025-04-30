@@ -1,7 +1,9 @@
 package ssot_parser;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Represents the root node of the SSoT Abstract Syntax Tree (AST).
@@ -17,18 +19,21 @@ public class SsotRoot implements AstNode {
     private final List<AstNode> serviceDefinitions; // Placeholder
     private final List<AstNode> machineDefinitions; // Placeholder
     // Add other top-level block lists as needed (imports, actors, communication, etc.)
+    private final Map<String, Object> annotations; // For top-level file annotations
 
     // Constructor (modify as needed based on how AstBuilderVisitor works)
     public SsotRoot(
             List<AstNode> typeDefinitions,
             List<AstNode> serviceDefinitions,
-            List<AstNode> machineDefinitions
+            List<AstNode> machineDefinitions,
+            Map<String, Object> annotations
             /* Add other lists */
             ) {
         // Use unmodifiable lists for robustness
         this.typeDefinitions = Collections.unmodifiableList(typeDefinitions != null ? typeDefinitions : Collections.emptyList());
         this.serviceDefinitions = Collections.unmodifiableList(serviceDefinitions != null ? serviceDefinitions : Collections.emptyList());
         this.machineDefinitions = Collections.unmodifiableList(machineDefinitions != null ? machineDefinitions : Collections.emptyList());
+        this.annotations = Collections.unmodifiableMap(annotations != null ? new HashMap<>(annotations) : Collections.emptyMap());
         // Initialize other lists
     }
 
@@ -45,6 +50,11 @@ public class SsotRoot implements AstNode {
         return machineDefinitions;
     }
 
+    @Override
+    public Map<String, Object> getAnnotations() {
+        return annotations;
+    }
+
     // Implement other methods from AstNode if defined (e.g., accept, getChildren)
 
     @Override
@@ -53,6 +63,7 @@ public class SsotRoot implements AstNode {
                "typeDefinitions=" + typeDefinitions + // May need better toString for AstNode lists
                ", serviceDefinitions=" + serviceDefinitions +
                ", machineDefinitions=" + machineDefinitions +
+               ", annotations=" + annotations +
                '}';
     }
 
