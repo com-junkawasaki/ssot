@@ -27,30 +27,35 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
 
 ## ビルドと実行
 
-(現時点では、ANTLR の設定と Java のコンパイル・実行環境が必要です。ビルドツールの導入を推奨します。)
+Maven が導入されたため、以下のコマンドでビルドと実行が可能です。
 
-1.  **ANTLR ランタイムライブラリの入手:** ANTLR 4 の Java ランタイム JAR ファイル (`antlr-4.x.x-complete.jar`) をダウンロードします。
-2.  **ANTLR によるコード生成 (必要な場合):**
+1.  **ビルド (コンパイルとANTLRコード生成):**
     ```bash
     # プロジェクトルートで実行
-    antlr4 SSoT.g4 -o target/generated-parser/ssot -package ssot_parser -visitor -listener
+    mvn compile
     ```
-3.  **Java コードのコンパイル:**
-    ```bash
-    # ANTLR ランタイム JAR をクラスパスに含める
-    # 出力先ディレクトリを作成
-    mkdir -p target/classes
-    javac -cp .:/path/to/antlr-4.x.x-complete.jar -d target/classes src/main/java/ssot_parser/Main.java target/generated-parser/ssot/*.java
-    ```
-    *(注: `/path/to/antlr-4.x.x-complete.jar` は実際のパスに置き換えてください)*
+    これにより、`src/main/antlr4` 内の `.g4` ファイルからパーサーコードが `target/generated-sources/antlr4` に生成され、
+    `src/main/java` 内の Java コードと共に `target/classes` にコンパイルされます。
 
-4.  **実行:**
+2.  **実行 (Mainクラス):**
     ```bash
-    # クラスパスにコンパイル済みクラスと ANTLR ランタイム JAR を含める
+    # プロジェクトルートで実行
     # Main.java は現在 "temp_comm.ssot" をハードコードで読み込みます
-    java -cp target/classes:/path/to/antlr-4.x.x-complete.jar ssot_parser.Main
+    mvn exec:java -Dexec.mainClass="ssot_parser.Main"
     ```
-    *(注: `/path/to/antlr-4.x.x-complete.jar` は実際のパスに置き換えてください)*
+    または、実行可能な JAR を作成して実行する場合:
+
+3.  **実行可能 JAR の作成:**
+    ```bash
+    # プロジェクトルートで実行
+    mvn package
+    ```
+    これにより、依存ライブラリを含む実行可能な JAR ファイルが `target/fsm-dsl-parser-0.1.0-SNAPSHOT.jar` として生成されます。(バージョン名は `pom.xml` に依存します)
+
+4.  **JAR ファイルの実行:**
+    ```bash
+    java -jar target/fsm-dsl-parser-0.1.0-SNAPSHOT.jar
+    ```
 
 ## 貢献
 

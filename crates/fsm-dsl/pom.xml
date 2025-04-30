@@ -1,0 +1,156 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example.ssot</groupId>
+    <artifactId>fsm-dsl-parser</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>FSM DSL Parser</name>
+    <description>Parser for the Single Source of Truth (SSoT) DSL using ANTLR</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>11</maven.compiler.source> <!-- Adjust Java version if needed -->
+        <maven.compiler.target>11</maven.compiler.target> <!-- Adjust Java version if needed -->
+        <antlr.version>4.13.1</antlr.version> <!-- Use the latest ANTLR version -->
+        <junit.version>5.10.2</junit.version> <!-- For testing -->
+    </properties>
+
+    <dependencies>
+        <!-- ANTLR Runtime -->
+        <dependency>
+            <groupId>org.antlr</groupId>
+            <artifactId>antlr4-runtime</artifactId>
+            <version>${antlr.version}</version>
+        </dependency>
+
+        <!-- JUnit 5 for testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- ANTLR 4 Plugin for generating parser code -->
+            <plugin>
+                <groupId>org.antlr</groupId>
+                <artifactId>antlr4-maven-plugin</artifactId>
+                <version>${antlr.version}</version>
+                <configuration>
+                    <!-- Specify the directory containing the ANTLR grammar files -->
+                    <sourceDirectory>${basedir}/src/main/antlr4</sourceDirectory>
+                    <!-- Specify the output directory for the generated sources -->
+                    <!-- Note: This path needs adjustment for package structure -->
+                    <outputDirectory>${project.build.directory}/generated-sources/antlr4</outputDirectory> 
+                    <!-- Specify the package for the generated classes -->
+                    <packageName>ssot_parser</packageName>
+                    <!-- Generate listener and visitor -->
+                    <listener>true</listener>
+                    <visitor>true</visitor>
+                    <!-- Need to specify the correct subfolder for the package -->
+                     <outputDirectory>${project.build.directory}/generated-sources/antlr4/ssot_parser</outputDirectory>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>antlr4</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Maven Compiler Plugin -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
+                    <!-- Ensure generated sources are included -->
+                     <compilerArgs>
+                        <arg>-Xlint:all</arg> 
+                     </compilerArgs>
+                     <includes>
+                        <include>${project.build.directory}/generated-sources/antlr4/**/*.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
+             <!-- Add generated sources to compile path -->
+             <plugin>
+                 <groupId>org.codehaus.mojo</groupId>
+                 <artifactId>build-helper-maven-plugin</artifactId>
+                 <version>3.3.0</version> <!-- Use a recent version -->
+                 <executions>
+                     <execution>
+                         <id>add-source</id>
+                         <phase>generate-sources</phase>
+                         <goals>
+                             <goal>add-source</goal>
+                         </goals>
+                         <configuration>
+                             <sources>
+                                 <source>${project.build.directory}/generated-sources/antlr4</source>
+                             </sources>
+                         </configuration>
+                     </execution>
+                 </executions>
+             </plugin>
+            <!-- Maven Surefire Plugin for running tests -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+             <!-- Maven JAR Plugin to create executable JAR (optional) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <addClasspath>true</addClasspath>
+                            <!-- Specify your main class here -->
+                            <mainClass>ssot_parser.Main</mainClass>
+                             <classpathPrefix>dependency/</classpathPrefix>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+             <!-- Maven Dependency Plugin to copy dependencies for executable jar -->
+             <plugin>
+                 <groupId>org.apache.maven.plugins</groupId>
+                 <artifactId>maven-dependency-plugin</artifactId>
+                 <version>3.6.0</version>
+                 <executions>
+                     <execution>
+                         <id>copy-dependencies</id>
+                         <phase>package</phase>
+                         <goals>
+                             <goal>copy-dependencies</goal>
+                         </goals>
+                         <configuration>
+                             <outputDirectory>${project.build.directory}/dependency</outputDirectory>
+                             <overWriteReleases>false</overWriteReleases>
+                             <overWriteSnapshots>false</overWriteSnapshots>
+                             <overWriteIfNewer>true</overWriteIfNewer>
+                         </configuration>
+                     </execution>
+                 </executions>
+             </plugin>
+        </plugins>
+    </build>
+</project> 
