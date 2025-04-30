@@ -6,13 +6,17 @@ import java.util.Optional;
 // --- Base Interfaces/Classes ---
 interface AstNode {}
 
+/** Interface for nodes that can have an @id annotation */
+interface NodeWithId extends AstNode {
+    Optional<Long> getId();
+}
+
 interface BlockNode extends AstNode {
     String getBlockType(); // e.g., "types", "services"
 }
 
-interface TypeDefNode extends AstNode {
+interface TypeDefNode extends NodeWithId {
     String getName();
-    Optional<Long> getId();
 }
 
 // --- Concrete AST Nodes ---
@@ -40,7 +44,6 @@ record StructDefNode(
     List<FieldNode> fields // Assuming FieldNode exists
 ) implements TypeDefNode {
     @Override public String getName() { return name; }
-    @Override public Optional<Long> getId() { return id; }
 }
 
 /** Represents an 'enum ... { ... }' definition */
@@ -50,15 +53,16 @@ record EnumDefNode(
     List<EnumVariantNode> variants // Assuming EnumVariantNode exists
 ) implements TypeDefNode {
     @Override public String getName() { return name; }
-    @Override public Optional<Long> getId() { return id; }
 }
 
 // --- Supporting Nodes (Placeholders for now) ---
 
 /** Represents a field within a struct */
-record FieldNode(String name, String type, Optional<Long> id) implements AstNode {}
+record FieldNode(String name, String type, Optional<Long> id) implements NodeWithId {
+}
 
 /** Represents a variant within an enum */
-record EnumVariantNode(String name, Optional<Long> id) implements AstNode {}
+record EnumVariantNode(String name, Optional<Long> id) implements NodeWithId {
+}
 
 // Add other node types as needed (ServiceBlockNode, MachineDefNode, etc.) 
