@@ -16,13 +16,13 @@ import ssot_parser.SSoTParser.AnnotationContext; // Add import
  * for specific grammar rules to create corresponding AST nodes.
  */
 // Make sure AstBuilderVisitor<T> matches SSoTBaseVisitor<T> (AstNode seems correct)
-public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
+public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
 
     // Keep track of the current state name for transitions
     private String currentStateName = null;
 
     @Override
-    public AstNode visitFile(SSoTParser.FileContext ctx) { // Changed from visitSsotFile to match grammar rule 'file'
+    public Object visitFile(SSoTParser.FileContext ctx) { // Return type changed to Object
         System.out.println("Visiting File node...");
 
         List<AstNode> typeDefs = new ArrayList<>();
@@ -54,10 +54,15 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         // Create SsotRoot with collected lists (adjust constructor if needed)
         // Assuming SsotRoot needs more lists now. Let's keep it simple for now.
         // TODO: Update SsotRoot constructor to accept all definition types.
-        return new SsotRoot(typeDefs, serviceDefs, machineDefs);
+        // TODO: Process file-level annotations
+        Map<String, Object> fileAnnotations = new HashMap<>(); // Placeholder for file annotations
+        return new SsotRoot(typeDefs, serviceDefs, machineDefs, fileAnnotations); // Add annotations map
     }
 
     // --- Helper methods for visiting blocks (NOT overriding BaseVisitor) ---
+
+    // These helpers collect specific node types (AstNode), but visit() returns Object.
+    // The return type should be List<AstNode> as they filter for specific types.
 
     // Helper for Types Block
     private List<AstNode> visitTypesBlockHelper(SSoTParser.TypesBlockContext ctx) {
@@ -65,9 +70,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         List<AstNode> typeDefs = new ArrayList<>();
         if (ctx.typeDefinition() != null) {
             for (SSoTParser.TypeDefinitionContext typeCtx : ctx.typeDefinition()) {
-                AstNode typeNode = visit(typeCtx); // This will call visitStructDefinition or visitEnumDefinition
-                if (typeNode != null) {
-                    typeDefs.add(typeNode);
+                Object result = visit(typeCtx); // visit() returns Object
+                if (result instanceof AstNode) { // Cast to AstNode before adding
+                    typeDefs.add((AstNode) result);
                 }
             }
         }
@@ -80,9 +85,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          List<AstNode> machineDefs = new ArrayList<>();
          if (ctx.machineDefinition() != null) {
              for (SSoTParser.MachineDefinitionContext machineCtx : ctx.machineDefinition()) {
-                 AstNode machineNode = visit(machineCtx); // Calls visitMachineDefinition
-                 if (machineNode != null) {
-                     machineDefs.add(machineNode);
+                 Object result = visit(machineCtx); // visit() returns Object
+                 if (result instanceof AstNode) { // Cast to AstNode
+                     machineDefs.add((AstNode) result);
                  }
              }
          }
@@ -95,9 +100,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
           List<AstNode> serviceDefs = new ArrayList<>();
           if (ctx.serviceElement() != null) { // Grammar uses serviceElement*
               for (SSoTParser.ServiceElementContext elementCtx : ctx.serviceElement()) {
-                  AstNode serviceNode = visit(elementCtx); // Visit interface or service definition
-                  if (serviceNode != null) {
-                      serviceDefs.add(serviceNode);
+                  Object result = visit(elementCtx); // visit() returns Object
+                  if (result instanceof AstNode) { // Cast to AstNode
+                      serviceDefs.add((AstNode) result);
                   }
               }
           }
@@ -110,9 +115,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
            List<AstNode> actorDefs = new ArrayList<>();
            if (ctx.actorDefinition() != null) {
                 for(SSoTParser.ActorDefinitionContext actorCtx : ctx.actorDefinition()) {
-                    AstNode actorNode = visit(actorCtx); // Calls visitActorDefinition
-                    if (actorNode != null) {
-                        actorDefs.add(actorNode);
+                    Object result = visit(actorCtx); // visit() returns Object
+                    if (result instanceof AstNode) { // Cast to AstNode
+                        actorDefs.add((AstNode) result);
                     }
                 }
            }
@@ -125,9 +130,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             List<AstNode> commDefs = new ArrayList<>();
             if (ctx.communicationDefinition() != null) {
                 for(SSoTParser.CommunicationDefinitionContext commCtx : ctx.communicationDefinition()) {
-                     AstNode commNode = visit(commCtx); // Calls visitProtocolDefinition, etc.
-                     if (commNode != null) {
-                         commDefs.add(commNode);
+                     Object result = visit(commCtx); // visit() returns Object
+                     if (result instanceof AstNode) { // Cast to AstNode
+                         commDefs.add((AstNode) result);
                      }
                 }
             }
@@ -142,6 +147,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     // Helper method to process a list of annotation contexts
     private ProcessedAnnotations processAnnotations(List<AnnotationContext> annotationCtxs) {
+        // Restore original logic
         Optional<Long> id = Optional.empty();
         Map<String, Object> annotationMap = new HashMap<>();
 
@@ -176,51 +182,51 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     // Visitor for a single annotation rule: handles @id, $name(value), $flag;
     // Returns Long for @id, or Map.Entry<String, Object> for $name annotations.
-    @Override
-    public Object visitAnnotation(SSoTParser.AnnotationContext ctx) {
-        if (ctx.AT() != null && ctx.ID() != null && ctx.INT() != null) {
-            // @id(integer) annotation
-            try {
-                long idValue = Long.parseLong(ctx.INT().getText());
-                // We return the Long value directly. processAnnotations will wrap it in Optional.
-                return idValue;
-            } catch (NumberFormatException e) {
-                System.err.println("Warning: Could not parse @id value: " + ctx.INT().getText());
-                return null; // Indicate error
-            }
-        } else if (ctx.DOLLAR() != null && ctx.annotationName() != null) {
-            String name = ctx.annotationName().getText();
-            Object value = null;
+    public Object visitAnnotation(SSoTParser.AnnotationContext ctx) { // Removed @Override
+         // Restore original implementation
+         if (ctx.AT() != null && ctx.ID() != null && ctx.INT() != null) {
+             // @id(integer) annotation
+             try {
+                 long idValue = Long.parseLong(ctx.INT().getText());
+                 // We return the Long value directly. processAnnotations will wrap it in Optional.
+                 return idValue;
+             } catch (NumberFormatException e) {
+                 System.err.println("Warning: Could not parse @id value: " + ctx.INT().getText());
+                 return null; // Indicate error
+             }
+         } else if (ctx.DOLLAR() != null && ctx.annotationName() != null) {
+             String name = ctx.annotationName().getText();
+             Object value = null;
 
-            if (ctx.LPAREN() != null && ctx.RPAREN() != null) {
-                // $name(value) annotation
-                if (ctx.annotationValue() != null) {
-                    value = visitAnnotationValue(ctx.annotationValue());
-                } else {
-                    // $name() - empty value, might represent true or an empty structure depending on convention
-                    value = true; // Defaulting to true for now, could be null or empty map/list
-                     System.out.println("Info: Annotation $" + name + " has empty parentheses.");
-                }
-            } else if (ctx.SEMI() != null) {
-                // $flag; annotation - Treat as boolean true
-                value = true;
-            } else {
-                 System.err.println("Warning: Malformed $ annotation rule: " + ctx.getText());
-                 return null;
-            }
+             if (ctx.LPAREN() != null && ctx.RPAREN() != null) {
+                 // $name(value) annotation
+                 if (ctx.annotationValue() != null) {
+                     value = visitAnnotationValue(ctx.annotationValue());
+                 } else {
+                     // $name() - empty value, might represent true or an empty structure depending on convention
+                     value = true; // Defaulting to true for now, could be null or empty map/list
+                      System.out.println("Info: Annotation $" + name + " has empty parentheses.");
+                 }
+             } else if (ctx.SEMI() != null) {
+                 // $flag; annotation - Treat as boolean true
+                 value = true;
+             } else {
+                  System.err.println("Warning: Malformed $ annotation rule: " + ctx.getText());
+                  return null;
+             }
 
-            // Return as a Map.Entry
-            return Map.entry(name, value);
+             // Return as a Map.Entry
+             return Map.entry(name, value);
 
-        } else {
-            System.err.println("Warning: Unrecognized annotation format: " + ctx.getText());
-            return null; // Indicate error or unrecognized format
-        }
+         } else {
+             System.err.println("Warning: Unrecognized annotation format: " + ctx.getText());
+             return null; // Indicate error or unrecognized format
+         }
     }
 
     // Add visitAnnotationName - Although simple, good practice to have it.
-    @Override
-    public Object visitAnnotationName(SSoTParser.AnnotationNameContext ctx) {
+    public Object visitAnnotationName(SSoTParser.AnnotationNameContext ctx) { // Removed @Override
+        // Restore original implementation
         // This visitor might not be strictly necessary if we just use getText(),
         // but useful if we needed to validate the name against allowed keywords later.
         return ctx.getText(); // Just return the name string
@@ -229,7 +235,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     // --- Implementations for individual definition visitors (Overriding BaseVisitor where appropriate) ---
 
     @Override
-    public AstNode visitTypeDefinition(SSoTParser.TypeDefinitionContext ctx) {
+    public Object visitTypeDefinition(SSoTParser.TypeDefinitionContext ctx) { // Return Object
         // This method IS useful if TypeDefinition has alternatives like struct | enum
         if (ctx.structDefinition() != null) {
             return visitStructDefinition(ctx.structDefinition());
@@ -241,7 +247,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
     @Override
-    public AstNode visitStructDefinition(SSoTParser.StructDefinitionContext ctx) {
+    public Object visitStructDefinition(SSoTParser.StructDefinitionContext ctx) { // Return Object
         // Process annotations first
         ProcessedAnnotations processed = processAnnotations(ctx.annotation()); // Pass the list of annotation contexts
 
@@ -257,9 +263,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         List<FieldNode> fields = new ArrayList<>();
         if (ctx.fieldDefinition() != null) {
             for (SSoTParser.FieldDefinitionContext fieldCtx : ctx.fieldDefinition()) {
-                AstNode fieldNode = visitFieldDefinition(fieldCtx);
-                if (fieldNode instanceof FieldNode) {
-                    fields.add((FieldNode) fieldNode);
+                Object fieldResult = visitFieldDefinition(fieldCtx);
+                if (fieldResult instanceof FieldNode) { // Check if it's a FieldNode
+                    fields.add((FieldNode) fieldResult);
                 }
             }
         }
@@ -268,7 +274,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
     @Override
-    public AstNode visitFieldDefinition(SSoTParser.FieldDefinitionContext ctx) {
+    public Object visitFieldDefinition(SSoTParser.FieldDefinitionContext ctx) { // Return Object
          // Grammar: ID COLON typeExpr annotation* (LBRACE annotation* RBRACE)? SEMI
          String name = ctx.ID().getText();
          String type = ctx.typeExpr().getText();
@@ -285,7 +291,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
      // Assuming visitEnumDefinition is needed
      @Override
-     public AstNode visitEnumDefinition(SSoTParser.EnumDefinitionContext ctx) {
+     public Object visitEnumDefinition(SSoTParser.EnumDefinitionContext ctx) { // Return Object
         System.out.println("Visiting EnumDefinition: " + ctx.ID().getText());
         // TODO: Implement EnumNode creation (needs EnumNode class)
         // Extract name ctx.ID()
@@ -297,7 +303,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     // --- Machine related visitors ---
 
     @Override
-    public AstNode visitMachineDefinition(SSoTParser.MachineDefinitionContext ctx) {
+    public Object visitMachineDefinition(SSoTParser.MachineDefinitionContext ctx) { // Return Object
          String name = ctx.ID().getText();
          System.out.println("Visiting MachineDefinition: " + name);
          // TODO: Implement proper MachineNode creation.
@@ -311,7 +317,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
      // Let's assume we call visitStateDefinition for each state inside 'statesDefinition' block
 
      @Override
-     public AstNode visitStatesDefinition(SSoTParser.StatesDefinitionContext ctx) {
+     public Object visitStatesDefinition(SSoTParser.StatesDefinitionContext ctx) { // Return Object
         System.out.println("Visiting StatesDefinition block...");
         // This visitor might just collect StateNodes and return a list or a wrapper node.
         // For now, just iterate and visit children. The actual collection might happen
@@ -319,9 +325,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         List<AstNode> stateNodes = new ArrayList<>();
          if(ctx.stateDefinition() != null) {
             for(SSoTParser.StateDefinitionContext stateCtx : ctx.stateDefinition()){
-                AstNode stateNode = visitStateDefinition(stateCtx);
-                if (stateNode != null) {
-                    stateNodes.add(stateNode);
+                Object stateResult = visitStateDefinition(stateCtx);
+                if (stateResult instanceof AstNode) { // Check and cast
+                    stateNodes.add((AstNode) stateResult);
                 }
             }
          }
@@ -333,7 +339,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
 
      @Override
-     public AstNode visitStateDefinition(SSoTParser.StateDefinitionContext ctx) {
+     public Object visitStateDefinition(SSoTParser.StateDefinitionContext ctx) { // Return Object
          // Grammar: stateName=ID annotation* LBRACE annotation* stateBodyElement* RBRACE
          String name = ctx.stateName.getText(); // Use label stateName
          System.out.println("Visiting StateDefinition: " + name);
@@ -351,7 +357,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                     SSoTParser.OnEntryExitContext entryExitCtx = bodyElement.onEntryExit();
                     String actionRefText = entryExitCtx.actionReference().getText(); // Get reference text
                     // Need to resolve actionReference later, for now create basic ActionNode
-                    ActionNode action = new ActionNode(Optional.empty(), actionRefText); // Use constructor
+                    // TODO: Process annotations for entry/exit actions if grammar allows
+                    ProcessedAnnotations entryExitAnnotations = processAnnotations(Collections.emptyList()); // Placeholder
+                    ActionNode action = new ActionNode(Optional.empty(), actionRefText, entryExitAnnotations.annotationMap()); // Add annotations map
                     if (entryExitCtx.ON_ENTRY() != null) {
                         entryActions.add(action);
                     } else if (entryExitCtx.ON_EXIT() != null) {
@@ -359,9 +367,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                     }
                 } else if (bodyElement.onTransition() != null) {
                      // Delegate to visitOnTransition
-                     AstNode transitionNode = visitOnTransition(bodyElement.onTransition());
-                     if (transitionNode instanceof TransitionNode) {
-                         transitions.add((TransitionNode) transitionNode);
+                     Object transitionResult = visitOnTransition(bodyElement.onTransition());
+                     if (transitionResult instanceof TransitionNode) { // Check and cast
+                         transitions.add((TransitionNode) transitionResult);
                      }
                 }
                 // TODO: Handle invokeState, afterTransition, nested statesDefinition, historyDefinition, annotation
@@ -374,14 +382,17 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          List<ActionNode> combinedActions = new ArrayList<>(entryActions);
          combinedActions.addAll(exitActions);
          // Transitions are not part of StateNode constructor currently.
+         // TODO: Process annotations for the state itself
+         ProcessedAnnotations stateAnnotations = processAnnotations(ctx.annotation()); // Process state annotations
 
          this.currentStateName = null; // Clear current state name after visiting
-         return new StateNode(Optional.empty(), name, combinedActions);
+         // Add stateAnnotations map to constructor
+         return new StateNode(Optional.empty(), name, combinedActions, stateAnnotations.annotationMap());
      }
 
      // This method corresponds to the 'onTransition' rule in the grammar
      @Override
-     public AstNode visitOnTransition(SSoTParser.OnTransitionContext ctx) {
+     public Object visitOnTransition(SSoTParser.OnTransitionContext ctx) { // Return Object
          // Grammar: ON event=ID annotation* transitionSpec SEMI
          String event = ctx.event.getText(); // Use label 'event'
          System.out.println("Visiting OnTransition: on " + event);
@@ -405,10 +416,14 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                  }
              }
 
+             // Process annotations for the transition itself
+             ProcessedAnnotations transitionAnnotations = processAnnotations(ctx.annotation());
+
              // Constructor: TransitionNode(Optional<Long> id, String fromState, String toState, String event, Optional<String> condition, Optional<String> action)
              // Use the stored currentStateName as fromState
              String fromState = (this.currentStateName != null) ? this.currentStateName : "UNKNOWN_SOURCE";
-             return new TransitionNode(Optional.empty(), fromState, targetState, event, Optional.ofNullable(condition), action);
+             // Add transitionAnnotations map to constructor
+             return new TransitionNode(Optional.empty(), fromState, targetState, event, Optional.ofNullable(condition), action, transitionAnnotations.annotationMap());
 
          } else {
              System.err.println("Warning: onTransition rule missing transitionSpec for event: " + event);
@@ -419,7 +434,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
      // This method handles the 'actionDefinition' rule inside an 'actions' block
      @Override
-     public AstNode visitActionDefinition(SSoTParser.ActionDefinitionContext ctx) {
+     public Object visitActionDefinition(SSoTParser.ActionDefinitionContext ctx) { // Return Object
         String name = "UNKNOWN_ACTION";
          // Assuming ID() returns a List here based on compiler error
          if (ctx.ID() != null && !ctx.ID().isEmpty()) { // Check list not empty
@@ -429,8 +444,11 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          }
         System.out.println("Visiting ActionDefinition: " + name);
         // TODO: Parse parameters and return type if needed for a more detailed ActionNode
+        // TODO: Process annotations for the action definition
+        ProcessedAnnotations actionAnnotations = processAnnotations(ctx.annotation()); // Process action annotations
         // Constructor: ActionNode(Optional<Long> id, String name)
-        return new ActionNode(Optional.empty(), name);
+        // Add actionAnnotations map to constructor
+        return new ActionNode(Optional.empty(), name, actionAnnotations.annotationMap());
      }
 
      // This method might be called by visitActionList (if used) or directly if grammar changes.
@@ -440,7 +458,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     // --- Service related visitors ---
     @Override
-    public AstNode visitServiceElement(SSoTParser.ServiceElementContext ctx) {
+    public Object visitServiceElement(SSoTParser.ServiceElementContext ctx) { // Return Object
         // Handles alternatives within servicesBlock
         if (ctx.interfaceDefinition() != null) {
             return visitInterfaceDefinition(ctx.interfaceDefinition());
@@ -451,7 +469,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
      @Override
-     public AstNode visitServiceDefinition(SSoTParser.ServiceDefinitionContext ctx) {
+     public Object visitServiceDefinition(SSoTParser.ServiceDefinitionContext ctx) { // Return Object
          String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_SERVICE";
          System.out.println("Visiting ServiceDefinition (placeholder): " + name);
          // TODO: Implement based on Service AST Node (needs definition) and grammar
@@ -460,7 +478,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
      }
 
      @Override
-     public AstNode visitInterfaceDefinition(SSoTParser.InterfaceDefinitionContext ctx) {
+     public Object visitInterfaceDefinition(SSoTParser.InterfaceDefinitionContext ctx) { // Return Object
           String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_INTERFACE";
           System.out.println("Visiting InterfaceDefinition (placeholder): " + name);
           // TODO: Implement based on Interface AST Node
@@ -469,7 +487,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
      }
 
       @Override
-      public AstNode visitMethodDefinition(SSoTParser.MethodDefinitionContext ctx) {
+      public Object visitMethodDefinition(SSoTParser.MethodDefinitionContext ctx) { // Return Object
            String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_METHOD";
            System.out.println("Visiting MethodDefinition (placeholder): " + name);
            // TODO: Implement based on Method AST Node
@@ -479,7 +497,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
      // --- Actor related visitors ---
       @Override
-      public AstNode visitActorDefinition(SSoTParser.ActorDefinitionContext ctx) {
+      public Object visitActorDefinition(SSoTParser.ActorDefinitionContext ctx) { // Return Object
            String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_ACTOR";
            System.out.println("Visiting ActorDefinition (placeholder): " + name);
            // TODO: Implement based on Actor AST Node
@@ -489,7 +507,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
      // --- Communication related visitors ---
       @Override
-      public AstNode visitCommunicationDefinition(SSoTParser.CommunicationDefinitionContext ctx) {
+      public Object visitCommunicationDefinition(SSoTParser.CommunicationDefinitionContext ctx) { // Return Object
           // Handles alternatives protocol | channel | event
           if (ctx.protocolDefinition() != null) {
               return visitProtocolDefinition(ctx.protocolDefinition());
@@ -502,7 +520,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
       }
 
       @Override
-      public AstNode visitProtocolDefinition(SSoTParser.ProtocolDefinitionContext ctx) {
+      public Object visitProtocolDefinition(SSoTParser.ProtocolDefinitionContext ctx) { // Return Object
             String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_PROTOCOL";
             System.out.println("Visiting ProtocolDefinition (placeholder): " + name);
             // TODO: Implement based on Protocol AST Node
@@ -510,7 +528,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             return null;
       }
        @Override
-       public AstNode visitChannelDefinition(SSoTParser.ChannelDefinitionContext ctx) {
+       public Object visitChannelDefinition(SSoTParser.ChannelDefinitionContext ctx) { // Return Object
             String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_CHANNEL";
             System.out.println("Visiting ChannelDefinition (placeholder): " + name);
             // TODO: Implement based on Channel AST Node
@@ -518,7 +536,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             return null;
        }
         @Override
-        public AstNode visitEventDefinition(SSoTParser.EventDefinitionContext ctx) {
+        public Object visitEventDefinition(SSoTParser.EventDefinitionContext ctx) { // Return Object
              String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_EVENT";
              System.out.println("Visiting EventDefinition (placeholder): " + name);
              // TODO: Implement based on Event AST Node (similar to Struct?)
@@ -538,7 +556,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
     @Override
-    public Object visitValue(SSoTParser.ValueContext ctx) {
+    public Object visitValue(SSoTParser.ValueContext ctx) { // Removed @Override
+        // Restore original implementation
         if (ctx.primitiveValue() != null) {
             return visitPrimitiveValue(ctx.primitiveValue());
         } else if (ctx.referenceValue() != null) {
@@ -554,7 +573,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
     @Override
-    public Object visitPrimitiveValue(SSoTParser.PrimitiveValueContext ctx) {
+    public Object visitPrimitiveValue(SSoTParser.PrimitiveValueContext ctx) { // Removed @Override
+        // Restore original implementation
         if (ctx.STRING() != null) {
             return stripQuotes(ctx.STRING().getText());
         } else if (ctx.INT() != null) {
@@ -579,7 +599,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     // Returns Map<String, Object>
     @Override
-    public Object visitObjectValue(SSoTParser.ObjectValueContext ctx) {
+    public Object visitObjectValue(SSoTParser.ObjectValueContext ctx) { // Removed @Override
+        // Restore original implementation
         Map<String, Object> objectMap = new HashMap<>();
         if (ctx.attributePairList() != null) {
             // visitAttributePairList should return a Map
@@ -602,7 +623,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     // Returns List<Object>
     @Override
-    public Object visitArrayValue(SSoTParser.ArrayValueContext ctx) {
+    public Object visitArrayValue(SSoTParser.ArrayValueContext ctx) { // Removed @Override
+        // Restore original implementation
         List<Object> list = new ArrayList<>();
         if (ctx.valueList() != null) {
             for (SSoTParser.ValueContext valueCtx : ctx.valueList().value()) {
@@ -617,7 +639,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     // Returns Map<String, Object> representing the list of pairs
     @Override
-    public Object visitAttributePairList(SSoTParser.AttributePairListContext ctx) {
+    public Object visitAttributePairList(SSoTParser.AttributePairListContext ctx) { // Removed @Override
+        // Restore original implementation
         Map<String, Object> map = new HashMap<>();
         for (SSoTParser.AttributePairContext pairCtx : ctx.attributePair()) {
             Object pairResult = visitAttributePair(pairCtx);
@@ -641,7 +664,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     // Returns a single-entry Map<String, Object>
     @Override
-    public Object visitAttributePair(SSoTParser.AttributePairContext ctx) {
+    public Object visitAttributePair(SSoTParser.AttributePairContext ctx) { // Removed @Override
+        // Restore original implementation
         String key = ctx.ID().getText();
         // Grammar: ID COLON (primitiveValue | referenceValue | objectValue | arrayValue)
         Object value = null;
@@ -664,7 +688,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
     @Override
-    public Object visitAnnotationValue(SSoTParser.AnnotationValueContext ctx) {
+    public Object visitAnnotationValue(SSoTParser.AnnotationValueContext ctx) { // Removed @Override
+        // Restore original implementation
         if (ctx.attributePairList() != null) {
             // Returns Map<String, Object>
             return visitAttributePairList(ctx.attributePairList());

@@ -43,12 +43,19 @@ public class Main {
         // Build the AST
         System.out.println("\nBuilding AST...");
         AstBuilderVisitor visitor = new AstBuilderVisitor();
-        AstNode astRootNode = visitor.visit(tree);
+        Object result = visitor.visit(tree);
+        AstNode ast = null;
+        if (result instanceof AstNode) {
+            ast = (AstNode) result;
+        } else {
+            System.err.println("Error: AST building did not return an AstNode.");
+            System.exit(1);
+        }
         System.out.println("AST Building finished.");
 
         // Validate the AST
-        if (astRootNode instanceof SsotRoot) {
-            SsotRoot root = (SsotRoot) astRootNode;
+        if (ast instanceof SsotRoot) {
+            SsotRoot root = (SsotRoot) ast;
             System.out.println("\nValidating AST...");
             AstValidator validator = new AstValidator();
             List<AstValidator.ValidationError> validationErrors = validator.validate(root);
