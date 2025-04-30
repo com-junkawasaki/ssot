@@ -4,13 +4,13 @@ import org.antlr.v4.runtime.*;
 import org.antlr.v4.runtime.tree.ParseTree;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.util.List; // Needed for validation errors
 // Remove unused List import if token printing is kept commented
 // import java.util.List;
 
 public class Main {
     public static void main(String[] args) throws Exception {
-        // Use temp_comm.ssot for this lexer test
-        String inputFile = "temp_comm.ssot";
+        String inputFile = "temp_comm.ssot"; // Consider making this a command-line argument
 
         java.io.File targetFile = new java.io.File(inputFile);
         if (!targetFile.exists()) {
@@ -18,36 +18,65 @@ public class Main {
             System.exit(1);
         }
 
+        System.out.println("Processing file: " + inputFile);
         InputStream is = new FileInputStream(inputFile);
         CharStream input = CharStreams.fromStream(is);
         SSoTLexer lexer = new SSoTLexer(input);
         CommonTokenStream tokens = new CommonTokenStream(lexer);
         SSoTParser parser = new SSoTParser(tokens);
 
-        System.out.println("Parsing input file...");
+        // TODO: Add proper error listeners to lexer and parser
+        // parser.removeErrorListeners();
+        // parser.addErrorListener(new YourCustomErrorListener());
+
+        System.out.println("\nParsing input file...");
         ParseTree tree = parser.ssotFile();
         System.out.println("Parsing finished.");
 
-        // Comment out the direct tree printing
-        // System.out.println("\\n--- Parse Tree ---");
-        // System.out.println(tree.toStringTree(parser));
-        // System.out.println("--- End Parse Tree ---");
-
-        // Create and use the visitor to build the AST
-        System.out.println("\\n--- Building AST ---");
-        AstBuilderVisitor visitor = new AstBuilderVisitor();
-        AstNode astRootNode = visitor.visit(tree); // Visit and get the root AST node
-        System.out.println("--- AST Building Finished ---");
-
-        // Print the generated AST (using default record toString for now)
-        if (astRootNode instanceof SsotRoot) {
-            SsotRoot root = (SsotRoot) astRootNode;
-            System.out.println("\\n--- Generated AST ---");
-            System.out.println(root);
-            System.out.println("--- End AST ---");
-        } else {
-             System.err.println("Error: AST root node is not of expected type SsotRoot.");
+        // Check for syntax errors reported by ANTLR
+        if (parser.getNumberOfSyntaxErrors() > 0) {
+            System.err.println("\nSyntax errors detected. Halting before AST construction.");
+            // Consider printing errors from a custom error listener here
+            System.exit(1);
         }
+
+        // Build the AST
+        System.out.println("\nBuilding AST...");
+        AstBuilderVisitor visitor = new AstBuilderVisitor();
+        AstNode astRootNode = visitor.visit(tree);
+        System.out.println("AST Building finished.");
+
+        // Validate the AST
+        if (astRootNode instanceof SsotRoot root) {
+            System.out.println("\nValidating AST...");
+            AstValidator validator = new AstValidator();
+            List<AstValidator.ValidationError> validationErrors = validator.validate(root);
+            System.out.println("Validation finished.");
+
+            if (validationErrors.isEmpty()) {
+                System.out.println("\nAST validation successful!");
+                // Print the generated AST (optional)
+                // System.out.println("\n--- Generated AST ---");
+                // System.out.println(root);
+                // System.out.println("--- End AST ---");
+
+                // Proceed to next steps (e.g., code generation)
+
+            } else {
+                System.err.println("\n--- AST Validation Failed ---");
+                for (AstValidator.ValidationError error : validationErrors) {
+                    System.err.println("- " + error.message());
+                }
+                System.err.println("---------------------------");
+                System.exit(1); // Exit if validation fails
+            }
+
+        } else {
+             System.err.println("Error: AST root node is not of expected type SsotRoot or is null.");
+             System.exit(1);
+        }
+
+        System.out.println("\nProcessing completed successfully.");
 
         // --- Existing Token Printing Logic (Commented Out) ---
         /*

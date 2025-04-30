@@ -51,7 +51,13 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> { // Return AstN
         List<TypeDefNode> typeDefs = new ArrayList<>();
         if (ctx.typeDefinition() != null) {
             for (TypeDefinitionContext typeDefCtx : ctx.typeDefinition()) {
-                typeDefs.add((TypeDefNode) visit(typeDefCtx));
+                // Skip null results if a definition wasn't parsed correctly
+                AstNode visitedNode = visit(typeDefCtx);
+                if (visitedNode instanceof TypeDefNode) {
+                    typeDefs.add((TypeDefNode) visitedNode);
+                } else if (visitedNode != null) {
+                    System.err.println("Warning: Visiting TypeDefinitionContext did not yield a TypeDefNode.");
+                }
             }
         }
         return new TypeBlockNode(typeDefs);
@@ -66,9 +72,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> { // Return AstN
             return visit(ctx.enumDef());
         }
         // TODO: Add other type kinds if necessary
+        System.err.println("Warning: Unhandled TypeDefinitionContext kind.");
         return null; // Or throw an error
     }
-
 
     @Override
     public AstNode visitStructDef(StructDefContext ctx) {
@@ -76,10 +82,18 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> { // Return AstN
         System.out.println("  Building StructDefNode: " + name);
         Optional<Long> id = extractId(ctx.annotation());
 
-        // Placeholder for field visiting logic
-        List<FieldNode> fields = Collections.emptyList();
-        // TODO: Implement visiting struct fields (ctx.structBody() etc.)
-        // fields = ctx.structField().stream().map(f -> (FieldNode) visit(f)).collect(Collectors.toList());
+        List<FieldNode> fields = new ArrayList<>();
+        // Assuming structBody rule contains structField*
+        if (ctx.structBody() != null && ctx.structBody().structField() != null) {
+            for (StructFieldContext fieldCtx : ctx.structBody().structField()) {
+                AstNode visitedNode = visit(fieldCtx);
+                if (visitedNode instanceof FieldNode) {
+                     fields.add((FieldNode) visitedNode);
+                } else if (visitedNode != null) {
+                     System.err.println("Warning: Visiting StructFieldContext did not yield a FieldNode for struct '" + name + "'.");
+                }
+            }
+        }
 
         return new StructDefNode(name, id, fields);
     }
@@ -90,12 +104,68 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> { // Return AstN
         System.out.println("  Building EnumDefNode: " + name);
         Optional<Long> id = extractId(ctx.annotation());
 
-        // Placeholder for variant visiting logic
-        List<EnumVariantNode> variants = Collections.emptyList();
-        // TODO: Implement visiting enum variants (ctx.enumBody() etc.)
-        // variants = ctx.enumVariant().stream().map(v -> (EnumVariantNode) visit(v)).collect(Collectors.toList());
+        List<EnumVariantNode> variants = new ArrayList<>();
+        // Assuming enumBody rule contains enumVariant*
+        if (ctx.enumBody() != null && ctx.enumBody().enumVariant() != null) {
+            for (EnumVariantContext variantCtx : ctx.enumBody().enumVariant()) {
+                 AstNode visitedNode = visit(variantCtx);
+                 if (visitedNode instanceof EnumVariantNode) {
+                    variants.add((EnumVariantNode) visitedNode);
+                 } else if (visitedNode != null) {
+                    System.err.println("Warning: Visiting EnumVariantContext did not yield an EnumVariantNode for enum '" + name + "'.");
+                 }
+            }
+        }
 
         return new EnumDefNode(name, id, variants);
+    }
+
+    // --- Field and Variant Visitors (Assuming Grammar Rules) ---
+
+    @Override
+    public AstNode visitStructField(StructFieldContext ctx) {
+        // Assuming StructFieldContext has IDENTIFIER, type, and optional annotation
+        String fieldName = ctx.IDENTIFIER().getText();
+        Optional<Long> fieldId = extractId(ctx.annotation());
+
+        // Visit the type rule to get the type name
+        String typeName = ""; // Default or error value
+        if (ctx.type() != null) {
+             AstNode typeNode = visit(ctx.type());
+             if (typeNode instanceof TypeIdentifierNode) { // Assuming a simple wrapper for type string
+                 typeName = ((TypeIdentifierNode) typeNode).getName();
+             } else {
+                  System.err.println("Warning: Could not determine type for field '" + fieldName + "'.");
+             }
+        }
+        System.out.println("    Building FieldNode: " + fieldName + " : " + typeName + (fieldId.isPresent() ? " @id(" + fieldId.get() + ")" : ""));
+        return new FieldNode(fieldName, typeName, fieldId);
+    }
+
+    @Override
+    public AstNode visitEnumVariant(EnumVariantContext ctx) {
+        // Assuming EnumVariantContext has IDENTIFIER and optional annotation
+        String variantName = ctx.IDENTIFIER().getText();
+        Optional<Long> variantId = extractId(ctx.annotation());
+        System.out.println("    Building EnumVariantNode: " + variantName + (variantId.isPresent() ? " @id(" + variantId.get() + ")" : ""));
+        return new EnumVariantNode(variantName, variantId);
+    }
+
+    // --- Type Visitor (Simplified) ---
+
+    // Temporary record to wrap the type string from visitType
+    private record TypeIdentifierNode(String name) implements AstNode {}
+
+    @Override
+    public AstNode visitType(TypeContext ctx) {
+        // Highly simplified: assumes type is just a simple IDENTIFIER for now.
+        // Grammar likely has more complex types (optional<T>, list<T>, qualified names etc.)
+        if (ctx.IDENTIFIER() != null) {
+            return new TypeIdentifierNode(ctx.IDENTIFIER().getText());
+        }
+        // TODO: Handle optional<T>, list<T>, qualified names, etc.
+        System.err.println("Warning: Unhandled type structure in visitType.");
+        return new TypeIdentifierNode("UNKNOWN_TYPE"); // Placeholder
     }
 
     // --- Helper Methods ---
@@ -123,6 +193,6 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> { // Return AstN
         return text; // Return original if not quoted
     }
 
-    // TODO: Add visit methods for struct fields, enum variants, other blocks, etc.
+    // TODO: Add visit methods for other blocks, service definitions, machine definitions, etc.
 
 } 
