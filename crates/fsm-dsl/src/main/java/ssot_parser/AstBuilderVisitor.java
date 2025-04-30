@@ -9,6 +9,8 @@ import org.antlr.v4.runtime.tree.ParseTree; // Import needed for context checks
 import java.util.Map;
 import java.util.HashMap;
 import ssot_parser.SSoTParser.AnnotationContext; // Add import
+import ssot_parser.ast.*; // Import common AST interfaces/classes
+import ssot_parser.ast.nodes.*; // Import specific node classes like MachineNode, AnnotationNode, etc.
 
 /**
  * Visits the ANTLR Parse Tree and builds the Abstract Syntax Tree (AST).
@@ -86,9 +88,14 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
          if (ctx.machineDefinition() != null) {
              for (SSoTParser.MachineDefinitionContext machineCtx : ctx.machineDefinition()) {
                  Object result = visit(machineCtx); // visit() returns Object
-                 if (result instanceof AstNode) { // Cast to AstNode
-                     machineDefs.add((AstNode) result);
+                 // Ensure the result is actually a MachineNode before casting/adding
+                 if (result instanceof MachineNode) {
+                     machineDefs.add((MachineNode) result);
+                 } else if (result != null) {
+                     // Log error if visitMachineDefinition returns something unexpected but not null
+                      System.err.println("Warning: visitMachineDefinition did not return a MachineNode. Got: " + result.getClass().getName());
                  }
+                 // Null result might indicate an error during visit, already logged
              }
          }
          return machineDefs;
@@ -303,40 +310,216 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
     // --- Machine related visitors ---
 
     @Override
-    public Object visitMachineDefinition(SSoTParser.MachineDefinitionContext ctx) { // Return Object
-         String name = ctx.ID().getText();
-         System.out.println("Visiting MachineDefinition: " + name);
-         // TODO: Implement proper MachineNode creation.
-         // Needs to parse ctx.machineBodyElement* to find context, actions, states etc.
-         // Create and return a MachineNode(Optional.empty(), name, context, states, transitions, etc.)
-         System.err.println("Warning: MachineDefinition visitor not fully implemented.");
-        return null; // Placeholder
+    public Object visitMachineDefinition(SSoTParser.MachineDefinitionContext ctx) { // Return Object, should be MachineNode
+        String name = ctx.IDENTIFIER().getText();
+        System.out.println("Visiting MachineDefinition: " + name);
+
+        // Process annotations specific to this machine definition
+        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+        List<AnnotationNode> annotations = new ArrayList<>(); // Placeholder for actual AnnotationNode objects
+        // TODO: Convert processed.annotationMap() and potentially processed.id() into AnnotationNode list
+
+        // Initialize placeholders for machine elements
+        Optional<AstNode> contextNode = Optional.empty(); // Expecting ContextNode later
+        List<AstNode> actions = new ArrayList<>();     // Expecting List<ActionNode> later
+        List<AstNode> guards = new ArrayList<>();      // Expecting List<GuardNode> later
+        List<AstNode> invokes = new ArrayList<>();     // Expecting List<InvokeNode> later
+        List<AstNode> states = new ArrayList<>();      // Expecting List<StateNode> or Map<String, StateNode> later
+        Optional<String> initialState = Optional.empty();
+        List<AstNode> transitions = new ArrayList<>(); // Expecting List<TransitionNode> later
+
+        // Iterate through the machine body elements
+        if (ctx.machineBodyElement() != null) {
+            for (SSoTParser.MachineBodyElementContext elementCtx : ctx.machineBodyElement()) {
+                // Use a helper or direct visits to populate the lists/optionals above
+                 Object elementResult = visit(elementCtx); // Visit the specific element rule
+
+                 System.out.println("Processing MachineBodyElement, result type: " + (elementResult != null ? elementResult.getClass().getName() : "null"));
+
+                 // Handle the result based on its type
+                 if (elementResult instanceof ContextNode) {
+                    if (contextNode.isPresent()) {
+                        // Handle multiple context blocks if necessary (e.g., error or merge)
+                        System.err.println("Warning: Multiple context definitions found in machine '" + name + "'. Using the last one defined.");
+                    }
+                    contextNode = Optional.of((ContextNode) elementResult);
+                 } else if (elementResult instanceof List) {
+                    // Assuming actions, guards, invokes, states might return Lists of nodes
+                    // Check the type of nodes in the list based on the visitor that produced it.
+                    try {
+                        @SuppressWarnings("unchecked")
+                        List<?> nodes = (List<?>) elementResult;
+                        if (!nodes.isEmpty()) {
+                             Object firstNode = nodes.get(0);
+                             // Check node type and assign to the correct list in MachineNode
+                             if (firstNode instanceof ActionNode) {
+                                 // Cast the whole list to List<ActionNode> and add all
+                                 @SuppressWarnings("unchecked")
+                                 List<ActionNode> actionResultList = (List<ActionNode>) nodes;
+                                 actions.addAll(actionResultList);
+                             } else if (firstNode instanceof StateNode) { // Assuming StateNode exists
+                                 // Cast the whole list to List<StateNode> when implemented
+                                  @SuppressWarnings("unchecked")
+                                  List<AstNode> stateResultList = (List<AstNode>) nodes; // Keep as AstNode for now
+                                  states.addAll(stateResultList); // Assuming visitStatesDefinition returns List<StateNode>
+                             }
+                             // TODO: Add checks for GuardNode, InvokeNode when implemented
+                             else {
+                                System.err.println("Warning: Unexpected node type in list from MachineBodyElement visitor: " + firstNode.getClass().getName());
+                             }
+                         }
+                     } catch (ClassCastException e) {
+                         System.err.println("Warning: MachineBodyElement visitor returned a List, but it doesn't contain expected node types: " + e.getMessage());
+                     }
+                 }
+                 // TODO: Add handling for other potential return types from visitMachineBodyElement
+                 // (e.g., a dedicated StatesBlockNode containing states and initial state)
+                 else if (elementResult != null){
+                     System.err.println("Warning: Unhandled result type from MachineBodyElement visitor: " + elementResult.getClass().getName());
+                 }
+
+                 // Handle initial state marker if found within states definition or body element
+                 // Handle transitions if defined within states or directly in the body
+            }
+        }
+
+         // TODO: Extract initial state logic if defined separately or within states block.
+         // The grammar for initial state might be part of stateDefinition or a top-level element.
+
+        // Create and return the MachineNode
+        // Using placeholders for unimplemented parts
+        System.out.println("Creating MachineNode for: " + name);
+        return new MachineNode(
+            annotations,
+            name,
+            contextNode,
+            actions,
+            guards,
+            invokes,
+            states,
+            initialState,
+            transitions
+        );
     }
 
-     // This should visit the rule 'statesDefinition' if it exists, or handle states within machineBodyElement
-     // Let's assume we call visitStateDefinition for each state inside 'statesDefinition' block
-
+    // Visitor for elements within the machine body (context, actions, states, etc.)
+    // This might need to return different types depending on the element,
+    // or a generic container, or the main visitMachineDefinition handles the results.
      @Override
-     public Object visitStatesDefinition(SSoTParser.StatesDefinitionContext ctx) { // Return Object
-        System.out.println("Visiting StatesDefinition block...");
-        // This visitor might just collect StateNodes and return a list or a wrapper node.
-        // For now, just iterate and visit children. The actual collection might happen
-        // within visitMachineDefinition when it encounters a statesDefinition element.
-        List<AstNode> stateNodes = new ArrayList<>();
-         if(ctx.stateDefinition() != null) {
-            for(SSoTParser.StateDefinitionContext stateCtx : ctx.stateDefinition()){
-                Object stateResult = visitStateDefinition(stateCtx);
-                if (stateResult instanceof AstNode) { // Check and cast
-                    stateNodes.add((AstNode) stateResult);
-                }
-            }
+     public Object visitMachineBodyElement(SSoTParser.MachineBodyElementContext ctx) {
+         System.out.println("Visiting MachineBodyElement...");
+         if (ctx.contextDefinition() != null) {
+             return visitContextDefinition(ctx.contextDefinition());
+         } else if (ctx.actionsDefinition() != null) {
+             return visitActionsDefinition(ctx.actionsDefinition());
+         } else if (ctx.guardsDefinition() != null) {
+             return visitGuardsDefinition(ctx.guardsDefinition());
+         } else if (ctx.invokesDefinition() != null) {
+             return visitInvokesDefinition(ctx.invokesDefinition());
+         } else if (ctx.statesDefinition() != null) {
+             // This might return a list of StateNode or a specific StatesBlockNode
+             return visitStatesDefinition(ctx.statesDefinition());
          }
-         // Returning null because the list should be processed by the caller (visitMachineDefinition)
-         // Or return a dedicated StatesBlockNode if needed. Returning null for simplicity now.
-         System.err.println("Warning: visitStatesDefinition returning null, caller needs to handle children.");
+         // TODO: Add other possible machine body elements if defined in the grammar
+         System.err.println("Warning: Unsupported machine body element: " + ctx.getText());
          return null;
      }
 
+
+     // Placeholder visitors for machine elements - These need implementation
+     // They should return appropriate AST Node types (e.g., ContextNode, List<ActionNode>, etc.)
+
+     public Object visitContextDefinition(SSoTParser.ContextDefinitionContext ctx) { // Removed @Override if not in BaseVisitor
+        System.out.println("Visiting ContextDefinition...");
+        // Assuming context block contains field definitions similar to struct
+        List<FieldNode> variables = new ArrayList<>();
+        if (ctx.fieldDefinition() != null) {
+            for (SSoTParser.FieldDefinitionContext fieldCtx : ctx.fieldDefinition()) {
+                Object fieldResult = visitFieldDefinition(fieldCtx);
+                if (fieldResult instanceof FieldNode) {
+                    variables.add((FieldNode) fieldResult);
+                } else if (fieldResult != null) {
+                     System.err.println("Warning: visitFieldDefinition inside context did not return a FieldNode. Got: " + fieldResult.getClass().getName());
+                }
+            }
+        }
+        // TODO: Process annotations specific to the context block itself if the grammar allows
+        return new ContextNode(variables);
+     }
+
+     public Object visitActionsDefinition(SSoTParser.ActionsDefinitionContext ctx) { // Removed @Override if not in BaseVisitor
+        System.out.println("Visiting ActionsDefinition...");
+        List<ActionNode> actionNodes = new ArrayList<>(); // Changed type to List<ActionNode>
+        if (ctx.actionDefinition() != null) {
+            for (SSoTParser.ActionDefinitionContext actionCtx : ctx.actionDefinition()) {
+                Object result = visitActionDefinition(actionCtx); // Should return ActionNode
+                if (result instanceof ActionNode) { // Check if the result is ActionNode
+                    actionNodes.add((ActionNode) result);
+                } else if (result != null) {
+                     System.err.println("Warning: visitActionDefinition did not return an ActionNode. Got: " + result.getClass().getName());
+                }
+            }
+        }
+        // Return the list of ActionNodes
+        // System.err.println("Warning: visitActionsDefinition returning potentially incomplete list."); // Warning might not be needed anymore
+        return actionNodes;
+     }
+
+      public Object visitGuardsDefinition(SSoTParser.GuardsDefinitionContext ctx) { // Removed @Override if not in BaseVisitor
+         System.out.println("Visiting GuardsDefinition (Placeholder)...");
+         // TODO: Implement logic similar to actions, parsing guardDefinition*
+         // Return List<GuardNode>
+         System.err.println("Warning: visitGuardsDefinition not implemented.");
+         return new ArrayList<AstNode>(); // Placeholder
+      }
+
+      public Object visitInvokesDefinition(SSoTParser.InvokesDefinitionContext ctx) { // Removed @Override if not in BaseVisitor
+          System.out.println("Visiting InvokesDefinition (Placeholder)...");
+          // TODO: Implement logic similar to actions, parsing invokeDefinition*
+          // Return List<InvokeNode>
+          System.err.println("Warning: visitInvokesDefinition not implemented.");
+          return new ArrayList<AstNode>(); // Placeholder
+      }
+
+
+     @Override
+     public Object visitStatesDefinition(SSoTParser.StatesDefinitionContext ctx) { // Return Object
+         System.out.println("Visiting StatesDefinition...");
+         // This should process stateDefinition* and potentially find the initial state marker
+         List<AstNode> stateNodes = new ArrayList<>(); // Should be List<StateNode>
+         Optional<String> initialStateName = Optional.empty();
+
+         if (ctx.stateDefinition() != null) {
+             for (SSoTParser.StateDefinitionContext stateCtx : ctx.stateDefinition()) {
+                 Object result = visitStateDefinition(stateCtx); // Should return StateNode
+                 if (result instanceof StateNode) {
+                     StateNode stateNode = (StateNode) result;
+                     stateNodes.add(stateNode);
+                     // Check if this state is marked as initial (assuming StateNode holds this info)
+                     // if (stateNode.isInitial()) { // Example check
+                     //    if (initialStateName.isPresent()) {
+                     //       System.err.println("Warning: Multiple initial states defined. Using: " + stateNode.getName());
+                     //    }
+                     //    initialStateName = Optional.of(stateNode.getName());
+                     // }
+                 }
+             }
+         }
+
+         // TODO: Determine how the initial state is marked in the grammar (e.g., 'initial' keyword)
+         // and extract it here or within visitStateDefinition. Assign to initialStateName.
+
+         // We might return a dedicated StatesBlockNode or just the list of states.
+         // For now, let's return the list. The caller (visitMachineDefinition)
+         // will need to handle extracting the initial state if it's determined here.
+         System.err.println("Warning: visitStatesDefinition needs implementation for initial state detection and might return incomplete StateNodes.");
+         // Returning the list for now. Caller needs to be aware.
+         // A better approach might be to return a dedicated object containing both states and initial state name.
+         return stateNodes; // Or return a custom object: new StatesInfo(stateNodes, initialStateName);
+         // Returning null because the list should be processed by the caller (visitMachineDefinition)
+         // Let's return the list and handle it in the caller for now.
+          // return stateNodes; // Returning the list of StateNode objects
+     }
 
      @Override
      public Object visitStateDefinition(SSoTParser.StateDefinitionContext ctx) { // Return Object
@@ -434,27 +617,24 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
 
      // This method handles the 'actionDefinition' rule inside an 'actions' block
      @Override
-     public Object visitActionDefinition(SSoTParser.ActionDefinitionContext ctx) { // Return Object
+     public Object visitActionDefinition(SSoTParser.ActionDefinitionContext ctx) { // Return Object, should be ActionNode
         String name = "UNKNOWN_ACTION";
-         // Assuming ID() returns a List here based on compiler error
-         if (ctx.ID() != null && !ctx.ID().isEmpty()) { // Check list not empty
-            name = ctx.ID(0).getText(); // Get text from first element
+         // Check if ID exists (grammar might allow actions without explicit names? unlikely)
+         if (ctx.ID() != null) { // Assuming ID() returns a single TerminalNode now
+            name = ctx.ID().getText();
          } else {
             System.err.println("Warning: No ID found for action definition: " + ctx.getText());
          }
         System.out.println("Visiting ActionDefinition: " + name);
-        // TODO: Parse parameters and return type if needed for a more detailed ActionNode
-        // TODO: Process annotations for the action definition
-        ProcessedAnnotations actionAnnotations = processAnnotations(ctx.annotation()); // Process action annotations
-        // Constructor: ActionNode(Optional<Long> id, String name)
-        // Add actionAnnotations map to constructor
-        return new ActionNode(Optional.empty(), name, actionAnnotations.annotationMap());
-     }
 
-     // This method might be called by visitActionList (if used) or directly if grammar changes.
-     // Let's remove @Override as 'visitAction' is likely not in BaseVisitor if the rule is 'actionDefinition'
-     // public AstNode visitAction(SSoTParser.ActionContext ctx) { ... }
-     // Let's assume action references are resolved elsewhere for now.
+        // Process annotations for the action definition
+        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+
+        // TODO: Parse parameters and return type if needed for a more detailed ActionNode based on grammar
+
+        // Constructor: ActionNode(Optional<Long> id, String name, Map<String, Object> annotations)
+        return new ActionNode(processed.id(), name, processed.annotationMap());
+     }
 
     // --- Service related visitors ---
     @Override
