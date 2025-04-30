@@ -9,10 +9,13 @@ import java.util.List;
  */
 public class SsotRoot implements AstNode {
 
-    // Example fields - these should correspond to the top-level blocks in your DSL
-    private final List<AstNode> typeDefinitions; // Replace AstNode with specific type definition node class later
-    private final List<AstNode> serviceDefinitions; // Replace AstNode with specific service definition node class
-    private final List<AstNode> machineDefinitions; // Replace AstNode with specific machine definition node class
+    // Using List<AstNode> initially to handle potentially mixed content
+    // before specific node types are fully defined or if the structure changes.
+    // Consider changing to List<TypeDefNode>, List<ServiceDefNode>, etc., later
+    // if the structure becomes fixed and validation ensures type correctness.
+    private final List<AstNode> typeDefinitions;
+    private final List<AstNode> serviceDefinitions; // Placeholder
+    private final List<AstNode> machineDefinitions; // Placeholder
     // Add other top-level block lists as needed (imports, actors, communication, etc.)
 
     // Constructor (modify as needed based on how AstBuilderVisitor works)
@@ -22,10 +25,10 @@ public class SsotRoot implements AstNode {
             List<AstNode> machineDefinitions
             /* Add other lists */
             ) {
-        // Use defensive copying or immutable lists for robustness
-        this.typeDefinitions = typeDefinitions != null ? List.copyOf(typeDefinitions) : Collections.emptyList();
-        this.serviceDefinitions = serviceDefinitions != null ? List.copyOf(serviceDefinitions) : Collections.emptyList();
-        this.machineDefinitions = machineDefinitions != null ? List.copyOf(machineDefinitions) : Collections.emptyList();
+        // Use unmodifiable lists for robustness
+        this.typeDefinitions = Collections.unmodifiableList(typeDefinitions != null ? typeDefinitions : Collections.emptyList());
+        this.serviceDefinitions = Collections.unmodifiableList(serviceDefinitions != null ? serviceDefinitions : Collections.emptyList());
+        this.machineDefinitions = Collections.unmodifiableList(machineDefinitions != null ? machineDefinitions : Collections.emptyList());
         // Initialize other lists
     }
 
@@ -46,11 +49,13 @@ public class SsotRoot implements AstNode {
 
     @Override
     public String toString() {
-        // Basic toString for debugging
-        return "SsotRoot[types=" + typeDefinitions.size() +
-               ", services=" + serviceDefinitions.size() +
-               ", machines=" + machineDefinitions.size() +
-               /* Add other counts */
-               "]";
+        return "SsotRoot{" +
+               "typeDefinitions=" + typeDefinitions + // May need better toString for AstNode lists
+               ", serviceDefinitions=" + serviceDefinitions +
+               ", machineDefinitions=" + machineDefinitions +
+               '}';
     }
+
+    // Optional: Methods to access specific types of definitions if needed
+    // e.g., public List<TypeDefNode> getParsedTypeDefs() { ... filter and cast ... }
 } 

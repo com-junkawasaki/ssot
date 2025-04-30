@@ -10,7 +10,7 @@ import java.util.List; // Needed for validation errors
 
 public class Main {
     public static void main(String[] args) throws Exception {
-        String inputFile = "temp_comm.ssot"; // Consider making this a command-line argument
+        String inputFile = "temp_comm.ssot"; // Test communication definitions
 
         java.io.File targetFile = new java.io.File(inputFile);
         if (!targetFile.exists()) {
@@ -30,7 +30,7 @@ public class Main {
         // parser.addErrorListener(new YourCustomErrorListener());
 
         System.out.println("\nParsing input file...");
-        ParseTree tree = parser.ssotFile();
+        ParseTree tree = parser.file();
         System.out.println("Parsing finished.");
 
         // Check for syntax errors reported by ANTLR
@@ -47,7 +47,8 @@ public class Main {
         System.out.println("AST Building finished.");
 
         // Validate the AST
-        if (astRootNode instanceof SsotRoot root) {
+        if (astRootNode instanceof SsotRoot) {
+            SsotRoot root = (SsotRoot) astRootNode;
             System.out.println("\nValidating AST...");
             AstValidator validator = new AstValidator();
             List<AstValidator.ValidationError> validationErrors = validator.validate(root);

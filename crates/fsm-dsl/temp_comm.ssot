@@ -14,6 +14,6 @@ communication {
     $description("Published when a user successfully logs in.")
     // $channel(UserNotifications) // <- Line removed for testing
     userId: string @id(0);
-    timestamp: timestamp @id(1);
+    loginTime: timestamp @id(1);
   }
 } 

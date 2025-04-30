@@ -12,8 +12,24 @@ import java.util.Set;
 public class AstValidator {
 
     /** Represents a validation error */
-    public record ValidationError(String message, AstNode node) {
-        // Optionally add line/column info if nodes store it
+    public static final class ValidationError {
+        private final String message;
+        private final AstNode node;
+
+        public ValidationError(String message, AstNode node) {
+            this.message = message;
+            this.node = node;
+        }
+
+        public String message() {
+            return message;
+        }
+
+        public AstNode node() {
+            return node;
+        }
+
+        // Optional: Add equals, hashCode, toString if needed
     }
 
     private final List<ValidationError> errors = new ArrayList<>();
@@ -33,29 +49,28 @@ public class AstValidator {
         }
 
         // Validate different parts of the AST
-        validateBlocks(root.blocks());
+        validateTypeDefinitions(root.getTypeDefinitions());
 
-        // Add more validation calls here (e.g., check imports, references, etc.)
+        // TODO: Add calls to validate other definition types (services, machines) using their getters
+        // validateServiceDefinitions(root.getServiceDefinitions());
+        // validateMachineDefinitions(root.getMachineDefinitions());
 
         System.out.println("AST validation finished.");
         return errors;
     }
 
-    private void validateBlocks(List<BlockNode> blocks) {
-        for (BlockNode block : blocks) {
-            if (block instanceof TypeBlockNode typeBlock) {
-                validateTypeBlock(typeBlock);
-            } else {
-                // TODO: Add validation for other block types (Service, Machine, etc.)
-                System.out.println("Skipping validation for block type: " + block.getBlockType());
-            }
+    private void validateTypeDefinitions(List<AstNode> typeDefsPossiblyMixed) {
+        System.out.println("Validating Type Definitions...");
+        List<TypeDefNode> actualTypeDefs = new ArrayList<>();
+        for (AstNode node : typeDefsPossiblyMixed) {
+             if (node instanceof TypeDefNode) {
+                 actualTypeDefs.add((TypeDefNode) node);
+             } else if (node != null) {
+                 // This might happen if AstBuilderVisitor puts non-TypeDefNodes in the list
+                 errors.add(new ValidationError("Unexpected node type found in type definitions list: " + node.getClass().getSimpleName(), node));
+             }
         }
-        // TODO: Check for duplicate block kinds/names if necessary
-    }
-
-    private void validateTypeBlock(TypeBlockNode typeBlock) {
-        System.out.println("Validating Type Block...");
-        validateUniqueTypeNames(typeBlock.typeDefinitions());
+        validateUniqueTypeNames(actualTypeDefs);
         // TODO: Add validation for unique IDs within the type block
         // TODO: Validate fields and variants within each type definition
     }
