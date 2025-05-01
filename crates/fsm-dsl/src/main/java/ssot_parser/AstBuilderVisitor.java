@@ -11,6 +11,7 @@ import java.util.HashMap;
 import ssot_parser.SSoTParser.AnnotationContext; // Add import
 import ssot_parser.ast.*; // Import common AST interfaces/classes
 import ssot_parser.ast.nodes.*; // Import specific node classes like MachineNode, AnnotationNode, etc.
+import ssot_parser.ast.nodes.InvokeStateNode.InvokeTransition; // Import inner record
 
 /**
  * Visits the ANTLR Parse Tree and builds the Abstract Syntax Tree (AST).
@@ -872,24 +873,77 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         return new GuardNode(processed.id(), name, processed.annotations());
     }
 
+    // --- Helper to parse TransitionSpec or similar structure within invoke options ---
+    private InvokeStateNode.InvokeTransition parseInvokeTransitionSpec(SSoTParser.TransitionSpecContext specCtx) {
+        if (specCtx == null) {
+            return new InvokeStateNode.InvokeTransition(); // Empty transition if spec is missing
+        }
+
+        Optional<String> target = Optional.ofNullable(specCtx.targetState()).map(ParseTree::getText);
+        Optional<String> action = Optional.empty();
+        Optional<String> guard = Optional.empty();
+        List<AnnotationNode> annotations = new ArrayList<>();
+
+        if (specCtx.transitionOptions() != null) {
+            for (SSoTParser.TransitionOptionContext option : specCtx.transitionOptions().transitionOption()) {
+                if (option.ACTION() != null && option.actionReferenceList() != null && !option.actionReferenceList().actionReference().isEmpty()) {
+                    // Get first action name
+                    String firstActionName = option.actionReferenceList().actionReference(0).getText();
+                    if (action.isPresent()) {
+                        System.err.println("Warning: Multiple ACTION clauses found for invoke transition. Using first one: '" + action.get() + "'.");
+                    } else {
+                        action = Optional.of(firstActionName);
+                    }
+                     if (option.actionReferenceList().actionReference().size() > 1) {
+                        System.err.println("Warning: Multiple actions defined in invoke transition ACTION clause. List handling not implemented.");
+                     }
+                } else if (option.GUARD() != null && option.guardReferenceList() != null && !option.guardReferenceList().guardReference().isEmpty()) {
+                    // Get first guard name
+                    String firstGuardName = option.guardReferenceList().guardReference(0).getText();
+                    if (guard.isPresent()) {
+                        System.err.println("Warning: Multiple GUARD clauses found for invoke transition. Using first one: '" + guard.get() + "'.");
+                    } else {
+                        guard = Optional.of(firstGuardName);
+                    }
+                     if (option.guardReferenceList().guardReference().size() > 1) {
+                        System.err.println("Warning: Multiple guards defined in invoke transition GUARD clause. List handling not implemented.");
+                     }
+                } else if (option.annotation() != null) {
+                     Object annotationResult = visitAnnotation(option.annotation());
+                     if (annotationResult instanceof AnnotationNode) {
+                         annotations.add((AnnotationNode) annotationResult);
+                     }
+                }
+            }
+        }
+        return new InvokeStateNode.InvokeTransition(target, action, guard, annotations);
+    }
+
     // Placeholder for visitInvokeState - Needs implementation based on grammar
     public Object visitInvokeState(SSoTParser.InvokeStateContext ctx) {
         System.out.println("Visiting InvokeState...");
 
-        // Process annotations for the invoke definition
-        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+        // Process annotations for the invoke definition itself
+        List<AnnotationContext> allAnnotationCtxs = new ArrayList<>();
+        if (ctx.annotation() != null) {
+            allAnnotationCtxs.addAll(ctx.annotation());
+        }
+        ProcessedAnnotations invokeAnnotations = processAnnotations(allAnnotationCtxs);
 
         // Determine the source ('src') of the invocation
         String src = "UNKNOWN_INVOKE_SRC";
-        Optional<AnnotationNode> srcAnnotation = processed.annotations().stream()
+        // Note: $src annotation processing might conflict if handled within general processAnnotations
+        // Check if $src exists and remove it from the general list if handled specially.
+        Optional<AnnotationNode> srcAnnotation = invokeAnnotations.annotations().stream()
             .filter(a -> a.getName().equals("src"))
             .findFirst();
 
         if (srcAnnotation.isPresent() && srcAnnotation.get().getValue() instanceof String) {
             src = (String) srcAnnotation.get().getValue();
             System.out.println("  Using $src annotation: " + src);
-            // Remove $src from general annotations if it's treated specially
-            processed.annotations().remove(srcAnnotation.get());
+            // Remove $src from general annotations as it's handled specifically
+            // Using removeIf for safer concurrent modification avoidance if list was shared (though it isn't here)
+            invokeAnnotations.annotations().removeIf(a -> a.getName().equals("src"));
         } else if (ctx.ID() != null) {
             src = ctx.ID().getText();
             System.out.println("  Using INVOKE ID: " + src);
@@ -898,38 +952,45 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         }
 
         // Parse invokeOptions (onDone, onError transitions, etc.)
-        Optional<String> onDoneTarget = Optional.empty();
-        Optional<String> onErrorTarget = Optional.empty();
+        // Optional<String> onDoneTarget = Optional.empty(); // Old way
+        // Optional<String> onErrorTarget = Optional.empty(); // Old way
+        Optional<InvokeStateNode.InvokeTransition> onDone = Optional.empty();
+        Optional<InvokeStateNode.InvokeTransition> onError = Optional.empty();
 
         if (ctx.invokeOptions() != null && ctx.invokeOptions().invokeOption() != null) {
              System.out.println("  Parsing invoke options...");
             for (SSoTParser.InvokeOptionContext option : ctx.invokeOptions().invokeOption()) {
-                if (option.ONDONE() != null && option.targetState() != null) {
-                    String target = option.targetState().getText();
-                    if (onDoneTarget.isPresent()) {
-                        System.err.println("Warning: Multiple onDone targets specified for invoke '" + src + "'. Using first one: '" + onDoneTarget.get() + "'. Ignoring: '" + target + "'");
+                if (option.ONDONE() != null) {
+                    InvokeStateNode.InvokeTransition transition = parseInvokeTransitionSpec(option.transitionSpec());
+                    if (onDone.isPresent()) {
+                        System.err.println("Warning: Multiple onDone handlers specified for invoke '" + src + "'. Using first one.");
                     } else {
-                        onDoneTarget = Optional.of(target);
-                        System.out.println("    Found onDone target: " + target);
+                        onDone = Optional.of(transition);
+                        System.out.println("    Parsed onDone transition: " + transition);
                     }
-                    // TODO: Handle actions/guards associated with onDone transition if grammar allows
-                } else if (option.ONERROR() != null && option.targetState() != null) {
-                    String target = option.targetState().getText();
-                    if (onErrorTarget.isPresent()) {
-                        System.err.println("Warning: Multiple onError targets specified for invoke '" + src + "'. Using first one: '" + onErrorTarget.get() + "'. Ignoring: '" + target + "'");
-                    } else {
-                        onErrorTarget = Optional.of(target);
-                        System.out.println("    Found onError target: " + target);
-                    }
-                     // TODO: Handle actions/guards associated with onError transition if grammar allows
+                } else if (option.ONERROR() != null) {
+                    InvokeStateNode.InvokeTransition transition = parseInvokeTransitionSpec(option.transitionSpec());
+                     if (onError.isPresent()) {
+                         System.err.println("Warning: Multiple onError handlers specified for invoke '" + src + "'. Using first one.");
+                     } else {
+                         onError = Optional.of(transition);
+                         System.out.println("    Parsed onError transition: " + transition);
+                     }
+                } else if (option.annotation() != null) {
+                     // Handle annotations within invoke options (e.g., $data)
+                     // These might have already been collected by processAnnotations above.
+                     // If not, process them here and add to invokeAnnotations.annotations()
+                     // For now, assume they are handled by the main processAnnotations call.
+                      System.out.println("Info: Annotation found inside invoke options: " + option.annotation().getText() + " - Might be handled globally.");
                 }
-                 // TODO: Handle other invoke options like data mapping
+                 // TODO: Handle other invoke options like data mapping ($data)
             }
         }
-        // TODO: Parse invokeOptions (onDone, onError transitions, data mapping) -- Basic target parsing added
+        // TODO: Parse invokeOptions (onDone, onError transitions, data mapping) -- Basic transition parsing added
 
         // Constructor: InvokeStateNode(Optional<Long> id, List<AnnotationNode> annotations, String src)
-        return new InvokeStateNode(processed.id(), processed.annotations(), src, onDoneTarget, onErrorTarget);
+        // Updated constructor: InvokeStateNode(Optional<Long> id, List<AnnotationNode> annotations, String src, Optional<InvokeTransition> onDone, Optional<InvokeTransition> onError)
+        return new InvokeStateNode(invokeAnnotations.id(), invokeAnnotations.annotations(), src, onDone, onError);
     }
 
     // Visitor for the 'invokeDefinition' rule (within 'invokes' block - keep separate for now)

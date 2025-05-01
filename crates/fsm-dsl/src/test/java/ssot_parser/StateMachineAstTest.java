@@ -225,6 +225,97 @@ public class StateMachineAstTest {
         assertEquals(Optional.of("Failure"), invoke.getOnErrorTarget(), "onError target should be Failure");
     }
 
-    // --- Test Cases --- TODO: Add more test cases below
+    @Test
+    void testInvokeSimple() throws Exception {
+        String input = """
+        machines {
+            MyMachine {
+                states {
+                    Invoking {
+                        invoke DataFetcher {
+                            onDone { // Simple target
+                                target Success;
+                            }
+                            onError { // Target with action and guard
+                                target Failure;
+                                guard CanRetry;
+                                action LogError;
+                            }
+                        }
+                    }
+                    Success { }
+                    Failure { }
+                }
+            }
+        }
+        """;
+        SsotRoot root = parseAndBuildAst(input);
+        assertEquals(1, root.getMachineDefinitions().size());
+        MachineNode machine = (MachineNode) root.getMachineDefinitions().get(0);
+        StateNode invoking = machine.getStates().stream().filter(s -> s.getName().equals("Invoking")).map(s -> (StateNode)s).findFirst().orElse(null);
+        assertNotNull(invoking);
+        assertEquals(1, invoking.getInvokes().size());
 
+        InvokeStateNode invokeNode = invoking.getInvokes().get(0);
+        assertEquals("DataFetcher", invokeNode.getSrc());
+        assertTrue(invokeNode.getAnnotations().isEmpty());
+        // assertEquals(Optional.empty(), invokeNode.getOnDoneTarget()); // Old assertion
+        // assertEquals(Optional.empty(), invokeNode.getOnErrorTarget()); // Old assertion
+        assertTrue(invokeNode.getOnDoneTransition().isEmpty(), "onDone should be empty");
+        assertTrue(invokeNode.getOnErrorTransition().isEmpty(), "onError should be empty");
+    }
+
+    @Test
+    void testInvokeWithOptions() throws Exception {
+        String input = """
+        machines {
+            MyMachine {
+                states {
+                    Invoking {
+                        invoke DataFetcher {
+                            onDone { // Simple target
+                                target Success;
+                            }
+                            onError { // Target with action and guard
+                                target Failure;
+                                guard CanRetry;
+                                action LogError;
+                            }
+                        }
+                    }
+                    Success { }
+                    Failure { }
+                }
+            }
+        }
+        """;
+        SsotRoot root = parseAndBuildAst(input);
+        assertEquals(1, root.getMachineDefinitions().size());
+        MachineNode machine = (MachineNode) root.getMachineDefinitions().get(0);
+        StateNode invoking = machine.getStates().stream().filter(s -> s.getName().equals("Invoking")).map(s -> (StateNode)s).findFirst().orElse(null);
+        assertNotNull(invoking);
+        assertEquals(1, invoking.getInvokes().size());
+
+        InvokeStateNode invokeNode = invoking.getInvokes().get(0);
+        assertEquals("DataFetcher", invokeNode.getSrc());
+
+        // Check onDone
+        assertTrue(invokeNode.getOnDoneTransition().isPresent(), "onDone should be present");
+        InvokeStateNode.InvokeTransition onDone = invokeNode.getOnDoneTransition().get();
+        assertEquals(Optional.of("Success"), onDone.target());
+        assertTrue(onDone.action().isEmpty());
+        assertTrue(onDone.guard().isEmpty());
+        assertTrue(onDone.annotations().isEmpty());
+
+        // Check onError
+        assertTrue(invokeNode.getOnErrorTransition().isPresent(), "onError should be present");
+        InvokeStateNode.InvokeTransition onError = invokeNode.getOnErrorTransition().get();
+        assertEquals(Optional.of("Failure"), onError.target());
+        assertEquals(Optional.of("LogError"), onError.action());
+        assertEquals(Optional.of("CanRetry"), onError.guard());
+        assertTrue(onError.annotations().isEmpty());
+    }
+
+    // TODO: Add tests for context, actions, guards, initial state markers, etc.
+    // TODO: Add tests for nested states and history states
 } 

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Objects;
 
 /**
  * Represents an 'invoke' declaration within a state definition.
@@ -15,21 +16,41 @@ import java.util.Optional;
  */
 public class InvokeStateNode implements AstNode, NodeWithId {
 
+    /**
+     * Represents the details of a transition triggered by invoke completion (onDone) or error (onError).
+     */
+    public record InvokeTransition(
+        Optional<String> target, // Target state name (optional if staying in same state? Depends on semantic)
+        Optional<String> action, // Action to execute
+        Optional<String> guard, // Guard condition name
+        List<AnnotationNode> annotations // Annotations specific to this transition
+    ) {
+         public InvokeTransition {
+             // Ensure lists are unmodifiable
+             annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
+         }
+         // Default constructor with empty optionals/list
+          public InvokeTransition() {
+             this(Optional.empty(), Optional.empty(), Optional.empty(), Collections.emptyList());
+          }
+    }
+
     private final Optional<Long> id;
     private final List<AnnotationNode> annotations;
     private final String src; // The ID/name of the service/machine/lambda to invoke (extracted from $src or grammar)
-    private final Optional<String> onDoneTarget; // Optional target state for onDone
-    private final Optional<String> onErrorTarget; // Optional target state for onError
-    // TODO: Add fields for onDone, onError transitions, parameters/data mapping, etc. -- Added targets
+    private final Optional<InvokeTransition> onDoneTransition;
+    private final Optional<InvokeTransition> onErrorTransition;
+    // TODO: Add fields for parameters/data mapping, etc.
 
     public InvokeStateNode(Optional<Long> id, List<AnnotationNode> annotations, String src,
-                           Optional<String> onDoneTarget, Optional<String> onErrorTarget /* Add other params */) { // Add onDone/onError params
+                           Optional<InvokeTransition> onDoneTransition,
+                           Optional<InvokeTransition> onErrorTransition
+                           /* Add other params */) {
         this.id = id;
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
-        this.src = src; // Placeholder, might need more complex parsing
-        this.onDoneTarget = onDoneTarget;
-        this.onErrorTarget = onErrorTarget;
-        // Initialize other fields (onDone, onError) when added -- DONE for targets
+        this.src = src;
+        this.onDoneTransition = Objects.requireNonNull(onDoneTransition, "onDoneTransition cannot be null");
+        this.onErrorTransition = Objects.requireNonNull(onErrorTransition, "onErrorTransition cannot be null");
     }
 
     @Override
@@ -46,15 +67,15 @@ public class InvokeStateNode implements AstNode, NodeWithId {
         return src;
     }
 
-    public Optional<String> getOnDoneTarget() { // Add getter
-        return onDoneTarget;
+    public Optional<InvokeTransition> getOnDoneTransition() {
+        return onDoneTransition;
     }
 
-    public Optional<String> getOnErrorTarget() { // Add getter
-        return onErrorTarget;
+    public Optional<InvokeTransition> getOnErrorTransition() {
+        return onErrorTransition;
     }
 
-    // TODO: Add getters for onDone, onError, etc. -- DONE for targets
+    // TODO: Add getters for other fields (data mapping etc.)
 
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
@@ -70,9 +91,8 @@ public class InvokeStateNode implements AstNode, NodeWithId {
                "id=" + id.map(String::valueOf).orElse("none") +
                ", src='" + src + '\'' +
                ", annotations=" + annotations +
-               // Add other fields (onDone, onError) here
-               ", onDoneTarget=" + onDoneTarget.orElse("none") +
-               ", onErrorTarget=" + onErrorTarget.orElse("none") +
+               ", onDone=" + onDoneTransition.map(InvokeTransition::toString).orElse("none") +
+               ", onError=" + onErrorTransition.map(InvokeTransition::toString).orElse("none") +
                '}';
     }
 
