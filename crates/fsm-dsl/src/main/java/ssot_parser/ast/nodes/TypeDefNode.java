@@ -1,4 +1,4 @@
-package ssot_parser;
+package ssot_parser.ast.nodes; // Corrected package
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -6,7 +6,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
-import ssot_parser.ast.nodes.FieldNode;
+import ssot_parser.NodeWithId; // Import from parent
+// import ssot_parser.ast.nodes.FieldNode; // FieldNode now in same package
 import ssot_parser.ast.NodeVisitor;
 
 /** Represents a type definition */

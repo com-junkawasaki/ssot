@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.Map;
 import ssot_parser.ast.AstNode;
+import ssot_parser.ast.nodes.TypeDefNode;
 
 /**
  * Validates the constructed Abstract Syntax Tree (AST) for semantic errors,

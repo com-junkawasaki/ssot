@@ -1,20 +1,22 @@
 package ssot_parser.ast.nodes;
 
-import ssot_parser.ast.AstNode;
-import ssot_parser.ast.NodeVisitor;
-
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import ssot_parser.ast.AstNode;
+import ssot_parser.NodeWithId;
+import ssot_parser.ast.NodeVisitor;
+import ssot_parser.ast.nodes.TransitionNode;
 
 /**
  * Represents a state definition within the 'states { ... }' block of a machine.
  * Corresponds to the 'stateDefinition' rule.
  */
-public class StateNode implements AstNode {
+public class StateNode implements NodeWithId {
     private final Optional<Long> id; // Optional @id annotation
-    private final String name;
+    public final String name;
     private final Map<String, Object> annotations; // Other annotations like $initial?
     private final List<String> entryActions; // List of action names referenced in ON_ENTRY
     private final List<String> exitActions;  // List of action names referenced in ON_EXIT
@@ -28,13 +30,14 @@ public class StateNode implements AstNode {
                      List<TransitionNode> transitions, boolean isInitial) {
         this.id = id;
         this.name = name;
-        this.annotations = annotations != null ? Collections.unmodifiableMap(annotations) : Collections.emptyMap();
+        this.annotations = Collections.unmodifiableMap(annotations != null ? new HashMap<>(annotations) : Collections.emptyMap());
         this.entryActions = entryActions != null ? Collections.unmodifiableList(entryActions) : Collections.emptyList();
         this.exitActions = exitActions != null ? Collections.unmodifiableList(exitActions) : Collections.emptyList();
         this.transitions = transitions != null ? Collections.unmodifiableList(transitions) : Collections.emptyList();
         this.isInitial = isInitial;
     }
 
+    @Override
     public Optional<Long> getId() {
         return id;
     }
@@ -43,6 +46,7 @@ public class StateNode implements AstNode {
         return name;
     }
 
+    @Override
     public Map<String, Object> getAnnotations() {
         return annotations;
     }
@@ -65,9 +69,7 @@ public class StateNode implements AstNode {
 
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        // Assuming a visitor pattern
-        // return visitor.visitStateNode(this);
-        throw new UnsupportedOperationException("Visitor pattern not yet implemented for StateNode");
+        return visitor.visitStateNode(this);
     }
 
     @Override
