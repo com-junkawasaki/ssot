@@ -8,28 +8,33 @@ import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
 import java.util.ArrayList;
 import java.util.Collections;
+import ssot_parser.NodeWithId;
+import ssot_parser.ast.nodes.AnnotationNode;
+import ssot_parser.ast.nodes.MethodNode;
 
 /**
  * Represents a service definition.
  * A service might contain methods directly or implement interfaces.
  * Adjust based on actual grammar.
  */
-public class ServiceNode implements AstNode { // Renamed from ServiceDefinitionNode for consistency
+public class ServiceNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
+    private final List<AnnotationNode> annotations;
     private final String name;
-    private final List<MethodNode> methods; // Direct methods
+    private final List<MethodNode> methods; // Methods defined directly in the service
     private final List<String> implementedInterfaces; // Names of implemented interfaces
-    private final List<AnnotationNode> annotations; // Changed type
 
-    public ServiceNode(Optional<Long> id, String name, List<MethodNode> methods, List<String> implementedInterfaces, List<AnnotationNode> annotations) {
+    public ServiceNode(Optional<Long> id, String name, List<MethodNode> methods,
+                       List<String> implementedInterfaces, List<AnnotationNode> annotations) {
         this.id = id;
         this.name = Objects.requireNonNull(name, "Service name cannot be null");
-        this.methods = Objects.requireNonNull(methods, "Service methods cannot be null");
-        this.implementedInterfaces = Objects.requireNonNull(implementedInterfaces, "Implemented interfaces list cannot be null");
-        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList()); // Use unmodifiableList
+        this.methods = methods != null ? Collections.unmodifiableList(methods) : Collections.emptyList();
+        this.implementedInterfaces = implementedInterfaces != null ? Collections.unmodifiableList(implementedInterfaces) : Collections.emptyList();
+        this.annotations = annotations != null ? Collections.unmodifiableList(new ArrayList<>(annotations)) : Collections.emptyList();
     }
 
+    @Override
     public Optional<Long> getId() {
         return id;
     }
@@ -54,10 +59,10 @@ public class ServiceNode implements AstNode { // Renamed from ServiceDefinitionN
     @Override
     public String toString() {
         return "ServiceNode{" +
-               "id=" + id +
+               "id=" + id.map(String::valueOf).orElse("none") +
                ", name='" + name + '\'' +
+               ", implements=" + implementedInterfaces +
                ", methods=" + methods +
-               ", implementedInterfaces=" + implementedInterfaces +
                ", annotations=" + annotations +
                '}';
     }
@@ -65,7 +70,8 @@ public class ServiceNode implements AstNode { // Renamed from ServiceDefinitionN
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        return visitor.visitServiceNode(this);
+        System.err.println("Warning: NodeVisitor.visitServiceNode not implemented yet.");
+        return null;
     }
 
     // equals/hashCode omitted

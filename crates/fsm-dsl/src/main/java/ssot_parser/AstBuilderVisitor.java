@@ -957,14 +957,43 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
      public Object visitServiceDefinition(SSoTParser.ServiceDefinitionContext ctx) { // Return Object
          String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_SERVICE";
          System.out.println("Visiting ServiceDefinition: " + name);
-         ProcessedAnnotations serviceAnnotations = processAnnotations(ctx.annotation());
+
+         // Process annotations attached to the service definition
+         List<AnnotationContext> allAnnotationCtxs = new ArrayList<>();
+         if (ctx.annotation() != null) {
+             allAnnotationCtxs.addAll(ctx.annotation()); // Collect before and after LBRACE
+         }
+         ProcessedAnnotations serviceAnnotations = processAnnotations(allAnnotationCtxs);
 
          List<MethodNode> methods = new ArrayList<>();
          List<String> implementedInterfaces = new ArrayList<>();
 
-         // TODO: Iterate through service body elements based on grammar
-         // e.g., if ctx.serviceBody().methodDefinition() or ctx.serviceBody().implementsDeclaration()
-         // For now, assuming empty body
+         // Iterate through service body elements based on grammar
+         if (ctx.serviceBodyElement() != null) {
+            for (SSoTParser.ServiceBodyElementContext bodyElement : ctx.serviceBodyElement()) {
+                if (bodyElement.annotation() != null) {
+                    System.out.println("Info: Annotation found inside service body: " + bodyElement.annotation().getText() + " - Currently ignored.");
+                } else if (bodyElement.methodDefinition() != null) {
+                    Object methodResult = visitMethodDefinition(bodyElement.methodDefinition());
+                    if (methodResult instanceof MethodNode) {
+                        methods.add((MethodNode) methodResult);
+                    } else if (methodResult != null) {
+                         System.err.println("Warning: visitMethodDefinition did not return MethodNode for service: " + name + ". Got: " + methodResult.getClass().getName());
+                    }
+                } else if (bodyElement.implementsDeclaration() != null) {
+                    // Parse implemented interfaces
+                    SSoTParser.ImplementsDeclarationContext implCtx = bodyElement.implementsDeclaration();
+                    if (implCtx.typeExpr() != null) {
+                        for (SSoTParser.TypeExprContext typeCtx : implCtx.typeExpr()) {
+                            // Assuming typeExpr directly gives the interface name for now
+                            implementedInterfaces.add(typeCtx.getText());
+                        }
+                    }
+                }
+            }
+         }
+
+         // TODO: Handle annotations inside LBRACE if they have specific meaning
 
          return new ServiceNode(
              serviceAnnotations.id(),
@@ -979,7 +1008,13 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
      public Object visitInterfaceDefinition(SSoTParser.InterfaceDefinitionContext ctx) { // Return Object
           String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_INTERFACE";
           System.out.println("Visiting InterfaceDefinition: " + name);
-          ProcessedAnnotations interfaceAnnotations = processAnnotations(ctx.annotation());
+
+          // Process annotations attached to the interface definition
+          List<AnnotationContext> allAnnotationCtxs = new ArrayList<>();
+          if (ctx.annotation() != null) {
+              allAnnotationCtxs.addAll(ctx.annotation()); // Collect before and after LBRACE
+          }
+          ProcessedAnnotations interfaceAnnotations = processAnnotations(allAnnotationCtxs);
 
           List<MethodNode> methods = new ArrayList<>();
           if (ctx.methodDefinition() != null) { // Assuming methods are direct children
@@ -987,11 +1022,13 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                   Object methodResult = visitMethodDefinition(methodCtx);
                   if (methodResult instanceof MethodNode) {
                       methods.add((MethodNode) methodResult);
-                  } else {
-                       System.err.println("Warning: visitMethodDefinition did not return MethodNode for interface: " + name);
+                  } else if (methodResult != null) {
+                       System.err.println("Warning: visitMethodDefinition did not return MethodNode for interface: " + name + ". Got: " + methodResult.getClass().getName());
                   }
               }
           }
+
+          // TODO: Handle annotations inside LBRACE if they have specific meaning
 
           return new InterfaceNode(
               interfaceAnnotations.id(),
@@ -1005,15 +1042,25 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
       public Object visitMethodDefinition(SSoTParser.MethodDefinitionContext ctx) { // Return Object
            String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_METHOD";
            System.out.println("Visiting MethodDefinition: " + name);
-           ProcessedAnnotations methodAnnotations = processAnnotations(ctx.annotation());
+
+           // Process annotations for the method itself (on ID and potentially in LBRACE RBRACE)
+           List<AnnotationContext> allAnnotationCtxs = new ArrayList<>();
+           if (ctx.annotation() != null) {
+                allAnnotationCtxs.addAll(ctx.annotation()); // Collect annotations before LPAREN and inside LBRACE RBRACE
+           }
+           ProcessedAnnotations methodAnnotations = processAnnotations(allAnnotationCtxs);
 
            List<ParameterNode> parameters = new ArrayList<>();
-           // TODO: Implement parameter list parsing based on grammar (ctx.parameterList()?)
-           // e.g., for (ParameterContext paramCtx : ctx.parameterList().parameter()) { ... visitParameter(paramCtx) ... }
+           if (ctx.parameterList() != null) {
+               parameters = visitParameterList(ctx.parameterList());
+           }
 
            Optional<String> returnType = Optional.empty();
-           // TODO: Implement return type parsing based on grammar (ctx.returnTypeExpr()?)
-           // if (ctx.returnTypeExpr() != null) { returnType = Optional.of(ctx.returnTypeExpr().getText()); }
+           if (ctx.ARROW() != null && ctx.typeExpr() != null) {
+                returnType = Optional.of(ctx.typeExpr().getText()); // Use getText() for now
+           }
+
+           // TODO: Handle annotations inside LBRACE RBRACE if they have specific meaning beyond general method annotations
 
            return new MethodNode(
                methodAnnotations.id(),
@@ -1247,6 +1294,46 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         }
         System.err.println("Warning: No value or attribute list found in annotationValue: " + ctx.getText());
         return null;
+    }
+
+    // Placeholder for visitParameter - Needs implementation based on grammar
+    public Object visitParameter(SSoTParser.ParameterContext ctx) {
+        System.out.println("Visiting Parameter...");
+        String name = "UNKNOWN_PARAM";
+        String type = "UNKNOWN_TYPE";
+        List<AnnotationNode> annotations = Collections.emptyList();
+        Optional<Long> id = Optional.empty();
+
+        if (ctx.ID() != null) {
+            name = ctx.ID().getText();
+        }
+        if (ctx.typeExpr() != null) {
+            type = ctx.typeExpr().getText(); // Use getText() for now, needs TypeExprNode later
+        }
+        if (ctx.annotation() != null) {
+            ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+            id = processed.id();
+            annotations = processed.annotations();
+        }
+
+        return new ParameterNode(id, annotations, name, type);
+    }
+
+    // Placeholder for visitParameterList - Needs implementation based on grammar
+    public List<ParameterNode> visitParameterList(SSoTParser.ParameterListContext ctx) {
+        System.out.println("Visiting ParameterList...");
+        List<ParameterNode> parameters = new ArrayList<>();
+        if (ctx != null && ctx.parameter() != null) {
+            for (SSoTParser.ParameterContext paramCtx : ctx.parameter()) {
+                Object result = visitParameter(paramCtx);
+                if (result instanceof ParameterNode) {
+                    parameters.add((ParameterNode) result);
+                } else if (result != null) {
+                    System.err.println("Warning: visitParameter did not return ParameterNode. Got: " + result.getClass().getName());
+                }
+            }
+        }
+        return parameters;
     }
 
     // ... other visit methods as needed ...
