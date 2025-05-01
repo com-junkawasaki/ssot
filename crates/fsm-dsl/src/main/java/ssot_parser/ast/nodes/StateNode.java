@@ -11,6 +11,7 @@ import ssot_parser.NodeWithId;
 import ssot_parser.ast.NodeVisitor;
 import ssot_parser.ast.nodes.TransitionNode;
 import ssot_parser.ast.nodes.AnnotationNode;
+import ssot_parser.ast.nodes.InvokeStateNode;
 
 /**
  * Represents a state definition within the 'states { ... }' block of a machine.
@@ -23,18 +24,24 @@ public class StateNode implements NodeWithId {
     private final List<String> entryActions; // List of action names referenced in ON_ENTRY
     private final List<String> exitActions;  // List of action names referenced in ON_EXIT
     private final List<TransitionNode> transitions; // Transitions defined within this state using ON
+    private final List<InvokeStateNode> invokes; // Add list for invokes
+    private final List<StateNode> nestedStates; // Add list for nested states
     // TODO: Add fields for nested states (List<StateNode>), invokes (List<InvokeNode>), history, etc. based on full grammar
 
     // Constructor - without isInitial flag
     public StateNode(Optional<Long> id, String name, List<AnnotationNode> annotations,
                      List<String> entryActions, List<String> exitActions,
-                     List<TransitionNode> transitions) {
+                     List<TransitionNode> transitions,
+                     List<InvokeStateNode> invokes,
+                     List<StateNode> nestedStates /* Add other fields like history */) { // Add nestedStates parameter
         this.id = id;
         this.name = name;
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
         this.entryActions = entryActions != null ? Collections.unmodifiableList(entryActions) : Collections.emptyList();
         this.exitActions = exitActions != null ? Collections.unmodifiableList(exitActions) : Collections.emptyList();
         this.transitions = transitions != null ? Collections.unmodifiableList(transitions) : Collections.emptyList();
+        this.invokes = invokes != null ? Collections.unmodifiableList(invokes) : Collections.emptyList(); // Assign invokes
+        this.nestedStates = nestedStates != null ? Collections.unmodifiableList(nestedStates) : Collections.emptyList(); // Assign nestedStates
     }
 
     @Override
@@ -63,6 +70,14 @@ public class StateNode implements NodeWithId {
         return transitions;
     }
 
+    public List<InvokeStateNode> getInvokes() { // Add getter for invokes
+        return invokes;
+    }
+
+    public List<StateNode> getNestedStates() { // Add getter for nestedStates
+        return nestedStates;
+    }
+
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
         return visitor.visitStateNode(this);
@@ -77,7 +92,9 @@ public class StateNode implements NodeWithId {
                ", entryActions=" + entryActions +
                ", exitActions=" + exitActions +
                ", transitions=" + transitions +
+               ", invokes=" + invokes +
                // Add other fields (nested states, invokes) here
+               ", nestedStates=" + nestedStates +
                "}";
     }
 

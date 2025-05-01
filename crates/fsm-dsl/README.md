@@ -16,9 +16,9 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
 *   **AST 構築 (部分的):**
     *   主要な AST ノードクラス (`SsotRoot`, `TypeDefNode`, `FieldNode`, `StateNode`, `TransitionNode`, `ActionNode` など) が `src/main/java/ssot_parser/` に定義されています。
     *   ANTLR の Visitor パターンを用いた `AstBuilderVisitor.java` が実装されており、Parse Tree から AST を構築します。
-    *   現在、`types` ブロック内の `struct` と `field` 定義については、基本的な AST ノードが生成されます。
-    *   `communication` ブロック内の要素 (`protocol`, `channel`, `event`) も認識されますが、対応する AST ノードの構築はプレースホルダー段階です。
-    *   **課題:** 状態マシン (`machines` ブロック)、サービス (`services` ブロック)、アクター (`actors` ブロック)、デプロイメント (`deployment_config` ブロック)、依存関係 (`dependencies` ブロック)、およびアノテーション (`@id`, `$name(...)`) の AST 構築は未実装または非常に不完全です。
+    *   `types` ブロック (`struct`, `field`)、基本的なアノテーション (`@id`, `$name`) の AST ノードが生成されます。
+    *   `communication` ブロックと `actors` ブロックも訪問され、基本的なコンテナノードは生成されますが、詳細な内部要素の AST 構築は不完全です。
+    *   **課題:** 状態マシン (`machines` ブロック: state, transition, context, action, guard, invoke など)、サービス (`services` ブロック: service, interface, method など) の詳細な AST 構築は未実装または非常に不完全です。`deployment_config`, `dependencies` ブロックも未対応です。
 *   **AST 検証 (部分的):**
     *   基本的な `AstValidator.java` が存在し、型名の一意性チェックなど、ごく一部の検証が行われます。
     *   **課題:** 詳細な意味論的検証 (参照解決、型チェック、アノテーション内容の検証など) は未実装です。
@@ -33,8 +33,8 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
 5.  **AST ノード設計の見直し:** 特に `StateNode`, `TransitionNode` など、文法の詳細を表現できるように設計を改善する。
 6.  **AST 検証の強化:** 参照解決、型チェック、アノテーションに基づいたルールなど、より詳細な検証ロジックを `AstValidator` に追加する。
 7.  **Imports の処理:** `import` 文を解釈し、別ファイルの定義を解決できるようにする。
-8.  **エラーハンドリングの強化:** パースエラーや AST 構築・検証時のエラーをより分かりやすく報告する。
-9.  **テストの拡充:** 各 Visitor メソッドや Validator のルールに対するユニットテストを追加する。
+8.  **エラーハンドリングの強化:** パースエラーや AST 構築・検証時のエラー報告を改善する。
+9.  **テストの導入と拡充:** プロジェクト全体（パーサー、AST ビルダー、バリデーター）に対するユニットテスト、結合テストを導入し、カバレッジを向上させる。
 10. **コード生成器の実装:** AST からターゲット言語 (Rust, TypeScript, Mermaid など) を出力する機能を追加する。
 
 ## ビルドと実行

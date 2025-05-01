@@ -12,8 +12,12 @@ import java.util.Optional;
 // Import AnnotationNode
 import ssot_parser.ast.nodes.AnnotationNode;
 
+// Import NodeWithId
+import ssot_parser.NodeWithId;
+
 // Basic placeholder for Machine Definition Node
-public class MachineNode implements AstNode {
+public class MachineNode implements AstNode, NodeWithId {
+    private final Optional<Long> id; // Add id field
     // private final List<AnnotationNode> annotations; // Assuming AnnotationNode exists or will be created
     private final List<AnnotationNode> annotations; // Changed back to List<AnnotationNode>
     private final String name;
@@ -27,11 +31,13 @@ public class MachineNode implements AstNode {
     private final List<TransitionNode> transitions; // Changed from List<AstNode>
 
     // Constructor - updated states, initialState, and transitions types
-    public MachineNode(List<AnnotationNode> annotations, // Changed type back
+    public MachineNode(Optional<Long> id, // Add id parameter
+                       List<AnnotationNode> annotations, // Changed type back
                        String name, Optional<ContextNode> context,
                        List<ActionNode> actions, List<GuardNode> guards, List<InvokeNode> invokes,
                        List<StateNode> states, Optional<String> initialState,
                        List<TransitionNode> transitions) {
+        this.id = id; // Assign id
         this.annotations = annotations != null ? Collections.unmodifiableList(new ArrayList<>(annotations)) : Collections.emptyList(); // Assign list
         this.name = name;
         this.context = context; // Assign the Optional<ContextNode>
@@ -44,6 +50,12 @@ public class MachineNode implements AstNode {
         // TODO: Add validation or further initialization if needed
         // - Validate initialState refers to an actual state name in the list?
         // - Validate transition sources/targets refer to actual state names?
+    }
+
+    // Implement getId from NodeWithId
+    @Override
+    public Optional<Long> getId() {
+        return id;
     }
 
     // public List<AnnotationNode> getAnnotations() {
@@ -95,7 +107,8 @@ public class MachineNode implements AstNode {
     @Override
     public String toString() {
         return "MachineNode{" +
-               "name='" + name + "\'" +
+               "id=" + id.map(String::valueOf).orElse("none") + // Add id to toString
+               ", name='" + name + "\'" +
                ", annotations=" + annotations +
                ", context=" + context +
                ", actions=" + actions +
