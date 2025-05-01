@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
+import ssot_parser.ast.nodes.TransitionNode;
 
 /** Represents a state definition */
 public class StateNode implements NodeWithId {

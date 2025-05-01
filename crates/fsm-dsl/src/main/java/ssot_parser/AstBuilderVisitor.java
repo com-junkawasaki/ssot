@@ -660,9 +660,13 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                  // Example (simplified):
                  for (SSoTParser.TransitionOptionContext option : specCtx.transitionOptions().transitionOption()) {
                      if (option.ACTION() != null && option.actionReferenceList() != null) {
-                         action = Optional.of(option.actionReferenceList().getText()); // Get action text
+                         // Revert guess - just get text from the list context for now
+                         action = Optional.of(option.actionReferenceList().getText());
+                         System.err.println("Warning: Using getText() on actionReferenceList - requires grammar check.");
                      } else if (option.GUARD() != null && option.guardReferenceList() != null) {
-                         condition = option.guardReferenceList().getText(); // Get condition text
+                         // Revert guess - just get text from the list context for now
+                         condition = Optional.of(option.guardReferenceList().getText());
+                         System.err.println("Warning: Using getText() on guardReferenceList - requires grammar check.");
                      }
                  }
              }

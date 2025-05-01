@@ -1,39 +1,41 @@
 package ssot_parser.ast.nodes;
 
-import ssot_parser.ast.AstNode;
-import ssot_parser.ast.NodeVisitor;
-
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import ssot_parser.ast.AstNode;
+import ssot_parser.NodeWithId;
+import ssot_parser.ast.NodeVisitor;
 
 /**
  * Represents a state transition triggered by an event.
  * Corresponds to the 'onTransition' rule within a state definition.
  */
-public class TransitionNode implements AstNode {
+public class TransitionNode implements NodeWithId {
     private final Optional<Long> id;
-    private final String sourceState; // Name of the state where this transition originates
-    private final String targetState; // Name of the state this transition leads to
-    private final String event;       // Name of the event triggering the transition
-    // Condition that must be met for the transition (references a guard name)
-    private final Optional<String> condition; // Guard reference
-    // Actions to execute upon transitioning (references action names)
-    private final List<String> actions; // List of action references
+    public final String sourceState; // Renamed from fromState
+    public final String targetState; // Renamed from toState
+    public final String event;
+    public final Optional<String> condition; // Optional guard condition reference (name)
+    public final Optional<String> action;    // Optional action reference (name)
     private final Map<String, Object> annotations;
 
     // Constructor - includes source state, guard condition (optional), and actions (list, optional)
-    public TransitionNode(Optional<Long> id, String sourceState, String targetState, String event, Optional<String> condition, List<String> actions, Map<String, Object> annotations) {
+    public TransitionNode(Optional<Long> id, String sourceState, String targetState, String event,
+                          Optional<String> condition, Optional<String> action,
+                          Map<String, Object> annotations) {
         this.id = id;
         this.sourceState = sourceState;
         this.targetState = targetState;
         this.event = event;
-        this.condition = condition; // Optional guard reference
-        this.actions = actions != null ? Collections.unmodifiableList(actions) : Collections.emptyList();
-        this.annotations = annotations != null ? Collections.unmodifiableMap(annotations) : Collections.emptyMap();
+        this.condition = condition;
+        this.action = action;
+        this.annotations = Collections.unmodifiableMap(annotations != null ? new HashMap<>(annotations) : Collections.emptyMap());
     }
 
+    @Override
     public Optional<Long> getId() {
         return id;
     }
@@ -54,19 +56,18 @@ public class TransitionNode implements AstNode {
         return condition;
     }
 
-    public List<String> getActions() {
-        return actions;
+    public Optional<String> getAction() {
+        return action;
     }
 
+    @Override
     public Map<String, Object> getAnnotations() {
         return annotations;
     }
 
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        // Assuming a visitor pattern
-        // return visitor.visitTransitionNode(this);
-        throw new UnsupportedOperationException("Visitor pattern not yet implemented for TransitionNode");
+        return visitor.visitTransitionNode(this);
     }
 
     @Override
@@ -77,7 +78,7 @@ public class TransitionNode implements AstNode {
                ", targetState='" + targetState + "\'" +
                ", event='" + event + "\'" +
                ", condition=" + condition +
-               ", actions=" + actions +
+               ", action=" + action +
                ", annotations=" + annotations +
                "}";
     }
