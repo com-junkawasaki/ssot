@@ -288,7 +288,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         if (ctx.fieldDefinition() != null) {
             for (SSoTParser.FieldDefinitionContext fieldCtx : ctx.fieldDefinition()) {
                 Object fieldResult = visitFieldDefinition(fieldCtx);
-                if (fieldResult instanceof FieldNode) { // Check if it's a FieldNode
+                if (fieldResult instanceof FieldNode) {
                     fields.add((FieldNode) fieldResult);
                 }
             }
@@ -301,16 +301,24 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
     public Object visitFieldDefinition(SSoTParser.FieldDefinitionContext ctx) { // Return Object
          // Grammar: ID COLON typeExpr annotation* (LBRACE annotation* RBRACE)? SEMI
          String name = ctx.ID().getText();
-         String type = ctx.typeExpr().getText();
-         System.out.println("Visiting FieldDefinition: " + name + " (" + type + ")");
+         Object typeResult = visitTypeExpr(ctx.typeExpr()); // Use visitTypeExpr
+         TypeExprNode typeNode = null;
+         if (typeResult instanceof TypeExprNode) {
+             typeNode = (TypeExprNode) typeResult;
+         } else {
+              System.err.println("Warning: visitTypeExpr did not return TypeExprNode for field '" + name + "'. Using placeholder.");
+              typeNode = new PrimitiveTypeNode("UNKNOWN_TYPE"); // Example placeholder
+         }
+
+         System.out.println("Visiting FieldDefinition: " + name + " (" + typeNode.toString() + ")");
 
          // Process annotations associated with the field
          ProcessedAnnotations processed = processAnnotations(ctx.annotation());
 
-        // TODO: Handle annotations inside braces: (LBRACE annotation* RBRACE)?
+         // TODO: Handle annotations inside braces: (LBRACE annotation* RBRACE)?
 
          // Pass processed ID and annotations map to constructor
-         return new FieldNode(processed.id(), name, type, processed.annotations());
+         return new FieldNode(processed.id(), name, typeNode, processed.annotations()); // Pass typeNode
      }
 
      // Assuming visitEnumDefinition is needed
@@ -1055,9 +1063,18 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                parameters = visitParameterList(ctx.parameterList());
            }
 
-           Optional<String> returnType = Optional.empty();
+           // Optional<String> returnType = Optional.empty(); // Old way
+           Optional<TypeExprNode> returnTypeNode = Optional.empty(); // Change type
            if (ctx.ARROW() != null && ctx.typeExpr() != null) {
-                returnType = Optional.of(ctx.typeExpr().getText()); // Use getText() for now
+                // returnType = Optional.of(ctx.typeExpr().getText()); // Use getText() for now - Old way
+                Object typeResult = visitTypeExpr(ctx.typeExpr()); // Use visitTypeExpr
+                 if (typeResult instanceof TypeExprNode) {
+                     returnTypeNode = Optional.of((TypeExprNode) typeResult);
+                 } else {
+                      System.err.println("Warning: visitTypeExpr did not return TypeExprNode for return type of method '" + name + "'. Assuming void.");
+                 }
+           } else if (ctx.ARROW() != null && ctx.typeExpr() == null) {
+                System.err.println("Warning: Method '" + name + "' has arrow -> but no return type specified. Assuming void.");
            }
 
            // TODO: Handle annotations inside LBRACE RBRACE if they have specific meaning beyond general method annotations
@@ -1066,7 +1083,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                methodAnnotations.id(),
                name,
                parameters,
-               returnType,
+               returnTypeNode, // Pass Optional<TypeExprNode>
                methodAnnotations.annotations()
            );
       }
@@ -1300,7 +1317,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
     public Object visitParameter(SSoTParser.ParameterContext ctx) {
         System.out.println("Visiting Parameter...");
         String name = "UNKNOWN_PARAM";
-        String type = "UNKNOWN_TYPE";
+        // String type = "UNKNOWN_TYPE"; // Old way
+        TypeExprNode typeNode = null;
         List<AnnotationNode> annotations = Collections.emptyList();
         Optional<Long> id = Optional.empty();
 
@@ -1308,15 +1326,26 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
             name = ctx.ID().getText();
         }
         if (ctx.typeExpr() != null) {
-            type = ctx.typeExpr().getText(); // Use getText() for now, needs TypeExprNode later
+            // type = ctx.typeExpr().getText(); // Use getText() for now, needs TypeExprNode later - Old way
+            Object typeResult = visitTypeExpr(ctx.typeExpr()); // Use visitTypeExpr
+             if (typeResult instanceof TypeExprNode) {
+                 typeNode = (TypeExprNode) typeResult;
+             } else {
+                  System.err.println("Warning: visitTypeExpr did not return TypeExprNode for parameter '" + name + "'. Using placeholder.");
+                  typeNode = new PrimitiveTypeNode("UNKNOWN_TYPE");
+             }
+        } else {
+             System.err.println("Warning: Parameter '" + name + "' missing type expression.");
+             typeNode = new PrimitiveTypeNode("UNKNOWN_TYPE"); // Placeholder if typeExpr is missing
         }
+
         if (ctx.annotation() != null) {
             ProcessedAnnotations processed = processAnnotations(ctx.annotation());
             id = processed.id();
             annotations = processed.annotations();
         }
 
-        return new ParameterNode(id, annotations, name, type);
+        return new ParameterNode(id, annotations, name, typeNode); // Pass typeNode
     }
 
     // Placeholder for visitParameterList - Needs implementation based on grammar
@@ -1334,6 +1363,45 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
             }
         }
         return parameters;
+    }
+
+    // --- Type Expression Visitor ---
+    // Returns TypeExprNode based on the parsed type expression
+    @Override
+    public Object visitTypeExpr(SSoTParser.TypeExprContext ctx) {
+        if (ctx.primitiveTypeName() != null) {
+            return new PrimitiveTypeNode(ctx.primitiveTypeName().getText());
+        } else if (ctx.referenceValue() != null) {
+            return new ReferenceTypeNode(ctx.referenceValue().getText());
+        } else if (ctx.OPTIONAL() != null && ctx.typeExpr(0) != null) {
+            Object innerType = visitTypeExpr(ctx.typeExpr(0));
+            if (innerType instanceof TypeExprNode) {
+                return new OptionalTypeNode((TypeExprNode) innerType);
+            } else {
+                System.err.println("Warning: Could not parse inner type for optional: " + ctx.typeExpr(0).getText());
+                return null; // Or a placeholder error node
+            }
+        } else if (ctx.LIST() != null && ctx.typeExpr(0) != null) {
+            Object elementType = visitTypeExpr(ctx.typeExpr(0));
+            if (elementType instanceof TypeExprNode) {
+                return new ListTypeNode((TypeExprNode) elementType);
+            } else {
+                System.err.println("Warning: Could not parse element type for list: " + ctx.typeExpr(0).getText());
+                return null;
+            }
+        } else if (ctx.MAP() != null && ctx.typeExpr(0) != null && ctx.typeExpr(1) != null) {
+            Object keyType = visitTypeExpr(ctx.typeExpr(0));
+            Object valueType = visitTypeExpr(ctx.typeExpr(1));
+            if (keyType instanceof TypeExprNode && valueType instanceof TypeExprNode) {
+                return new MapTypeNode((TypeExprNode) keyType, (TypeExprNode) valueType);
+            } else {
+                System.err.println("Warning: Could not parse key/value types for map: " + ctx.getText());
+                return null;
+            }
+        } else {
+             System.err.println("Warning: Unrecognized type expression: " + ctx.getText());
+             return null; // Or a specific UnknownTypeNode
+        }
     }
 
     // ... other visit methods as needed ...

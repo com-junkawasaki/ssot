@@ -9,6 +9,8 @@ import ssot_parser.NodeWithId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import ssot_parser.ast.nodes.AnnotationNode;
+import ssot_parser.ast.type.TypeExprNode;
 
 /**
  * Represents a parameter definition within a method signature.
@@ -19,9 +21,9 @@ public class ParameterNode implements AstNode, NodeWithId {
     private final Optional<Long> id;
     private final List<AnnotationNode> annotations;
     private final String name;
-    private final String type; // TODO: Consider using a TypeExprNode for complex types
+    private final TypeExprNode type;
 
-    public ParameterNode(Optional<Long> id, List<AnnotationNode> annotations, String name, String type) {
+    public ParameterNode(Optional<Long> id, List<AnnotationNode> annotations, String name, TypeExprNode type) {
         this.id = id;
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
         this.name = name;
@@ -42,7 +44,7 @@ public class ParameterNode implements AstNode, NodeWithId {
         return name;
     }
 
-    public String getType() {
+    public TypeExprNode getType() {
         return type;
     }
 
@@ -51,7 +53,7 @@ public class ParameterNode implements AstNode, NodeWithId {
         return "ParameterNode{" +
                "id=" + id.map(String::valueOf).orElse("none") +
                ", name='" + name + '\'' +
-               ", type='" + type + '\'' +
+               ", type=" + type.toString() +
                ", annotations=" + annotations +
                '}';
     }

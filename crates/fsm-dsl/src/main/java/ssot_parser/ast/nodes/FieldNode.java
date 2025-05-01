@@ -10,15 +10,16 @@ import ssot_parser.ast.AstNode;
 import ssot_parser.NodeWithId;
 import ssot_parser.ast.NodeVisitor;
 import ssot_parser.ast.nodes.AnnotationNode;
+import ssot_parser.ast.type.TypeExprNode;
 
 /** Represents a field within a type definition */
 public class FieldNode implements NodeWithId {
     private final Optional<Long> id;
     public final String name;
-    public final String type;
+    public final TypeExprNode type;
     private final List<AnnotationNode> annotations;
 
-    public FieldNode(Optional<Long> id, String name, String type, List<AnnotationNode> annotations) {
+    public FieldNode(Optional<Long> id, String name, TypeExprNode type, List<AnnotationNode> annotations) {
         this.id = id;
         this.name = name;
         this.type = type;
@@ -32,7 +33,7 @@ public class FieldNode implements NodeWithId {
 
     // Add getters for name and type if needed
     public String getName() { return name; }
-    public String getType() { return type; }
+    public TypeExprNode getType() { return type; }
 
     @Override
     public List<AnnotationNode> getAnnotations() {
@@ -42,6 +43,18 @@ public class FieldNode implements NodeWithId {
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        return visitor.visitFieldNode(this);
+        System.err.println("Warning: NodeVisitor.visitFieldNode not implemented or called.");
+        return null;
+    }
+
+    // Optional: Add toString, equals, hashCode if needed
+    @Override
+    public String toString() {
+        return "FieldNode{" +
+               "id=" + id.map(String::valueOf).orElse("none") +
+               ", name='" + name + '\'' +
+               ", type=" + type.toString() +
+               ", annotations=" + annotations +
+               '}';
     }
 } 

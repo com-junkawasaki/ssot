@@ -11,6 +11,7 @@ import java.util.Collections;
 import ssot_parser.ast.nodes.AnnotationNode;
 import ssot_parser.NodeWithId;
 import ssot_parser.ast.nodes.ParameterNode;
+import ssot_parser.ast.type.TypeExprNode;
 
 /**
  * Represents a method definition within an interface or service.
@@ -21,13 +22,13 @@ public class MethodNode implements AstNode, NodeWithId {
     private final List<AnnotationNode> annotations;
     private final String name;
     private final List<ParameterNode> parameters;
-    private final Optional<String> returnType; // Optional if methods can be void
+    private final Optional<TypeExprNode> returnType;
 
-    public MethodNode(Optional<Long> id, String name, List<ParameterNode> parameters, Optional<String> returnType, List<AnnotationNode> annotations) {
+    public MethodNode(Optional<Long> id, String name, List<ParameterNode> parameters, Optional<TypeExprNode> returnType, List<AnnotationNode> annotations) {
         this.id = id;
         this.name = Objects.requireNonNull(name, "Method name cannot be null");
         this.parameters = parameters != null ? Collections.unmodifiableList(parameters) : Collections.emptyList();
-        this.returnType = returnType; // Nullable/Optional
+        this.returnType = returnType;
         this.annotations = annotations != null ? Collections.unmodifiableList(new ArrayList<>(annotations)) : Collections.emptyList();
     }
 
@@ -44,7 +45,7 @@ public class MethodNode implements AstNode, NodeWithId {
         return parameters;
     }
 
-    public Optional<String> getReturnType() {
+    public Optional<TypeExprNode> getReturnType() {
         return returnType;
     }
 
@@ -59,7 +60,7 @@ public class MethodNode implements AstNode, NodeWithId {
                "id=" + id.map(String::valueOf).orElse("none") +
                ", name='" + name + '\'' +
                ", parameters=" + parameters +
-               ", returnType=" + returnType.orElse("void") +
+               ", returnType=" + returnType.map(TypeExprNode::toString).orElse("void") +
                ", annotations=" + annotations +
                '}';
     }

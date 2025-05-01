@@ -13,6 +13,7 @@ import java.util.Optional;
 
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.nodes.*;
+import ssot_parser.ast.type.*;
 
 /**
  * Tests for parsing service and interface definitions and building the corresponding AST.
@@ -62,7 +63,7 @@ public class ServiceAstTest {
         MethodNode method = iface.getMethods().get(0);
         assertEquals("doSomething", method.getName());
         assertTrue(method.getParameters().isEmpty());
-        assertEquals(Optional.empty(), method.getReturnType());
+        assertTrue(method.getReturnType().isEmpty(), "Return type should be empty (void)");
     }
 
     @Test
@@ -94,15 +95,20 @@ public class ServiceAstTest {
         assertEquals("description", greetMethod.getAnnotations().get(0).getName());
         assertEquals(1, greetMethod.getParameters().size());
         assertEquals("name", greetMethod.getParameters().get(0).getName());
-        assertEquals("string", greetMethod.getParameters().get(0).getType());
-        assertEquals(Optional.of("string"), greetMethod.getReturnType());
+        assertTrue(greetMethod.getParameters().get(0).getType() instanceof PrimitiveTypeNode, "Parameter type should be Primitive");
+        assertEquals("string", ((PrimitiveTypeNode)greetMethod.getParameters().get(0).getType()).getTypeName());
+
+        assertTrue(greetMethod.getReturnType().isPresent(), "Greet should have a return type");
+        assertTrue(greetMethod.getReturnType().get() instanceof PrimitiveTypeNode, "Return type should be Primitive");
+        assertEquals("string", ((PrimitiveTypeNode)greetMethod.getReturnType().get()).getTypeName());
 
         MethodNode logMethod = iface.getMethods().stream().filter(m -> m.getName().equals("log")).findFirst().orElse(null);
         assertNotNull(logMethod);
         assertEquals(1, logMethod.getParameters().size());
         assertEquals("message", logMethod.getParameters().get(0).getName());
-        assertEquals("string", logMethod.getParameters().get(0).getType());
-        assertEquals(Optional.empty(), logMethod.getReturnType());
+        assertTrue(logMethod.getParameters().get(0).getType() instanceof PrimitiveTypeNode, "Log Parameter type should be Primitive");
+        assertEquals("string", ((PrimitiveTypeNode)logMethod.getParameters().get(0).getType()).getTypeName());
+        assertTrue(logMethod.getReturnType().isEmpty(), "Log return type should be empty");
     }
 
      @Test
@@ -143,11 +149,73 @@ public class ServiceAstTest {
          assertEquals(1, runMethod.getAnnotations().size());
          assertEquals("complexity", runMethod.getAnnotations().get(0).getName());
          assertEquals(1, runMethod.getParameters().size());
-         assertEquals(Optional.empty(), runMethod.getReturnType());
+         assertTrue(runMethod.getParameters().get(0).getType() instanceof PrimitiveTypeNode, "Run parameter type should be Primitive");
+         assertEquals("u32", ((PrimitiveTypeNode)runMethod.getParameters().get(0).getType()).getTypeName());
+         assertTrue(runMethod.getReturnType().isEmpty(), "Run return type should be empty");
 
          MethodNode helperMethod = service.getMethods().stream().filter(m -> m.getName().equals("internalHelper")).findFirst().orElse(null);
          assertNotNull(helperMethod);
          assertTrue(helperMethod.getParameters().isEmpty());
      }
+
+    @Test
+    void testComplexTypes() throws Exception {
+        String input = """
+        types {
+            struct User {}
+        }
+        services {
+            interface TypeTester {
+                processOptional(data: optional<string>);
+                processList(items: list<User>);
+                processMap(lookup: map<string, list<optional<u64>>>);
+            }
+        }
+        """;
+        SsotRoot root = parseAndBuildAst(input);
+        assertEquals(1, root.getServiceDefinitions().size()); // Only interface
+        InterfaceNode iface = (InterfaceNode) root.getServiceDefinitions().get(0);
+        assertEquals("TypeTester", iface.getName());
+        assertEquals(3, iface.getMethods().size());
+
+        // Test optional<string>
+        MethodNode optMethod = iface.getMethods().stream().filter(m -> m.getName().equals("processOptional")).findFirst().orElse(null);
+        assertNotNull(optMethod);
+        assertEquals(1, optMethod.getParameters().size());
+        ParameterNode optParam = optMethod.getParameters().get(0);
+        assertTrue(optParam.getType() instanceof OptionalTypeNode, "Type should be Optional");
+        OptionalTypeNode optType = (OptionalTypeNode) optParam.getType();
+        assertTrue(optType.getInnerType() instanceof PrimitiveTypeNode, "Inner type should be Primitive");
+        assertEquals("string", ((PrimitiveTypeNode)optType.getInnerType()).getTypeName());
+
+        // Test list<User>
+        MethodNode listMethod = iface.getMethods().stream().filter(m -> m.getName().equals("processList")).findFirst().orElse(null);
+        assertNotNull(listMethod);
+        assertEquals(1, listMethod.getParameters().size());
+        ParameterNode listParam = listMethod.getParameters().get(0);
+        assertTrue(listParam.getType() instanceof ListTypeNode, "Type should be List");
+        ListTypeNode listType = (ListTypeNode) listParam.getType();
+        assertTrue(listType.getElementType() instanceof ReferenceTypeNode, "Element type should be Reference");
+        assertEquals("User", ((ReferenceTypeNode)listType.getElementType()).getReferencedTypeName());
+
+        // Test map<string, list<optional<u64>>>
+        MethodNode mapMethod = iface.getMethods().stream().filter(m -> m.getName().equals("processMap")).findFirst().orElse(null);
+        assertNotNull(mapMethod);
+        assertEquals(1, mapMethod.getParameters().size());
+        ParameterNode mapParam = mapMethod.getParameters().get(0);
+        assertTrue(mapParam.getType() instanceof MapTypeNode, "Type should be Map");
+        MapTypeNode mapType = (MapTypeNode) mapParam.getType();
+
+        assertTrue(mapType.getKeyType() instanceof PrimitiveTypeNode, "Map key type should be Primitive");
+        assertEquals("string", ((PrimitiveTypeNode)mapType.getKeyType()).getTypeName());
+
+        assertTrue(mapType.getValueType() instanceof ListTypeNode, "Map value type should be List");
+        ListTypeNode mapValueListType = (ListTypeNode) mapType.getValueType();
+        assertTrue(mapValueListType.getElementType() instanceof OptionalTypeNode, "Map value element type should be Optional");
+        OptionalTypeNode mapValueOptionalType = (OptionalTypeNode) mapValueListType.getElementType();
+        assertTrue(mapValueOptionalType.getInnerType() instanceof PrimitiveTypeNode, "Map value inner type should be Primitive");
+        assertEquals("u64", ((PrimitiveTypeNode)mapValueOptionalType.getInnerType()).getTypeName());
+
+    }
 
 } 
