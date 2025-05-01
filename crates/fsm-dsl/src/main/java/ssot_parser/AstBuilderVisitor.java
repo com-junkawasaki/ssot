@@ -469,7 +469,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
      // Placeholder visitors for machine elements - These need implementation
      // They should return appropriate AST Node types (e.g., ContextNode, List<ActionNode>, etc.)
 
-     public Object visitContextDefinition(SSoTParser.ContextDefinitionContext ctx) { // Removed @Override if not in BaseVisitor
+     public ContextNode visitContextDefinition(SSoTParser.ContextDefinitionContext ctx) { // Changed return type
         System.out.println("Visiting ContextDefinition...");
         // Assuming context block contains field definitions similar to struct
         List<FieldNode> variables = new ArrayList<>();
@@ -665,7 +665,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                          System.err.println("Warning: Using getText() on actionReferenceList - requires grammar check.");
                      } else if (option.GUARD() != null && option.guardReferenceList() != null) {
                          // Revert guess - just get text from the list context for now
-                         condition = Optional.of(option.guardReferenceList().getText());
+                         condition = Optional.<String>of(option.guardReferenceList().getText()); // Added type witness <String>
                          System.err.println("Warning: Using getText() on guardReferenceList - requires grammar check.");
                      }
                  }
@@ -711,12 +711,12 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
     // Visitor for the 'guardDefinition' rule (assuming similar structure to actionDefinition)
     public Object visitGuardDefinition(SSoTParser.GuardDefinitionContext ctx) {
         String name = "UNKNOWN_GUARD";
-        if (ctx.ID() != null) {
-            name = ctx.ID().getText();
-        } else {
-            System.err.println("Warning: No ID found for guard definition: " + ctx.getText());
-        }
-        System.out.println("Visiting GuardDefinition: " + name);
+        // Assuming ID() returns a single node or null
+        if (ctx.ID() != null && !ctx.ID().isEmpty()) { // Check if ID list exists and is not empty
+            name = ctx.ID(0).getText(); // Get text from the first ID terminal node
+         } else {
+             System.err.println("Warning: No ID found for guard definition: " + ctx.getText());
+         }
 
         // Process annotations
         ProcessedAnnotations processed = processAnnotations(ctx.annotation());
@@ -730,7 +730,6 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
     // Visitor for the 'invokeDefinition' rule
     public Object visitInvokeDefinition(SSoTParser.InvokeDefinitionContext ctx) {
         String name = "UNKNOWN_INVOKE";
-        // Assuming the grammar has an ID for the invocation target
         if (ctx.ID() != null) {
             name = ctx.ID().getText();
         } else {
