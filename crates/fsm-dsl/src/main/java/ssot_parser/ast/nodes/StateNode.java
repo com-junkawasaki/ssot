@@ -12,6 +12,7 @@ import ssot_parser.ast.NodeVisitor;
 import ssot_parser.ast.nodes.TransitionNode;
 import ssot_parser.ast.nodes.AnnotationNode;
 import ssot_parser.ast.nodes.InvokeStateNode;
+import ssot_parser.ast.nodes.HistoryNode;
 
 /**
  * Represents a state definition within the 'states { ... }' block of a machine.
@@ -26,6 +27,7 @@ public class StateNode implements NodeWithId {
     private final List<TransitionNode> transitions; // Transitions defined within this state using ON
     private final List<InvokeStateNode> invokes; // Add list for invokes
     private final List<StateNode> nestedStates; // Add list for nested states
+    private final Optional<HistoryNode> history; // Add optional history node
     // TODO: Add fields for nested states (List<StateNode>), invokes (List<InvokeNode>), history, etc. based on full grammar
 
     // Constructor - without isInitial flag
@@ -33,7 +35,8 @@ public class StateNode implements NodeWithId {
                      List<String> entryActions, List<String> exitActions,
                      List<TransitionNode> transitions,
                      List<InvokeStateNode> invokes,
-                     List<StateNode> nestedStates /* Add other fields like history */) { // Add nestedStates parameter
+                     List<StateNode> nestedStates,
+                     Optional<HistoryNode> history /* Add other fields */) { // Add history parameter
         this.id = id;
         this.name = name;
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
@@ -42,6 +45,7 @@ public class StateNode implements NodeWithId {
         this.transitions = transitions != null ? Collections.unmodifiableList(transitions) : Collections.emptyList();
         this.invokes = invokes != null ? Collections.unmodifiableList(invokes) : Collections.emptyList(); // Assign invokes
         this.nestedStates = nestedStates != null ? Collections.unmodifiableList(nestedStates) : Collections.emptyList(); // Assign nestedStates
+        this.history = history; // Assign history
     }
 
     @Override
@@ -78,6 +82,10 @@ public class StateNode implements NodeWithId {
         return nestedStates;
     }
 
+    public Optional<HistoryNode> getHistory() { // Add getter for history
+        return history;
+    }
+
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
         return visitor.visitStateNode(this);
@@ -95,6 +103,7 @@ public class StateNode implements NodeWithId {
                ", invokes=" + invokes +
                // Add other fields (nested states, invokes) here
                ", nestedStates=" + nestedStates +
+               ", history=" + history +
                "}";
     }
 

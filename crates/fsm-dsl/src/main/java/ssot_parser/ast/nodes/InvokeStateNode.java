@@ -18,13 +18,18 @@ public class InvokeStateNode implements AstNode, NodeWithId {
     private final Optional<Long> id;
     private final List<AnnotationNode> annotations;
     private final String src; // The ID/name of the service/machine/lambda to invoke (extracted from $src or grammar)
-    // TODO: Add fields for onDone, onError transitions, parameters/data mapping, etc.
+    private final Optional<String> onDoneTarget; // Optional target state for onDone
+    private final Optional<String> onErrorTarget; // Optional target state for onError
+    // TODO: Add fields for onDone, onError transitions, parameters/data mapping, etc. -- Added targets
 
-    public InvokeStateNode(Optional<Long> id, List<AnnotationNode> annotations, String src /* Add other params like onDone, onError */) {
+    public InvokeStateNode(Optional<Long> id, List<AnnotationNode> annotations, String src,
+                           Optional<String> onDoneTarget, Optional<String> onErrorTarget /* Add other params */) { // Add onDone/onError params
         this.id = id;
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
         this.src = src; // Placeholder, might need more complex parsing
-        // Initialize other fields (onDone, onError) when added
+        this.onDoneTarget = onDoneTarget;
+        this.onErrorTarget = onErrorTarget;
+        // Initialize other fields (onDone, onError) when added -- DONE for targets
     }
 
     @Override
@@ -41,7 +46,15 @@ public class InvokeStateNode implements AstNode, NodeWithId {
         return src;
     }
 
-    // TODO: Add getters for onDone, onError, etc.
+    public Optional<String> getOnDoneTarget() { // Add getter
+        return onDoneTarget;
+    }
+
+    public Optional<String> getOnErrorTarget() { // Add getter
+        return onErrorTarget;
+    }
+
+    // TODO: Add getters for onDone, onError, etc. -- DONE for targets
 
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
@@ -58,6 +71,8 @@ public class InvokeStateNode implements AstNode, NodeWithId {
                ", src='" + src + '\'' +
                ", annotations=" + annotations +
                // Add other fields (onDone, onError) here
+               ", onDoneTarget=" + onDoneTarget.orElse("none") +
+               ", onErrorTarget=" + onErrorTarget.orElse("none") +
                '}';
     }
 
