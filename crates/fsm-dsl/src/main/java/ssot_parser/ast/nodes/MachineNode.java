@@ -12,18 +12,17 @@ import java.util.Optional;
 public class MachineNode implements AstNode {
     private final List<AnnotationNode> annotations; // Assuming AnnotationNode exists or will be created
     private final String name;
-    // Placeholders for other machine elements - their types might need refinement
     private final Optional<ContextNode> context; // Changed from Optional<AstNode>
     private final List<ActionNode> actions;     // Changed from List<AstNode>
-    private final List<AstNode> guards;      // Type might be List<GuardNode>
-    private final List<AstNode> invokes;     // Type might be List<InvokeNode>
-    private final List<AstNode> states;      // Type might be List<StateNode> or Map<String, StateNode>
-    private final Optional<String> initialState; // Or Optional<StateNode>
-    // Transitions might be complex, represented differently
-    private final List<AstNode> transitions; // Type might be List<TransitionNode>
+    private final List<GuardNode> guards;      // Changed from List<AstNode>
+    private final List<InvokeNode> invokes;     // Changed from List<AstNode>
+    private final List<StateNode> states;      // Changed from List<AstNode>
+    private final Optional<String> initialState; // Changed from Optional<String> (was correct, just clarifying)
+    // Transitions are now collected and stored here
+    private final List<TransitionNode> transitions; // Changed from List<AstNode>
 
-    // Constructor - updated context and actions types
-    public MachineNode(List<AnnotationNode> annotations, String name, Optional<ContextNode> context, List<ActionNode> actions, List<AstNode> guards, List<AstNode> invokes, List<AstNode> states, Optional<String> initialState, List<AstNode> transitions) {
+    // Constructor - updated states, initialState, and transitions types
+    public MachineNode(List<AnnotationNode> annotations, String name, Optional<ContextNode> context, List<ActionNode> actions, List<GuardNode> guards, List<InvokeNode> invokes, List<StateNode> states, Optional<String> initialState, List<TransitionNode> transitions) {
         this.annotations = annotations != null ? Collections.unmodifiableList(annotations) : Collections.emptyList();
         this.name = name;
         this.context = context; // Assign the Optional<ContextNode>
@@ -34,6 +33,8 @@ public class MachineNode implements AstNode {
         this.initialState = initialState;
         this.transitions = transitions != null ? Collections.unmodifiableList(transitions) : Collections.emptyList();
         // TODO: Add validation or further initialization if needed
+        // - Validate initialState refers to an actual state name in the list?
+        // - Validate transition sources/targets refer to actual state names?
     }
 
     public List<AnnotationNode> getAnnotations() {
@@ -52,23 +53,23 @@ public class MachineNode implements AstNode {
         return actions;
     }
 
-    public List<AstNode> getGuards() {
+    public List<GuardNode> getGuards() { // Changed return type
         return guards;
     }
 
-    public List<AstNode> getInvokes() {
+    public List<InvokeNode> getInvokes() { // Changed return type
         return invokes;
     }
 
-    public List<AstNode> getStates() {
+    public List<StateNode> getStates() { // Changed return type
         return states;
     }
 
-    public Optional<String> getInitialState() {
+    public Optional<String> getInitialState() { // Return type was already Optional<String>
         return initialState;
     }
 
-    public List<AstNode> getTransitions() {
+    public List<TransitionNode> getTransitions() { // Changed return type
         return transitions;
     }
 

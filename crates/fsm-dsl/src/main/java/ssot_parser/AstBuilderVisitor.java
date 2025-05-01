@@ -23,6 +23,12 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
     // Keep track of the current state name for transitions
     private String currentStateName = null;
 
+    // Record to hold results from processing a list of annotations
+    private record ProcessedAnnotations(Optional<Long> id, Map<String, Object> annotationMap) {}
+
+    // Record to hold results from visiting statesDefinition
+    private record StatesInfo(List<StateNode> states, Optional<String> initialStatename) {}
+
     @Override
     public Object visitFile(SSoTParser.FileContext ctx) { // Return type changed to Object
         System.out.println("Visiting File node...");
@@ -148,9 +154,6 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
 
 
     // --- Annotation Processing Logic ---
-
-    // Record to hold results from processing a list of annotations
-    private record ProcessedAnnotations(Optional<Long> id, Map<String, Object> annotationMap) {}
 
     // Helper method to process a list of annotation contexts
     private ProcessedAnnotations processAnnotations(List<AnnotationContext> annotationCtxs) {
@@ -363,7 +366,18 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                                   List<AstNode> stateResultList = (List<AstNode>) nodes; // Keep as AstNode for now
                                   states.addAll(stateResultList); // Assuming visitStatesDefinition returns List<StateNode>
                              }
-                             // TODO: Add checks for GuardNode, InvokeNode when implemented
+                             // Check for GuardNode
+                             else if (firstNode instanceof GuardNode) {
+                                @SuppressWarnings("unchecked")
+                                List<GuardNode> guardResultList = (List<GuardNode>) nodes;
+                                guards.addAll(guardResultList);
+                             }
+                             // Check for InvokeNode
+                             else if (firstNode instanceof InvokeNode) {
+                                @SuppressWarnings("unchecked")
+                                List<InvokeNode> invokeResultList = (List<InvokeNode>) nodes;
+                                invokes.addAll(invokeResultList);
+                             }
                              else {
                                 System.err.println("Warning: Unexpected node type in list from MachineBodyElement visitor: " + firstNode.getClass().getName());
                              }
@@ -371,6 +385,24 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                      } catch (ClassCastException e) {
                          System.err.println("Warning: MachineBodyElement visitor returned a List, but it doesn't contain expected node types: " + e.getMessage());
                      }
+                 } else if (elementResult instanceof StatesInfo) {
+                    // Handle the result from visitStatesDefinition
+                    StatesInfo statesResult = (StatesInfo) elementResult;
+                    states.addAll(statesResult.states()); // Add all StateNode objects
+                    if (initialState.isPresent() && statesResult.initialStatename().isPresent()) {
+                         // Handle case where initial state might be defined multiple times (e.g., in multiple states blocks)
+                         System.err.println("Warning: Initial state potentially redefined. Using value from last 'states' block: " + statesResult.initialStatename().get());
+                     }
+                    // Set the initial state name for the machine
+                    if (statesResult.initialStatename().isPresent()) {
+                        initialState = statesResult.initialStatename();
+                    }
+
+                    // Collect transitions from all states within this block
+                    for (StateNode stateNode : statesResult.states()) {
+                        transitions.addAll(stateNode.getTransitions());
+                    }
+
                  }
                  // TODO: Add handling for other potential return types from visitMachineBodyElement
                  // (e.g., a dedicated StatesBlockNode containing states and initial state)
@@ -466,27 +498,44 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
      }
 
       public Object visitGuardsDefinition(SSoTParser.GuardsDefinitionContext ctx) { // Removed @Override if not in BaseVisitor
-         System.out.println("Visiting GuardsDefinition (Placeholder)...");
-         // TODO: Implement logic similar to actions, parsing guardDefinition*
-         // Return List<GuardNode>
-         System.err.println("Warning: visitGuardsDefinition not implemented.");
-         return new ArrayList<AstNode>(); // Placeholder
+         System.out.println("Visiting GuardsDefinition...");
+         List<GuardNode> guardNodes = new ArrayList<>(); // Changed type to List<GuardNode>
+         if (ctx.guardDefinition() != null) {
+             for (SSoTParser.GuardDefinitionContext guardCtx : ctx.guardDefinition()) {
+                 Object result = visitGuardDefinition(guardCtx); // Call the specific visitor
+                 if (result instanceof GuardNode) {
+                     guardNodes.add((GuardNode) result);
+                 } else if (result != null) {
+                     System.err.println("Warning: visitGuardDefinition did not return a GuardNode. Got: " + result.getClass().getName());
+                 }
+             }
+         }
+         // Return the list of GuardNodes
+         return guardNodes;
       }
 
       public Object visitInvokesDefinition(SSoTParser.InvokesDefinitionContext ctx) { // Removed @Override if not in BaseVisitor
-          System.out.println("Visiting InvokesDefinition (Placeholder)...");
-          // TODO: Implement logic similar to actions, parsing invokeDefinition*
-          // Return List<InvokeNode>
-          System.err.println("Warning: visitInvokesDefinition not implemented.");
-          return new ArrayList<AstNode>(); // Placeholder
+          System.out.println("Visiting InvokesDefinition...");
+          List<InvokeNode> invokeNodes = new ArrayList<>(); // Changed type to List<InvokeNode>
+          if (ctx.invokeDefinition() != null) {
+              for (SSoTParser.InvokeDefinitionContext invokeCtx : ctx.invokeDefinition()) {
+                  Object result = visitInvokeDefinition(invokeCtx); // Call the specific visitor
+                  if (result instanceof InvokeNode) {
+                      invokeNodes.add((InvokeNode) result);
+                  } else if (result != null) {
+                      System.err.println("Warning: visitInvokeDefinition did not return an InvokeNode. Got: " + result.getClass().getName());
+                  }
+              }
+          }
+          // Return the list of InvokeNodes
+          return invokeNodes;
       }
 
 
      @Override
-     public Object visitStatesDefinition(SSoTParser.StatesDefinitionContext ctx) { // Return Object
+     public Object visitStatesDefinition(SSoTParser.StatesDefinitionContext ctx) { // Return Object, should be StatesInfo
          System.out.println("Visiting StatesDefinition...");
-         // This should process stateDefinition* and potentially find the initial state marker
-         List<AstNode> stateNodes = new ArrayList<>(); // Should be List<StateNode>
+         List<StateNode> stateNodes = new ArrayList<>();
          Optional<String> initialStateName = Optional.empty();
 
          if (ctx.stateDefinition() != null) {
@@ -495,42 +544,61 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                  if (result instanceof StateNode) {
                      StateNode stateNode = (StateNode) result;
                      stateNodes.add(stateNode);
-                     // Check if this state is marked as initial (assuming StateNode holds this info)
-                     // if (stateNode.isInitial()) { // Example check
-                     //    if (initialStateName.isPresent()) {
-                     //       System.err.println("Warning: Multiple initial states defined. Using: " + stateNode.getName());
-                     //    }
-                     //    initialStateName = Optional.of(stateNode.getName());
-                     // }
+                     // Check if this state is marked as initial
+                     if (stateNode.isInitial()) {
+                        if (initialStateName.isPresent()) {
+                           // Handle multiple initial states - error or use last one?
+                           System.err.println("Warning: Multiple initial states defined or marked. Using state: " + stateNode.getName() + " as initial, overwriting previous: " + initialStateName.get());
+                        }
+                        initialStateName = Optional.of(stateNode.getName());
+                     }
+                 } else if (result != null) {
+                    System.err.println("Warning: visitStateDefinition did not return a StateNode. Got: " + result.getClass().getName());
                  }
              }
          }
 
-         // TODO: Determine how the initial state is marked in the grammar (e.g., 'initial' keyword)
-         // and extract it here or within visitStateDefinition. Assign to initialStateName.
+         // TODO: If initial state is marked by a keyword *outside* stateDefinition (e.g., initial = ID;), handle it here.
 
-         // We might return a dedicated StatesBlockNode or just the list of states.
-         // For now, let's return the list. The caller (visitMachineDefinition)
-         // will need to handle extracting the initial state if it's determined here.
-         System.err.println("Warning: visitStatesDefinition needs implementation for initial state detection and might return incomplete StateNodes.");
-         // Returning the list for now. Caller needs to be aware.
-         // A better approach might be to return a dedicated object containing both states and initial state name.
-         return stateNodes; // Or return a custom object: new StatesInfo(stateNodes, initialStateName);
-         // Returning null because the list should be processed by the caller (visitMachineDefinition)
-         // Let's return the list and handle it in the caller for now.
-          // return stateNodes; // Returning the list of StateNode objects
+         if (initialStateName.isEmpty() && !stateNodes.isEmpty()) {
+            // Convention: If no initial state is explicitly marked, use the first state defined.
+            initialStateName = Optional.of(stateNodes.get(0).getName());
+            System.out.println("Info: No initial state explicitly marked. Using first defined state '" + initialStateName.get() + "' as initial.");
+            // Note: We might need to update the isInitial flag on the actual StateNode object if desired.
+            // stateNodes.get(0).setInitial(true); // Requires StateNode to be mutable or recreated
+         }
+
+         // Return the collected states and the determined initial state name
+         return new StatesInfo(stateNodes, initialStateName);
      }
 
      @Override
-     public Object visitStateDefinition(SSoTParser.StateDefinitionContext ctx) { // Return Object
+     public Object visitStateDefinition(SSoTParser.StateDefinitionContext ctx) { // Return Object, should be StateNode
          // Grammar: stateName=ID annotation* LBRACE annotation* stateBodyElement* RBRACE
          String name = ctx.stateName.getText(); // Use label stateName
          System.out.println("Visiting StateDefinition: " + name);
          this.currentStateName = name; // Store current state name for transitions
 
-         List<ActionNode> entryActions = new ArrayList<>();
-         List<ActionNode> exitActions = new ArrayList<>();
+         List<String> entryActions = new ArrayList<>(); // Store action names
+         List<String> exitActions = new ArrayList<>();  // Store action names
          List<TransitionNode> transitions = new ArrayList<>();
+         boolean isInitialState = false; // Default to false, logic needs grammar info
+
+         // TODO: Check grammar for how initial state is marked (e.g., INITIAL keyword before ID? specific annotation?)
+         // if (ctx.INITIAL() != null) { isInitialState = true; }
+         // Or check annotations processed below
+
+         // Process state-level annotations (e.g., @id, maybe $initial)
+         ProcessedAnnotations stateAnnotations = processAnnotations(ctx.annotation());
+         // Example check for a potential $initial annotation:
+         // if (stateAnnotations.annotationMap().containsKey("initial") && Boolean.TRUE.equals(stateAnnotations.annotationMap().get("initial"))) {
+         //     isInitialState = true;
+         // }
+
+         // Process annotations inside braces (if grammar allows, currently seems redundant with outer annotations)
+         // List<AnnotationContext> innerAnnotations = ctx.innerAnnotations != null ? ctx.innerAnnotations : Collections.emptyList();
+         // ProcessedAnnotations innerProcessed = processAnnotations(innerAnnotations);
+         // Merge or handle innerProcessed.id() and innerProcessed.annotationMap() if needed
 
          // Iterate through state body elements
          if (ctx.stateBodyElement() != null) {
@@ -538,39 +606,31 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                 if (bodyElement.onEntryExit() != null) {
                     // Grammar: onEntryExit : (ON_ENTRY | ON_EXIT) actionReference SEMI;
                     SSoTParser.OnEntryExitContext entryExitCtx = bodyElement.onEntryExit();
-                    String actionRefText = entryExitCtx.actionReference().getText(); // Get reference text
-                    // Need to resolve actionReference later, for now create basic ActionNode
-                    // TODO: Process annotations for entry/exit actions if grammar allows
-                    ProcessedAnnotations entryExitAnnotations = processAnnotations(Collections.emptyList()); // Placeholder
-                    ActionNode action = new ActionNode(Optional.empty(), actionRefText, entryExitAnnotations.annotationMap()); // Add annotations map
+                    // Assuming actionReference directly gives the name
+                    String actionName = entryExitCtx.actionReference().getText();
                     if (entryExitCtx.ON_ENTRY() != null) {
-                        entryActions.add(action);
+                        entryActions.add(actionName);
                     } else if (entryExitCtx.ON_EXIT() != null) {
-                        exitActions.add(action);
+                        exitActions.add(actionName);
                     }
                 } else if (bodyElement.onTransition() != null) {
-                     // Delegate to visitOnTransition
+                     // Delegate to visitOnTransition, which now returns TransitionNode
                      Object transitionResult = visitOnTransition(bodyElement.onTransition());
-                     if (transitionResult instanceof TransitionNode) { // Check and cast
+                     if (transitionResult instanceof TransitionNode) {
                          transitions.add((TransitionNode) transitionResult);
+                     } else if (transitionResult != null) {
+                         System.err.println("Warning: visitOnTransition did not return a TransitionNode. Got: " + transitionResult.getClass().getName());
                      }
                 }
-                // TODO: Handle invokeState, afterTransition, nested statesDefinition, historyDefinition, annotation
+                // TODO: Handle invokeState, afterTransition, nested statesDefinition, historyDefinition
             }
          }
 
-         // Constructor: StateNode(Optional<Long> id, String name, List<ActionNode> actions)
-         // Combine entry and exit actions for now, as constructor only takes one list.
-         // This needs revisiting based on desired AST structure.
-         List<ActionNode> combinedActions = new ArrayList<>(entryActions);
-         combinedActions.addAll(exitActions);
-         // Transitions are not part of StateNode constructor currently.
-         // TODO: Process annotations for the state itself
-         ProcessedAnnotations stateAnnotations = processAnnotations(ctx.annotation()); // Process state annotations
-
          this.currentStateName = null; // Clear current state name after visiting
-         // Add stateAnnotations map to constructor
-         return new StateNode(Optional.empty(), name, combinedActions, stateAnnotations.annotationMap());
+
+         // Create and return the StateNode
+         return new StateNode(stateAnnotations.id(), name, stateAnnotations.annotationMap(),
+                            entryActions, exitActions, transitions, isInitialState);
      }
 
      // This method corresponds to the 'onTransition' rule in the grammar
@@ -635,6 +695,49 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         // Constructor: ActionNode(Optional<Long> id, String name, Map<String, Object> annotations)
         return new ActionNode(processed.id(), name, processed.annotationMap());
      }
+
+    // Visitor for the 'guardDefinition' rule (assuming similar structure to actionDefinition)
+    public Object visitGuardDefinition(SSoTParser.GuardDefinitionContext ctx) {
+        String name = "UNKNOWN_GUARD";
+        if (ctx.ID() != null) {
+            name = ctx.ID().getText();
+        } else {
+            System.err.println("Warning: No ID found for guard definition: " + ctx.getText());
+        }
+        System.out.println("Visiting GuardDefinition: " + name);
+
+        // Process annotations
+        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+
+        // TODO: Add parsing for parameters/return type if grammar supports them
+
+        // Constructor: GuardNode(Optional<Long> id, String name, Map<String, Object> annotations)
+        return new GuardNode(processed.id(), name, processed.annotationMap());
+    }
+
+    // Visitor for the 'invokeDefinition' rule
+    public Object visitInvokeDefinition(SSoTParser.InvokeDefinitionContext ctx) {
+        String name = "UNKNOWN_INVOKE";
+        // Assuming the grammar has an ID for the invocation target
+        if (ctx.ID() != null) {
+            name = ctx.ID().getText();
+        } else {
+            // The grammar might be different, e.g., referring to a service directly?
+            // Adjust parsing based on the actual SSoT.g4 rule for invokeDefinition
+            System.err.println("Warning: No ID found for invoke definition: " + ctx.getText() + ". Grammar needs checking.");
+            // For now, use the full text as a placeholder name if ID is missing
+            name = ctx.getText(); 
+        }
+        System.out.println("Visiting InvokeDefinition: " + name);
+
+        // Process annotations
+        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+
+        // TODO: Add parsing for other details like src, data, onDone, onError based on grammar
+
+        // Constructor: InvokeNode(Optional<Long> id, String name, Map<String, Object> annotations)
+        return new InvokeNode(processed.id(), name, processed.annotationMap());
+    }
 
     // --- Service related visitors ---
     @Override
