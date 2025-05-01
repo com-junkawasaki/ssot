@@ -19,6 +19,8 @@ public class SsotRoot implements AstNode {
     private final List<AstNode> serviceDefinitions; // Placeholder
     private final List<AstNode> machineDefinitions; // Placeholder
     // Add other top-level block lists as needed (imports, actors, communication, etc.)
+    private final List<AstNode> actorDefinitions; // Added
+    private final List<AstNode> communicationDefinitions; // Added
     private final Map<String, Object> annotations; // For top-level file annotations
 
     // Constructor (modify as needed based on how AstBuilderVisitor works)
@@ -26,6 +28,8 @@ public class SsotRoot implements AstNode {
             List<AstNode> typeDefinitions,
             List<AstNode> serviceDefinitions,
             List<AstNode> machineDefinitions,
+            List<AstNode> actorDefinitions, // Added
+            List<AstNode> communicationDefinitions, // Added
             Map<String, Object> annotations
             /* Add other lists */
             ) {
@@ -33,6 +37,8 @@ public class SsotRoot implements AstNode {
         this.typeDefinitions = Collections.unmodifiableList(typeDefinitions != null ? typeDefinitions : Collections.emptyList());
         this.serviceDefinitions = Collections.unmodifiableList(serviceDefinitions != null ? serviceDefinitions : Collections.emptyList());
         this.machineDefinitions = Collections.unmodifiableList(machineDefinitions != null ? machineDefinitions : Collections.emptyList());
+        this.actorDefinitions = Collections.unmodifiableList(actorDefinitions != null ? actorDefinitions : Collections.emptyList()); // Added
+        this.communicationDefinitions = Collections.unmodifiableList(communicationDefinitions != null ? communicationDefinitions : Collections.emptyList()); // Added
         this.annotations = Collections.unmodifiableMap(annotations != null ? new HashMap<>(annotations) : Collections.emptyMap());
         // Initialize other lists
     }
@@ -50,6 +56,14 @@ public class SsotRoot implements AstNode {
         return machineDefinitions;
     }
 
+    public List<AstNode> getActorDefinitions() { // Added
+        return actorDefinitions;
+    }
+
+    public List<AstNode> getCommunicationDefinitions() { // Added
+        return communicationDefinitions;
+    }
+
     @Override
     public Map<String, Object> getAnnotations() {
         return annotations;
@@ -63,6 +77,8 @@ public class SsotRoot implements AstNode {
                "typeDefinitions=" + typeDefinitions + // May need better toString for AstNode lists
                ", serviceDefinitions=" + serviceDefinitions +
                ", machineDefinitions=" + machineDefinitions +
+               ", actorDefinitions=" + actorDefinitions + // Added
+               ", communicationDefinitions=" + communicationDefinitions + // Added
                ", annotations=" + annotations +
                '}';
     }

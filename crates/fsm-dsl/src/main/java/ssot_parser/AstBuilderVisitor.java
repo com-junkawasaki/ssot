@@ -754,38 +754,86 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
      @Override
      public Object visitServiceDefinition(SSoTParser.ServiceDefinitionContext ctx) { // Return Object
          String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_SERVICE";
-         System.out.println("Visiting ServiceDefinition (placeholder): " + name);
-         // TODO: Implement based on Service AST Node (needs definition) and grammar
-         System.err.println("Warning: ServiceDefinition visitor not implemented.");
-         return null; // Placeholder
+         System.out.println("Visiting ServiceDefinition: " + name);
+         ProcessedAnnotations serviceAnnotations = processAnnotations(ctx.annotation());
+
+         List<MethodNode> methods = new ArrayList<>();
+         List<String> implementedInterfaces = new ArrayList<>();
+
+         // TODO: Iterate through service body elements based on grammar
+         // e.g., if ctx.serviceBody().methodDefinition() or ctx.serviceBody().implementsDeclaration()
+         // For now, assuming empty body
+
+         return new ServiceNode(
+             serviceAnnotations.id(),
+             name,
+             methods,
+             implementedInterfaces,
+             serviceAnnotations.annotationMap()
+         );
      }
 
      @Override
      public Object visitInterfaceDefinition(SSoTParser.InterfaceDefinitionContext ctx) { // Return Object
           String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_INTERFACE";
-          System.out.println("Visiting InterfaceDefinition (placeholder): " + name);
-          // TODO: Implement based on Interface AST Node
-          System.err.println("Warning: InterfaceDefinition visitor not implemented.");
-          return null;
+          System.out.println("Visiting InterfaceDefinition: " + name);
+          ProcessedAnnotations interfaceAnnotations = processAnnotations(ctx.annotation());
+
+          List<MethodNode> methods = new ArrayList<>();
+          if (ctx.methodDefinition() != null) { // Assuming methods are direct children
+              for (SSoTParser.MethodDefinitionContext methodCtx : ctx.methodDefinition()) {
+                  Object methodResult = visitMethodDefinition(methodCtx);
+                  if (methodResult instanceof MethodNode) {
+                      methods.add((MethodNode) methodResult);
+                  } else {
+                       System.err.println("Warning: visitMethodDefinition did not return MethodNode for interface: " + name);
+                  }
+              }
+          }
+
+          return new InterfaceNode(
+              interfaceAnnotations.id(),
+              name,
+              methods,
+              interfaceAnnotations.annotationMap()
+          );
      }
 
       @Override
       public Object visitMethodDefinition(SSoTParser.MethodDefinitionContext ctx) { // Return Object
            String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_METHOD";
-           System.out.println("Visiting MethodDefinition (placeholder): " + name);
-           // TODO: Implement based on Method AST Node
-           System.err.println("Warning: MethodDefinition visitor not implemented.");
-           return null;
+           System.out.println("Visiting MethodDefinition: " + name);
+           ProcessedAnnotations methodAnnotations = processAnnotations(ctx.annotation());
+
+           List<ParameterNode> parameters = new ArrayList<>();
+           // TODO: Implement parameter list parsing based on grammar (ctx.parameterList()?)
+           // e.g., for (ParameterContext paramCtx : ctx.parameterList().parameter()) { ... visitParameter(paramCtx) ... }
+
+           Optional<String> returnType = Optional.empty();
+           // TODO: Implement return type parsing based on grammar (ctx.returnTypeExpr()?)
+           // if (ctx.returnTypeExpr() != null) { returnType = Optional.of(ctx.returnTypeExpr().getText()); }
+
+           return new MethodNode(
+               methodAnnotations.id(),
+               name,
+               parameters,
+               returnType,
+               methodAnnotations.annotationMap()
+           );
       }
 
      // --- Actor related visitors ---
       @Override
       public Object visitActorDefinition(SSoTParser.ActorDefinitionContext ctx) { // Return Object
            String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_ACTOR";
-           System.out.println("Visiting ActorDefinition (placeholder): " + name);
-           // TODO: Implement based on Actor AST Node
-           System.err.println("Warning: ActorDefinition visitor not implemented.");
-           return null;
+           System.out.println("Visiting ActorDefinition: " + name);
+
+           // Process annotations
+           ProcessedAnnotations actorAnnotations = processAnnotations(ctx.annotation());
+
+           // TODO: Visit actor body elements if the grammar defines them
+
+           return new ActorNode(actorAnnotations.id(), name, actorAnnotations.annotationMap());
       }
 
      // --- Communication related visitors ---
@@ -805,26 +853,41 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
       @Override
       public Object visitProtocolDefinition(SSoTParser.ProtocolDefinitionContext ctx) { // Return Object
             String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_PROTOCOL";
-            System.out.println("Visiting ProtocolDefinition (placeholder): " + name);
-            // TODO: Implement based on Protocol AST Node
-            System.err.println("Warning: ProtocolDefinition visitor not implemented.");
-            return null;
+            System.out.println("Visiting ProtocolDefinition: " + name);
+            ProcessedAnnotations protocolAnnotations = processAnnotations(ctx.annotation());
+
+            // TODO: Visit protocol body elements based on grammar
+
+            return new ProtocolNode(protocolAnnotations.id(), name, protocolAnnotations.annotationMap());
       }
        @Override
        public Object visitChannelDefinition(SSoTParser.ChannelDefinitionContext ctx) { // Return Object
             String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_CHANNEL";
-            System.out.println("Visiting ChannelDefinition (placeholder): " + name);
-            // TODO: Implement based on Channel AST Node
-            System.err.println("Warning: ChannelDefinition visitor not implemented.");
-            return null;
+            System.out.println("Visiting ChannelDefinition: " + name);
+            ProcessedAnnotations channelAnnotations = processAnnotations(ctx.annotation());
+
+            // TODO: Visit channel body elements based on grammar
+
+            return new ChannelNode(channelAnnotations.id(), name, channelAnnotations.annotationMap());
        }
         @Override
         public Object visitEventDefinition(SSoTParser.EventDefinitionContext ctx) { // Return Object
              String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_EVENT";
-             System.out.println("Visiting EventDefinition (placeholder): " + name);
-             // TODO: Implement based on Event AST Node (similar to Struct?)
-             System.err.println("Warning: EventDefinition visitor not implemented.");
-             return null;
+             System.out.println("Visiting EventDefinition: " + name);
+             ProcessedAnnotations eventAnnotations = processAnnotations(ctx.annotation());
+
+             List<FieldNode> fields = new ArrayList<>();
+             // Assuming event definition grammar is similar to struct: event ID { fieldDefinition* }
+             if (ctx.fieldDefinition() != null) {
+                 for (SSoTParser.FieldDefinitionContext fieldCtx : ctx.fieldDefinition()) {
+                     Object fieldResult = visitFieldDefinition(fieldCtx);
+                     if (fieldResult instanceof FieldNode) {
+                         fields.add((FieldNode) fieldResult);
+                     }
+                 }
+             }
+
+             return new EventNode(eventAnnotations.id(), name, fields, eventAnnotations.annotationMap());
         }
 
     // --- Annotation Value Parsing Helpers ---
