@@ -8,6 +8,8 @@ import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.NodeWithId;
 import ssot_parser.ast.NodeVisitor;
+import java.util.ArrayList;
+import ssot_parser.ast.nodes.AnnotationNode;
 
 /**
  * Represents a state transition triggered by an event.
@@ -20,19 +22,19 @@ public class TransitionNode implements NodeWithId {
     public final String event;
     public final Optional<String> condition; // Optional guard condition reference (name)
     public final Optional<String> action;    // Optional action reference (name)
-    private final Map<String, Object> annotations;
+    private final List<AnnotationNode> annotations;
 
     // Constructor - includes source state, guard condition (optional), and actions (list, optional)
     public TransitionNode(Optional<Long> id, String sourceState, String targetState, String event,
                           Optional<String> condition, Optional<String> action,
-                          Map<String, Object> annotations) {
+                          List<AnnotationNode> annotations) {
         this.id = id;
         this.sourceState = sourceState;
         this.targetState = targetState;
         this.event = event;
         this.condition = condition;
         this.action = action;
-        this.annotations = Collections.unmodifiableMap(annotations != null ? new HashMap<>(annotations) : Collections.emptyMap());
+        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
     }
 
     @Override
@@ -61,7 +63,7 @@ public class TransitionNode implements NodeWithId {
     }
 
     @Override
-    public Map<String, Object> getAnnotations() {
+    public List<AnnotationNode> getAnnotations() {
         return annotations;
     }
 

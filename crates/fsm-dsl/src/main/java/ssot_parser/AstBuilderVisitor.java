@@ -24,7 +24,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
     private String currentStateName = null;
 
     // Record to hold results from processing a list of annotations
-    private record ProcessedAnnotations(Optional<Long> id, Map<String, Object> annotationMap) {}
+    private record ProcessedAnnotations(Optional<Long> id, List<AnnotationNode> annotations) {}
 
     // Record to hold results from visiting statesDefinition
     private record StatesInfo(List<StateNode> states, Optional<String> initialStatename) {}
@@ -71,7 +71,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
             machineDefs,
             actorDefs, // Added missing argument
             communicationDefs, // Added missing argument
-            fileAnnotationsResult.annotationMap() // Use the map from ProcessedAnnotations
+            fileAnnotationsResult.annotations() // Use the list from ProcessedAnnotations
         );
     }
 
@@ -167,11 +167,11 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
     private ProcessedAnnotations processAnnotations(List<AnnotationContext> annotationCtxs) {
         // Restore original logic
         Optional<Long> id = Optional.empty();
-        Map<String, Object> annotationMap = new HashMap<>();
+        List<AnnotationNode> annotationNodes = new ArrayList<>(); // Changed from Map to List<AnnotationNode>
 
         if (annotationCtxs != null) {
             for (AnnotationContext ctx : annotationCtxs) {
-                Object result = visitAnnotation(ctx); // Returns Long for @id, or Map.Entry<String, Object> for $name
+                Object result = visitAnnotation(ctx); // Returns Long for @id, or AnnotationNode for $name
 
                 if (result instanceof Long) {
                     if (id.isPresent()) {
@@ -179,27 +179,33 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                     } else {
                         id = Optional.of((Long) result);
                     }
-                } else if (result instanceof Map.Entry) {
-                    try {
-                         @SuppressWarnings("unchecked")
-                         Map.Entry<String, Object> entry = (Map.Entry<String, Object>) result;
-                         if (annotationMap.containsKey(entry.getKey())) {
-                             // Handle duplicate annotation names if necessary (e.g., merge lists, overwrite, error)
-                             System.err.println("Warning: Duplicate annotation name found: $" + entry.getKey() + ". Overwriting previous value.");
-                         }
-                         annotationMap.put(entry.getKey(), entry.getValue());
-                     } catch(ClassCastException e){
-                          System.err.println("Warning: visitAnnotation for $name did not return Map.Entry<String, Object>");
-                     }
+                } else if (result instanceof AnnotationNode) {
+                    annotationNodes.add((AnnotationNode) result);
+                    // Check for duplicates if needed (requires iterating annotationNodes)
+                    // Example: Find if an annotation with the same name already exists
+                    // boolean exists = annotationNodes.stream().anyMatch(node -> node.getName().equals(((AnnotationNode) result).getName()));
+                    // Handle duplicates based on project requirements (e.g., log warning, error, allow)
                 }
                 // Ignore null results from visitAnnotation (e.g., parse errors)
             }
         }
-        return new ProcessedAnnotations(id, annotationMap);
+        // Modify the ProcessedAnnotations record or return type if needed to hold List<AnnotationNode>
+        // For now, let's assume ProcessedAnnotations record is updated or we create a new return structure.
+        // We need to update the record definition first.
+        // return new ProcessedAnnotations(id, annotationNodes);
+
+        // TEMPORARY: Return original record structure with an empty map until record is updated
+        // This will likely cause errors downstream until all usages are updated.
+        //return new ProcessedAnnotations(id, new HashMap<>());
+        // Let's redefine ProcessedAnnotations record to hold the list
+        // Remove the old record definition near the top and replace with:
+        // private record ProcessedAnnotationsResult(Optional<Long> id, List<AnnotationNode> annotations) {}
+        // Then return:
+         return new ProcessedAnnotations(id, annotationNodes); // Assuming record is updated
     }
 
     // Visitor for a single annotation rule: handles @id, $name(value), $flag;
-    // Returns Long for @id, or Map.Entry<String, Object> for $name annotations.
+    // Returns Long for @id, or AnnotationNode for $name annotations.
     public Object visitAnnotation(SSoTParser.AnnotationContext ctx) { // Removed @Override
          // Restore original implementation
          if (ctx.AT() != null && ctx.ID() != null && ctx.INT() != null) {
@@ -233,8 +239,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                   return null;
              }
 
-             // Return as a Map.Entry
-             return Map.entry(name, value);
+             // Create and return AnnotationNode
+             return new AnnotationNode(name, value, false); // false because it's not @id
 
          } else {
              System.err.println("Warning: Unrecognized annotation format: " + ctx.getText());
@@ -288,7 +294,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
             }
         }
         // Pass processed ID and annotations map to constructor
-        return new TypeDefNode(processed.id(), name, fields, processed.annotationMap());
+        return new TypeDefNode(processed.id(), name, fields, processed.annotations());
     }
 
     @Override
@@ -304,7 +310,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         // TODO: Handle annotations inside braces: (LBRACE annotation* RBRACE)?
 
          // Pass processed ID and annotations map to constructor
-         return new FieldNode(processed.id(), name, type, processed.annotationMap());
+         return new FieldNode(processed.id(), name, type, processed.annotations());
      }
 
      // Assuming visitEnumDefinition is needed
@@ -328,7 +334,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         // Process annotations specific to this machine definition
         ProcessedAnnotations processed = processAnnotations(ctx.annotation());
         List<AnnotationNode> annotations = new ArrayList<>(); // Placeholder for actual AnnotationNode objects
-        // TODO: Convert processed.annotationMap() and potentially processed.id() into AnnotationNode list
+        // TODO: Convert processed.annotations() and potentially processed.id() into AnnotationNode list
 
         // Initialize placeholders for machine elements
         Optional<AstNode> contextNode = Optional.empty(); // Expecting ContextNode later
@@ -336,8 +342,27 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         List<AstNode> guards = new ArrayList<>();      // Expecting List<GuardNode> later
         List<AstNode> invokes = new ArrayList<>();     // Expecting List<InvokeNode> later
         List<AstNode> states = new ArrayList<>();      // Expecting List<StateNode> or Map<String, StateNode> later
-        Optional<String> initialState = Optional.empty();
+        Optional<String> initialState = Optional.empty(); // Reset here, will be set by annotation or fallback
         List<AstNode> transitions = new ArrayList<>(); // Expecting List<TransitionNode> later
+
+        // --- Process $initial annotation ---
+        if (processed.annotations().stream().anyMatch(node -> node instanceof AnnotationNode && ((AnnotationNode) node).getName().equals("initial"))) {
+            Optional<AnnotationNode> initialAnnotation = processed.annotations().stream()
+                .filter(node -> node instanceof AnnotationNode && ((AnnotationNode) node).getName().equals("initial"))
+                .findFirst();
+            if (initialAnnotation.isPresent()) {
+                Object initialValue = initialAnnotation.get().getValue();
+                if (initialValue instanceof String) {
+                    initialState = Optional.of((String) initialValue);
+                    System.out.println("Found $initial annotation, setting initial state to: " + initialState.get());
+                } else {
+                    System.err.println("Warning: $initial annotation value is not a String for machine '" + name + "'. Ignoring.");
+                }
+                // Remove $initial from the list so it doesn't become a generic AnnotationNode
+                processed.annotations().remove(initialAnnotation.get());
+            }
+        }
+        // --- End of $initial processing ---
 
         // Iterate through the machine body elements
         if (ctx.machineBodyElement() != null) {
@@ -412,6 +437,18 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                     }
 
                  }
+                 // --- Fallback for initialState if not set by $initial annotation ---
+                 // If we processed a StatesInfo block and the machine's initialState is still empty,
+                 // use the initial state identified within that block (usually the first one).
+                 if (elementResult instanceof StatesInfo) {
+                     StatesInfo statesResult = (StatesInfo) elementResult;
+                     if (initialState.isEmpty() && statesResult.initialStatename().isPresent()) {
+                         initialState = statesResult.initialStatename();
+                         System.out.println("Info: Using initial state '" + initialState.get() + "' identified from states block (no $initial annotation found).");
+                     }
+                 }
+                 // --- End Fallback for initialState ---
+
                  // TODO: Add handling for other potential return types from visitMachineBodyElement
                  // (e.g., a dedicated StatesBlockNode containing states and initial state)
                  else if (elementResult != null){
@@ -430,7 +467,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         // Using placeholders for unimplemented parts
         System.out.println("Creating MachineNode for: " + name);
         return new MachineNode(
-            processed.annotationMap(),
+            processed.annotations(),
             name,
             contextNode,
             actions,
@@ -590,23 +627,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
          List<String> entryActions = new ArrayList<>(); // Store action names
          List<String> exitActions = new ArrayList<>();  // Store action names
          List<TransitionNode> transitions = new ArrayList<>();
-         boolean isInitialState = false; // Default to false, logic needs grammar info
-
-         // TODO: Check grammar for how initial state is marked (e.g., INITIAL keyword before ID? specific annotation?)
-         // if (ctx.INITIAL() != null) { isInitialState = true; }
-         // Or check annotations processed below
 
          // Process state-level annotations (e.g., @id, maybe $initial)
          ProcessedAnnotations stateAnnotations = processAnnotations(ctx.annotation());
-         // Example check for a potential $initial annotation:
-         // if (stateAnnotations.annotationMap().containsKey("initial") && Boolean.TRUE.equals(stateAnnotations.annotationMap().get("initial"))) {
-         //     isInitialState = true;
-         // }
-
-         // Process annotations inside braces (if grammar allows, currently seems redundant with outer annotations)
-         // List<AnnotationContext> innerAnnotations = ctx.innerAnnotations != null ? ctx.innerAnnotations : Collections.emptyList();
-         // ProcessedAnnotations innerProcessed = processAnnotations(innerAnnotations);
-         // Merge or handle innerProcessed.id() and innerProcessed.annotationMap() if needed
 
          // Iterate through state body elements
          if (ctx.stateBodyElement() != null) {
@@ -637,8 +660,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
          this.currentStateName = null; // Clear current state name after visiting
 
          // Create and return the StateNode
-         return new StateNode(stateAnnotations.id(), name, stateAnnotations.annotationMap(),
-                            entryActions, exitActions, transitions, isInitialState);
+         return new StateNode(stateAnnotations.id(), name, stateAnnotations.annotations(),
+                            entryActions, exitActions, transitions);
      }
 
      // This method corresponds to the 'onTransition' rule in the grammar
@@ -678,7 +701,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
              // Use the stored currentStateName as fromState
              String fromState = (this.currentStateName != null) ? this.currentStateName : "UNKNOWN_SOURCE";
              // Add transitionAnnotations map to constructor
-             return new TransitionNode(Optional.empty(), fromState, targetState, event, Optional.ofNullable(condition), action, transitionAnnotations.annotationMap());
+             return new TransitionNode(Optional.empty(), fromState, targetState, event, Optional.ofNullable(condition), action, transitionAnnotations.annotations());
 
          } else {
              System.err.println("Warning: onTransition rule missing transitionSpec for event: " + event);
@@ -705,7 +728,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         // TODO: Parse parameters and return type if needed for a more detailed ActionNode based on grammar
 
         // Constructor: ActionNode(Optional<Long> id, String name, Map<String, Object> annotations)
-        return new ActionNode(processed.id(), name, processed.annotationMap());
+        return new ActionNode(processed.id(), name, processed.annotations());
      }
 
     // Visitor for the 'guardDefinition' rule (assuming similar structure to actionDefinition)
@@ -724,7 +747,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         // TODO: Add parsing for parameters/return type if grammar supports them
 
         // Constructor: GuardNode(Optional<Long> id, String name, Map<String, Object> annotations)
-        return new GuardNode(processed.id(), name, processed.annotationMap());
+        return new GuardNode(processed.id(), name, processed.annotations());
     }
 
     // Visitor for the 'invokeDefinition' rule
@@ -747,7 +770,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         // TODO: Add parsing for other details like src, data, onDone, onError based on grammar
 
         // Constructor: InvokeNode(Optional<Long> id, String name, Map<String, Object> annotations)
-        return new InvokeNode(processed.id(), name, processed.annotationMap());
+        return new InvokeNode(processed.id(), name, processed.annotations());
     }
 
     // --- Service related visitors ---
@@ -780,7 +803,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
              name,
              methods,
              implementedInterfaces,
-             serviceAnnotations.annotationMap()
+             serviceAnnotations.annotations()
          );
      }
 
@@ -806,7 +829,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
               interfaceAnnotations.id(),
               name,
               methods,
-              interfaceAnnotations.annotationMap()
+              interfaceAnnotations.annotations()
           );
      }
 
@@ -829,7 +852,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                name,
                parameters,
                returnType,
-               methodAnnotations.annotationMap()
+               methodAnnotations.annotations()
            );
       }
 
@@ -844,7 +867,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
 
            // TODO: Visit actor body elements if the grammar defines them
 
-           return new ActorNode(actorAnnotations.id(), name, actorAnnotations.annotationMap());
+           return new ActorNode(actorAnnotations.id(), name, actorAnnotations.annotations());
       }
 
      // --- Communication related visitors ---
@@ -869,7 +892,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
 
             // TODO: Visit protocol body elements based on grammar
 
-            return new ProtocolNode(protocolAnnotations.id(), name, protocolAnnotations.annotationMap());
+            return new ProtocolNode(protocolAnnotations.id(), name, protocolAnnotations.annotations());
       }
        @Override
        public Object visitChannelDefinition(SSoTParser.ChannelDefinitionContext ctx) { // Return Object
@@ -879,7 +902,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
 
             // TODO: Visit channel body elements based on grammar
 
-            return new ChannelNode(channelAnnotations.id(), name, channelAnnotations.annotationMap());
+            return new ChannelNode(channelAnnotations.id(), name, channelAnnotations.annotations());
        }
         @Override
         public Object visitEventDefinition(SSoTParser.EventDefinitionContext ctx) { // Return Object
@@ -898,7 +921,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
                  }
              }
 
-             return new EventNode(eventAnnotations.id(), name, fields, eventAnnotations.annotationMap());
+             return new EventNode(eventAnnotations.id(), name, fields, eventAnnotations.annotations());
         }
 
     // --- Annotation Value Parsing Helpers ---

@@ -6,6 +6,9 @@ import java.util.Objects;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
+import java.util.ArrayList;
+import java.util.Collections;
+import ssot_parser.ast.nodes.AnnotationNode;
 
 /**
  * Represents a method definition within an interface or service.
@@ -16,14 +19,14 @@ public class MethodNode implements AstNode {
     private final String name;
     private final List<ParameterNode> parameters;
     private final Optional<String> returnType; // Optional if methods can be void
-    private final Map<String, Object> annotations;
+    private final List<AnnotationNode> annotations;
 
-    public MethodNode(Optional<Long> id, String name, List<ParameterNode> parameters, Optional<String> returnType, Map<String, Object> annotations) {
+    public MethodNode(Optional<Long> id, String name, List<ParameterNode> parameters, Optional<String> returnType, List<AnnotationNode> annotations) {
         this.id = id;
         this.name = Objects.requireNonNull(name, "Method name cannot be null");
         this.parameters = Objects.requireNonNull(parameters, "Method parameters cannot be null");
         this.returnType = returnType; // Nullable/Optional
-        this.annotations = Objects.requireNonNull(annotations, "Method annotations cannot be null");
+        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
     }
 
     public Optional<Long> getId() {
@@ -43,7 +46,7 @@ public class MethodNode implements AstNode {
     }
 
     @Override
-    public Map<String, Object> getAnnotations() {
+    public List<AnnotationNode> getAnnotations() {
         return annotations;
     }
 

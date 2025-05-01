@@ -5,13 +5,17 @@ import ssot_parser.ast.NodeVisitor; // Assuming you have or will have a visitor 
 
 import java.util.Collections;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Optional;
+
+// Import AnnotationNode
+import ssot_parser.ast.nodes.AnnotationNode;
 
 // Basic placeholder for Machine Definition Node
 public class MachineNode implements AstNode {
     // private final List<AnnotationNode> annotations; // Assuming AnnotationNode exists or will be created
-    private final Map<String, Object> annotations; // Changed to Map
+    private final List<AnnotationNode> annotations; // Changed back to List<AnnotationNode>
     private final String name;
     private final Optional<ContextNode> context; // Changed from Optional<AstNode>
     private final List<ActionNode> actions;     // Changed from List<AstNode>
@@ -23,12 +27,12 @@ public class MachineNode implements AstNode {
     private final List<TransitionNode> transitions; // Changed from List<AstNode>
 
     // Constructor - updated states, initialState, and transitions types
-    public MachineNode(Map<String, Object> annotations, // Changed type
+    public MachineNode(List<AnnotationNode> annotations, // Changed type back
                        String name, Optional<ContextNode> context,
                        List<ActionNode> actions, List<GuardNode> guards, List<InvokeNode> invokes,
                        List<StateNode> states, Optional<String> initialState,
                        List<TransitionNode> transitions) {
-        this.annotations = annotations != null ? Collections.unmodifiableMap(annotations) : Collections.emptyMap(); // Assign map
+        this.annotations = annotations != null ? Collections.unmodifiableList(new ArrayList<>(annotations)) : Collections.emptyList(); // Assign list
         this.name = name;
         this.context = context; // Assign the Optional<ContextNode>
         this.actions = actions != null ? Collections.unmodifiableList(actions) : Collections.emptyList();
@@ -46,7 +50,7 @@ public class MachineNode implements AstNode {
     //     return annotations;
     // }
     @Override // Added Override
-    public Map<String, Object> getAnnotations() { // Changed return type to Map
+    public List<AnnotationNode> getAnnotations() { // Changed return type back to List
         return annotations;
     }
 

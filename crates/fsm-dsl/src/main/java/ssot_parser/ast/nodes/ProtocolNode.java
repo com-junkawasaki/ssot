@@ -5,6 +5,10 @@ import java.util.Objects;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
+import ssot_parser.ast.nodes.AnnotationNode;
 
 /**
  * Represents a protocol definition in the AST.
@@ -13,13 +17,13 @@ public class ProtocolNode implements AstNode {
 
     private final Optional<Long> id;
     private final String name;
-    private final Map<String, Object> annotations;
+    private final List<AnnotationNode> annotations;
     // TODO: Add fields relevant to a protocol (e.g., message types, direction?)
 
-    public ProtocolNode(Optional<Long> id, String name, Map<String, Object> annotations) {
+    public ProtocolNode(Optional<Long> id, String name, List<AnnotationNode> annotations) {
         this.id = id;
         this.name = Objects.requireNonNull(name, "Protocol name cannot be null");
-        this.annotations = Objects.requireNonNull(annotations, "Protocol annotations cannot be null");
+        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
     }
 
     public Optional<Long> getId() {
@@ -31,7 +35,7 @@ public class ProtocolNode implements AstNode {
     }
 
     @Override
-    public Map<String, Object> getAnnotations() {
+    public List<AnnotationNode> getAnnotations() {
         return annotations;
     }
 

@@ -4,9 +4,12 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.List;
+import java.util.ArrayList;
 import ssot_parser.ast.AstNode;
 import ssot_parser.NodeWithId;
 import ssot_parser.ast.NodeVisitor;
+import ssot_parser.ast.nodes.AnnotationNode;
 
 /**
  * Represents an action definition within the 'actions { ... }' block of a machine.
@@ -17,13 +20,13 @@ public class ActionNode implements NodeWithId {
     private final Optional<Long> id;
     public final String name;
     // Store other annotations ($name, $flag) in a map
-    private final Map<String, Object> annotations;
+    private final List<AnnotationNode> annotations;
 
     // Constructor including annotations
-    public ActionNode(Optional<Long> id, String name, Map<String, Object> annotations) {
+    public ActionNode(Optional<Long> id, String name, List<AnnotationNode> annotations) {
         this.id = id;
         this.name = name;
-        this.annotations = Collections.unmodifiableMap(annotations != null ? new HashMap<>(annotations) : Collections.emptyMap());
+        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
     }
 
     @Override
@@ -36,7 +39,7 @@ public class ActionNode implements NodeWithId {
     }
 
     @Override
-    public Map<String, Object> getAnnotations() {
+    public List<AnnotationNode> getAnnotations() {
         return annotations;
     }
 
