@@ -49,9 +49,9 @@ public class ActionNode implements AstNode {
     public String toString() {
         return "ActionNode{" +
                "id=" + id +
-               ", name='" + name + ''' +
+               ", name='" + name + "\'" +
                ", annotations=" + annotations +
-               '}';
+               "}";
     }
 
     // Consider adding equals() and hashCode()

@@ -50,9 +50,9 @@ public class InvokeNode implements AstNode {
     public String toString() {
         return "InvokeNode{" +
                "id=" + id +
-               ", name='" + name + ''' +
+               ", name='" + name + "\'" +
                ", annotations=" + annotations +
-               '}';
+               "}";
     }
 
     // Consider adding equals() and hashCode()

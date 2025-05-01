@@ -74,14 +74,14 @@ public class StateNode implements AstNode {
     public String toString() {
         return "StateNode{" +
                "id=" + id +
-               ", name='" + name + ''' +
+               ", name='" + name + "\'" +
                ", isInitial=" + isInitial +
                ", annotations=" + annotations +
                ", entryActions=" + entryActions +
                ", exitActions=" + exitActions +
                ", transitions=" + transitions +
                // Add other fields (nested states, invokes) here
-               '}';
+               "}";
     }
 
     // Consider adding equals() and hashCode()

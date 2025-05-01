@@ -83,7 +83,7 @@ public class MachineNode implements AstNode {
     @Override
     public String toString() {
         return "MachineNode{" +
-               "name='" + name + ''' +
+               "name='" + name + "\'" +
                ", annotations=" + annotations +
                ", context=" + context +
                ", actions=" + actions +
@@ -92,7 +92,7 @@ public class MachineNode implements AstNode {
                ", states=" + states +
                ", initialState=" + initialState +
                ", transitions=" + transitions +
-               '}';
+               "}";
     }
 
     // Potentially add equals() and hashCode() methods

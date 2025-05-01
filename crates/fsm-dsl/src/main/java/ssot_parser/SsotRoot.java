@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import ssot_parser.ast.AstNode;
 
 /**
  * Represents the root node of the SSoT Abstract Syntax Tree (AST).

@@ -73,13 +73,13 @@ public class TransitionNode implements AstNode {
     public String toString() {
         return "TransitionNode{" +
                "id=" + id +
-               ", sourceState='" + sourceState + ''' +
-               ", targetState='" + targetState + ''' +
-               ", event='" + event + ''' +
+               ", sourceState='" + sourceState + "\'" +
+               ", targetState='" + targetState + "\'" +
+               ", event='" + event + "\'" +
                ", condition=" + condition +
                ", actions=" + actions +
                ", annotations=" + annotations +
-               '}';
+               "}";
     }
 
     // Consider adding equals() and hashCode()

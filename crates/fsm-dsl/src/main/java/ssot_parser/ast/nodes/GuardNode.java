@@ -50,9 +50,9 @@ public class GuardNode implements AstNode {
     public String toString() {
         return "GuardNode{" +
                "id=" + id +
-               ", name='" + name + ''' +
+               ", name='" + name + "\'" +
                ", annotations=" + annotations +
-               '}';
+               "}";
     }
 
     // Consider adding equals() and hashCode()

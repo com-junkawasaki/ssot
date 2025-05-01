@@ -1,4 +1,4 @@
-package ssot_parser;
+package ssot_parser.ast; // Corrected package
 
 import org.antlr.v4.runtime.tree.ParseTree;
 import java.util.Map;
@@ -18,4 +18,7 @@ public interface AstNode {
 
     // Method to get the map of $name annotations associated with this node
     Map<String, Object> getAnnotations();
+
+    // Add accept method for Visitor pattern
+    <T> T accept(NodeVisitor<T> visitor);
 } 
