@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.nodes.FieldNode;
+import ssot_parser.ast.NodeVisitor;
 
 /** Represents a type definition */
 public class TypeDefNode implements NodeWithId {
@@ -38,5 +39,11 @@ public class TypeDefNode implements NodeWithId {
     @Override
     public Map<String, Object> getAnnotations() {
         return annotations;
+    }
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        return visitor.visitTypeDefNode(this);
     }
 } 

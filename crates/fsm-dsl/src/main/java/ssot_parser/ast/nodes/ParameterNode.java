@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
+import ssot_parser.ast.NodeVisitor;
 
 /**
  * Represents a parameter in a method definition.
@@ -48,5 +49,12 @@ public class ParameterNode implements AstNode {
                ", annotations=" + annotations +
                '}';
     }
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        return visitor.visitParameterNode(this);
+    }
+
     // equals/hashCode omitted
 } 

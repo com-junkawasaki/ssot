@@ -39,12 +39,14 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         List<AstNode> actorDefs = new ArrayList<>(); // Added
         List<AstNode> communicationDefs = new ArrayList<>(); // Added
         // TODO: Handle imports, fileId, annotations
+        // Process file-level annotations
+        ProcessedAnnotations fileAnnotationsResult = processAnnotations(ctx.annotation());
+        // TODO: Handle fileId if present in grammar
 
         // Iterate through definition blocks based on grammar: definitionBlock*
         if (ctx.definitionBlock() != null) {
             for (SSoTParser.DefinitionBlockContext blockCtx : ctx.definitionBlock()) {
                 if (blockCtx.typesBlock() != null) {
-                    // Use helper method, add results to list
                     typeDefs.addAll(visitTypesBlockHelper(blockCtx.typesBlock()));
                 } else if (blockCtx.servicesBlock() != null) {
                     serviceDefs.addAll(visitServicesBlockHelper(blockCtx.servicesBlock()));
@@ -60,11 +62,17 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         }
 
         // Create SsotRoot with collected lists (adjust constructor if needed)
-        // Assuming SsotRoot needs more lists now. Let's keep it simple for now.
-        // TODO: Update SsotRoot constructor to accept all definition types.
-        // TODO: Process file-level annotations
-        Map<String, Object> fileAnnotations = new HashMap<>(); // Placeholder for file annotations
-        return new SsotRoot(typeDefs, serviceDefs, machineDefs, fileAnnotations); // Add annotations map
+        // Map<String, Object> fileAnnotations = new HashMap<>(); // Placeholder for file annotations
+        // return new SsotRoot(typeDefs, serviceDefs, machineDefs, fileAnnotations); // Add annotations map - OLD CALL
+        // Pass all collected lists and the processed annotations map to the constructor
+        return new SsotRoot(
+            typeDefs,
+            serviceDefs,
+            machineDefs,
+            actorDefs, // Added missing argument
+            communicationDefs, // Added missing argument
+            fileAnnotationsResult.annotationMap() // Use the map from ProcessedAnnotations
+        );
     }
 
     // --- Helper methods for visiting blocks (NOT overriding BaseVisitor) ---
@@ -314,7 +322,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
 
     @Override
     public Object visitMachineDefinition(SSoTParser.MachineDefinitionContext ctx) { // Return Object, should be MachineNode
-        String name = ctx.IDENTIFIER().getText();
+        String name = ctx.ID().getText();
         System.out.println("Visiting MachineDefinition: " + name);
 
         // Process annotations specific to this machine definition

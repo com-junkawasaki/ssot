@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
+import ssot_parser.ast.NodeVisitor;
 
 /** Represents a generic block (e.g., types {}, machines {}) containing definitions */
 public class BlockNode implements NodeWithId {
@@ -39,5 +40,23 @@ public class BlockNode implements NodeWithId {
     @Override
     public Map<String, Object> getAnnotations() {
         return annotations;
+    }
+
+    @Override
+    public String toString() {
+        return "BlockNode{" +
+                "id=" + id +
+                ", blockType='" + blockType + '\'' +
+                ", definitions=" + definitions +
+                ", annotations=" + annotations +
+                '}';
+    }
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        // How to visit a generic block?
+        // Maybe delegate to children or have specific visitBlockNode?
+        throw new UnsupportedOperationException("Accept not implemented for BlockNode yet.");
     }
 } 

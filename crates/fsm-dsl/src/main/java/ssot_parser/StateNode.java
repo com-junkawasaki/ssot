@@ -12,15 +12,22 @@ import ssot_parser.ast.NodeVisitor;
 public class StateNode implements NodeWithId {
     private final Optional<Long> id;
     public final String name;
-    public final List<ActionNode> actions; // Combine entry/exit actions for now
-    // TODO: Consider adding fields for transitions, nested states, history, etc.
+    private final List<String> entryActions;
+    private final List<String> exitActions;
+    private final List<TransitionNode> transitions;
+    private final boolean isInitial;
     private final Map<String, Object> annotations;
 
-    public StateNode(Optional<Long> id, String name, List<ActionNode> actions, Map<String, Object> annotations) {
+    public StateNode(Optional<Long> id, String name, Map<String, Object> annotations,
+                     List<String> entryActions, List<String> exitActions,
+                     List<TransitionNode> transitions, boolean isInitial) {
         this.id = id;
         this.name = name;
-        this.actions = Collections.unmodifiableList(actions != null ? actions : Collections.emptyList());
         this.annotations = Collections.unmodifiableMap(annotations != null ? new HashMap<>(annotations) : Collections.emptyMap());
+        this.entryActions = entryActions != null ? Collections.unmodifiableList(entryActions) : Collections.emptyList();
+        this.exitActions = exitActions != null ? Collections.unmodifiableList(exitActions) : Collections.emptyList();
+        this.transitions = transitions != null ? Collections.unmodifiableList(transitions) : Collections.emptyList();
+        this.isInitial = isInitial;
     }
 
     @Override
@@ -29,10 +36,22 @@ public class StateNode implements NodeWithId {
     }
 
     public String getName() { return name; }
-    public List<ActionNode> getActions() { return actions; }
+
+    public List<String> getEntryActions() { return entryActions; }
+    public List<String> getExitActions() { return exitActions; }
+    public List<TransitionNode> getTransitions() { return transitions; }
+    public boolean isInitial() { return isInitial; }
 
     @Override
     public Map<String, Object> getAnnotations() {
         return annotations;
+    }
+
+    // Consider adding equals() and hashCode()
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        return visitor.visitStateNode(this);
     }
 } 

@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
+import ssot_parser.ast.NodeVisitor;
 
 /**
  * Represents an actor definition in the AST.
@@ -44,4 +45,10 @@ public class ActorNode implements AstNode {
     }
 
     // equals and hashCode omitted for brevity
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        return visitor.visitActorNode(this);
+    }
 } 

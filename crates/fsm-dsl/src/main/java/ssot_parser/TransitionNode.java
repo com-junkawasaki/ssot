@@ -47,4 +47,10 @@ public class TransitionNode implements NodeWithId {
     public Map<String, Object> getAnnotations() {
         return annotations;
     }
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        return visitor.visitTransitionNode(this);
+    }
 } 

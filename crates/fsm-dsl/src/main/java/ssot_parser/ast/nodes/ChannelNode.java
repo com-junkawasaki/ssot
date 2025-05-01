@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
+import ssot_parser.ast.NodeVisitor;
 
 /**
  * Represents a communication channel definition in the AST.
@@ -42,5 +43,12 @@ public class ChannelNode implements AstNode {
                ", annotations=" + annotations +
                '}';
     }
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        return visitor.visitChannelNode(this);
+    }
+
     // equals/hashCode omitted
 } 

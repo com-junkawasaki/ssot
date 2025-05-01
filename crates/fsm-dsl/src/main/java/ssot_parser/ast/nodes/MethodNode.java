@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
+import ssot_parser.ast.NodeVisitor;
 
 /**
  * Represents a method definition within an interface or service.
@@ -56,5 +57,12 @@ public class MethodNode implements AstNode {
                ", annotations=" + annotations +
                '}';
     }
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        return visitor.visitMethodNode(this);
+    }
+
     // equals/hashCode omitted
 } 

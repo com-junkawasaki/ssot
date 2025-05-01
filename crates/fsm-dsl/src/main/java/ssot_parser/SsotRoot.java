@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import ssot_parser.ast.AstNode;
+import ssot_parser.ast.NodeVisitor;
 
 /**
  * Represents the root node of the SSoT Abstract Syntax Tree (AST).
@@ -86,4 +87,10 @@ public class SsotRoot implements AstNode {
 
     // Optional: Methods to access specific types of definitions if needed
     // e.g., public List<TypeDefNode> getParsedTypeDefs() { ... filter and cast ... }
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        return visitor.visitSsotRoot(this);
+    }
 } 
