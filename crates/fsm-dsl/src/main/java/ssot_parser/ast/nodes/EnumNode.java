@@ -6,30 +6,46 @@ import java.util.Objects;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
+import ssot_parser.NodeWithId;
+import java.util.ArrayList;
+import java.util.Collections;
 
 /**
  * Represents an enum type definition in the AST.
  */
-public class EnumNode implements AstNode { // Could potentially extend a common TypeDefNode base class
+public class EnumNode implements AstNode, TypeDefNode, NodeWithId { // Implement TypeDefNode for consistency?
 
     private final Optional<Long> id;
+    private final List<AnnotationNode> annotations;
     private final String name;
     private final List<EnumVariantNode> variants;
-    private final Map<String, Object> annotations;
 
-    public EnumNode(Optional<Long> id, String name, List<EnumVariantNode> variants, Map<String, Object> annotations) {
+    public EnumNode(Optional<Long> id, List<AnnotationNode> annotations, String name, List<EnumVariantNode> variants) {
         this.id = id;
-        this.name = Objects.requireNonNull(name, "Enum name cannot be null");
-        this.variants = Objects.requireNonNull(variants, "Enum variants cannot be null");
-        this.annotations = Objects.requireNonNull(annotations, "Enum annotations cannot be null");
+        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
+        this.name = name;
+        this.variants = Collections.unmodifiableList(variants != null ? new ArrayList<>(variants) : Collections.emptyList());
     }
 
+    @Override
     public Optional<Long> getId() {
         return id;
     }
 
+    @Override
+    public List<AnnotationNode> getAnnotations() {
+        return annotations;
+    }
+
+    @Override
     public String getName() {
         return name;
+    }
+
+    // Method required by TypeDefNode if implemented
+    @Override
+    public List<FieldNode> getFields() {
+        return Collections.emptyList(); // Enums don't have fields like structs
     }
 
     public List<EnumVariantNode> getVariants() {
@@ -37,14 +53,9 @@ public class EnumNode implements AstNode { // Could potentially extend a common 
     }
 
     @Override
-    public Map<String, Object> getAnnotations() {
-        return annotations;
-    }
-
-    @Override
     public String toString() {
         return "EnumNode{" +
-               "id=" + id +
+               "id=" + id.map(String::valueOf).orElse("none") +
                ", name='" + name + '\'' +
                ", variants=" + variants +
                ", annotations=" + annotations +
@@ -56,6 +67,9 @@ public class EnumNode implements AstNode { // Could potentially extend a common 
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        return visitor.visitEnumNode(this);
+        // TODO: Add visitEnumNode method to NodeVisitor interface
+        // return visitor.visitEnumNode(this);
+        System.err.println("Warning: NodeVisitor.visitEnumNode not implemented yet.");
+        return null; // Placeholder return
     }
 } 

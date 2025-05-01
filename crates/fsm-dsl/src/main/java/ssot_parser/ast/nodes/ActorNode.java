@@ -9,11 +9,12 @@ import java.util.Collections;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
 import ssot_parser.ast.nodes.AnnotationNode;
+import ssot_parser.NodeWithId;
 
 /**
  * Represents an actor definition in the AST.
  */
-public class ActorNode implements AstNode {
+public class ActorNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
     private final String name;
@@ -42,7 +43,7 @@ public class ActorNode implements AstNode {
     @Override
     public String toString() {
         return "ActorNode{" +
-               "id=" + id +
+               "id=" + id.map(String::valueOf).orElse("none") +
                ", name='" + name + '\'' +
                ", annotations=" + annotations +
                '}';
@@ -53,6 +54,7 @@ public class ActorNode implements AstNode {
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        return visitor.visitActorNode(this);
+        System.err.println("Warning: NodeVisitor.visitActorNode not implemented yet.");
+        return null;
     }
 } 

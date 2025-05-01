@@ -321,15 +321,45 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
          return new FieldNode(processed.id(), name, typeNode, processed.annotations()); // Pass typeNode
      }
 
+     // Visitor for Enum Variant
+     public Object visitEnumVariant(SSoTParser.EnumVariantContext ctx) {
+         System.out.println("Visiting EnumVariant: " + ctx.ID().getText());
+         String name = ctx.ID().getText();
+         ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+         return new EnumVariantNode(processed.id(), processed.annotations(), name);
+     }
+
      // Assuming visitEnumDefinition is needed
      @Override
      public Object visitEnumDefinition(SSoTParser.EnumDefinitionContext ctx) { // Return Object
-        System.out.println("Visiting EnumDefinition: " + ctx.ID().getText());
-        // TODO: Implement EnumNode creation (needs EnumNode class)
-        // Extract name ctx.ID()
-        // Iterate ctx.enumVariant()
-         System.err.println("Warning: visitEnumDefinition not fully implemented.");
-        return null;
+         String name = ctx.ID().getText();
+         System.out.println("Visiting EnumDefinition: " + name);
+
+         // Process annotations on the enum itself
+         List<AnnotationContext> allAnnotationCtxs = new ArrayList<>();
+         if (ctx.annotation() != null) {
+             allAnnotationCtxs.addAll(ctx.annotation()); // Before and after LBRACE
+         }
+         ProcessedAnnotations enumAnnotations = processAnnotations(allAnnotationCtxs);
+
+         List<EnumVariantNode> variants = new ArrayList<>();
+         if (ctx.enumVariant() != null) {
+             for (SSoTParser.EnumVariantContext variantCtx : ctx.enumVariant()) {
+                 Object variantResult = visitEnumVariant(variantCtx);
+                 if (variantResult instanceof EnumVariantNode) {
+                     variants.add((EnumVariantNode) variantResult);
+                 } else if (variantResult != null) {
+                     System.err.println("Warning: visitEnumVariant did not return EnumVariantNode. Got: " + variantResult.getClass().getName());
+                 }
+             }
+         }
+
+         // TODO: Implement EnumNode creation (needs EnumNode class) -- Implementing now
+         // Extract name ctx.ID()
+         // Iterate ctx.enumVariant()
+         // System.err.println("Warning: visitEnumDefinition not fully implemented.");
+         // return null;
+         return new EnumNode(enumAnnotations.id(), enumAnnotations.annotations(), name, variants);
      }
 
     // --- Machine related visitors ---

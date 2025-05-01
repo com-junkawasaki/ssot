@@ -5,21 +5,26 @@ import java.util.Objects;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
+import ssot_parser.ast.nodes.AnnotationNode;
+import ssot_parser.NodeWithId;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Represents a communication channel definition in the AST.
  */
-public class ChannelNode implements AstNode {
+public class ChannelNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
     private final String name;
-    private final Map<String, Object> annotations;
+    private final List<AnnotationNode> annotations;
     // TODO: Add fields relevant to a channel (e.g., type, participants, protocol?)
 
-    public ChannelNode(Optional<Long> id, String name, Map<String, Object> annotations) {
+    public ChannelNode(Optional<Long> id, String name, List<AnnotationNode> annotations) {
         this.id = id;
         this.name = Objects.requireNonNull(name, "Channel name cannot be null");
-        this.annotations = Objects.requireNonNull(annotations, "Channel annotations cannot be null");
+        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
     }
 
     public Optional<Long> getId() {
@@ -31,14 +36,14 @@ public class ChannelNode implements AstNode {
     }
 
     @Override
-    public Map<String, Object> getAnnotations() {
+    public List<AnnotationNode> getAnnotations() {
         return annotations;
     }
 
      @Override
     public String toString() {
         return "ChannelNode{" +
-               "id=" + id +
+               "id=" + id.map(String::valueOf).orElse("none") +
                ", name='" + name + '\'' +
                ", annotations=" + annotations +
                '}';
@@ -47,7 +52,8 @@ public class ChannelNode implements AstNode {
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        return visitor.visitChannelNode(this);
+        System.err.println("Warning: NodeVisitor.visitChannelNode not implemented yet.");
+        return null;
     }
 
     // equals/hashCode omitted
