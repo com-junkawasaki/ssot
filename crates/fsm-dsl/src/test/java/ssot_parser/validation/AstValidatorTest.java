@@ -268,6 +268,173 @@ public class AstValidatorTest {
          assertTrue(errors.get(0).getNode() instanceof ServiceNode);
     }
 
+    @Test
+    void testUndefinedTypeReference() throws Exception {
+        String input = """
+        types {
+            struct Point { x: u32; y: u32; }
+        }
+        services {
+            interface Renderer {
+                 renderPoint(p: Point); // Valid
+                 renderShape(s: Shape); // Invalid - Shape not defined
+                 getPoints() -> list<optional<Point>>; // Valid nested
+                 getStyles() -> map<string, Style>; // Invalid - Style not defined
+            }
+        }
+        """;
+        SsotRoot root = parseAndBuildAst(input);
+        AstValidator validator = new AstValidator(root);
+        List<ValidationError> errors = validator.validate();
+        // Expect 2 errors
+        assertEquals(2, errors.size(), "Should have 2 errors for undefined types");
+
+        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Referenced type 'Shape' is not defined")), "Shape error missing");
+        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Referenced type 'Style' is not defined")), "Style error missing");
+
+        // Check nodes associated with errors
+        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Shape") && e.getNode() instanceof ParameterNode));
+        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Style") && e.getNode() instanceof MethodNode)); // Error points to method for return type
+    }
+
+    @Test
+    void testDuplicateIds() throws Exception {
+         String input = """
+         types {
+             @id(1)
+             struct A { @id(2) field1: u32; }
+             @id(1) // Duplicate type ID
+             enum B { @id(3) V1; }
+         }
+         machines {
+            @id(10) // OK - different block
+            MachineX {
+                @id(11)
+                actions { Action1; }
+                @id(11) // Duplicate action ID within machine
+                guards { Guard1; }
+                states {
+                    @id(12)
+                    StateA {
+                        @id(13)
+                        on Event1 target StateB;
+                    }
+                    @id(12) // Duplicate state ID within machine
+                    StateB { }
+                }
+            }
+         }
+         """;
+         SsotRoot root = parseAndBuildAst(input);
+         AstValidator validator = new AstValidator(root);
+         List<ValidationError> errors = validator.validate();
+
+         assertEquals(3, errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).count(),
+                      "Should have 3 errors for duplicate IDs");
+
+         // Check specific duplicate ID errors
+         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate @id(1)") && e.getNode() instanceof EnumNode),
+                    "Duplicate type ID error missing");
+         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate @id(11)") && e.getNode() instanceof GuardNode),
+                    "Duplicate machine inner ID (guard) error missing");
+         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate @id(12)") && e.getNode() instanceof StateNode && ((StateNode)e.getNode()).getName().equals("StateB")),
+                    "Duplicate state ID error missing");
+
+         // Optionally check the "first used near" part of the message if implemented fully
+    }
+
+    @Test
+    void testUnreachableState() throws Exception {
+        String input = """
+        machines {
+            MyMachine {
+                 $initial("A");
+                 states {
+                    A { on Event1 target B; }
+                    B { }
+                    C { } // Unreachable
+                    D { invoke X { onError C; } } // C becomes reachable via invoke
+                    E { } // Still unreachable
+                 }
+            }
+        }
+        """;
+        SsotRoot root = parseAndBuildAst(input);
+        AstValidator validator = new AstValidator(root);
+        List<ValidationError> errors = validator.validate();
+
+        // Expect 1 warning for state E
+        assertEquals(1, errors.size(), "Should have 1 warning for unreachable state");
+        assertEquals(1, errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.WARNING).count());
+        ValidationError warning = errors.get(0);
+        assertTrue(warning.getMessage().contains("State 'E' is unreachable"), "Warning message mismatch: " + warning.getMessage());
+        assertEquals(ValidationError.Severity.WARNING, warning.getSeverity());
+        assertTrue(warning.getNode() instanceof StateNode && ((StateNode)warning.getNode()).getName().equals("E"), "Warning should point to state E");
+
+    }
+
+    @Test
+    void testServiceImplementationChecks() throws Exception {
+         String input = """
+         types { struct Data {} }
+         services {
+             interface Crud {
+                 create(d: Data);
+                 read(id: u64) -> optional<Data>;
+                 delete(id: u64) -> bool;
+             }
+
+             // Valid implementation
+             service DataService implements Crud {
+                 create(d: Data) { }
+                 read(id: u64) -> optional<Data> { }
+                 delete(id: u64) -> bool { }
+             }
+
+             // Missing method
+             service PartialService implements Crud {
+                 create(d: Data) { }
+                 // Missing read
+                 delete(id: u64) -> bool { }
+             }
+
+             // Wrong parameter type
+             service WrongParamService implements Crud {
+                 create(d: string); // Wrong type
+                 read(id: u64) -> optional<Data>;
+                 delete(id: u64) -> bool;
+             }
+
+             // Wrong return type
+             service WrongReturnService implements Crud {
+                 create(d: Data);
+                 read(id: u64) -> Data; // Wrong return type (not optional)
+                 delete(id: u64) -> bool;
+             }
+         }
+         """;
+         SsotRoot root = parseAndBuildAst(input);
+         AstValidator validator = new AstValidator(root);
+         List<ValidationError> errors = validator.validate();
+
+         // Expected errors: Missing read, Wrong create param, Wrong read return
+         assertEquals(3, errors.size(), "Should have 3 errors");
+
+         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("missing implementation for method 'read'")
+                                            && e.getNode() instanceof ServiceNode && ((ServiceNode)e.getNode()).getName().equals("PartialService")),
+                    "Missing method error not found for PartialService");
+
+         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Method signature mismatch for 'create'. Parameter types do not match")
+                                            && e.getNode() instanceof MethodNode && ((MethodNode)e.getNode()).getName().equals("create")
+                                            /* Check context points to WrongParamService method */ ),
+                    "Parameter type mismatch error not found for WrongParamService.create");
+
+         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Method signature mismatch for 'read'. Return type does not match")
+                                            && e.getNode() instanceof MethodNode && ((MethodNode)e.getNode()).getName().equals("read")
+                                            /* Check context points to WrongReturnService method */ ),
+                    "Return type mismatch error not found for WrongReturnService.read");
+    }
+
     // TODO: Add tests for context, initial state markers, etc.
     // TODO: Add tests for nested states and history states
 

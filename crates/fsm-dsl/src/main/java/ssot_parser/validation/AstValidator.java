@@ -9,6 +9,12 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.Optional;
 import java.util.HashSet;
+import ssot_parser.ast.type.*; // Import type nodes
+import java.util.HashMap; // Import HashMap
+import java.util.Map; // Import Map
+import java.util.ArrayDeque; // Import ArrayDeque
+import java.util.Deque; // Import Deque
+import java.util.Objects; // Import Objects
 
 /**
  * Performs validation checks on the SSoT AST (Abstract Syntax Tree).
@@ -18,10 +24,20 @@ public class AstValidator {
 
     private final SsotRoot astRoot;
     private final List<ValidationError> errors;
+    private final Set<String> definedTypeNames; // For type reference validation
+    private final Map<String, InterfaceNode> interfaceDefinitionsMap; // Add map
+    // Add maps to store definitions for faster lookup if needed elsewhere
+    // private final Map<String, TypeDefNode> typeDefinitionsMap;
+    // private final Map<String, InterfaceNode> interfaceDefinitionsMap;
+    // ... etc
 
     public AstValidator(SsotRoot astRoot) {
         this.astRoot = astRoot;
         this.errors = new ArrayList<>();
+        this.definedTypeNames = new HashSet<>();
+        this.interfaceDefinitionsMap = new HashMap<>(); // Initialize map
+        // this.typeDefinitionsMap = new HashMap<>();
+        // this.interfaceDefinitionsMap = new HashMap<>();
     }
 
     /**
@@ -30,12 +46,19 @@ public class AstValidator {
      * @return A list of validation errors and warnings. Returns an empty list if the AST is valid.
      */
     public List<ValidationError> validate() {
-        errors.clear(); // Clear previous errors if called multiple times
+        errors.clear();
+        definedTypeNames.clear();
+        interfaceDefinitionsMap.clear(); // Clear map
 
         if (astRoot == null) {
             errors.add(new ValidationError("AST Root cannot be null.", ValidationError.Severity.ERROR));
             return Collections.unmodifiableList(errors);
         }
+
+        // --- Pre-collect definitions for reference checks ---
+        collectDefinedTypeNames();
+        collectInterfaceDefinitions(); // Collect interfaces
+        // collectServiceNames(); // If needed
 
         // --- Run validation checks --- 
         validateMachines();
@@ -48,20 +71,76 @@ public class AstValidator {
         return Collections.unmodifiableList(errors);
     }
 
+    // --- Pre-collection methods ---
+    private void collectDefinedTypeNames() {
+        if (astRoot.getTypeDefinitions() != null) {
+            for (AstNode node : astRoot.getTypeDefinitions()) {
+                if (node instanceof TypeDefNode typeDef) {
+                    // Assuming TypeDefNode provides getName()
+                    if (!definedTypeNames.add(typeDef.getName())) {
+                        // This check might be better placed in validateTypes to point to the duplicate node
+                        addError("Duplicate type definition name '" + typeDef.getName() + "'.", typeDef);
+                    }
+                    // Optionally populate a map: typeDefinitionsMap.put(typeDef.getName(), typeDef);
+                }
+            }
+        }
+        System.out.println("Collected defined type names: " + definedTypeNames);
+    }
+
+    private void collectInterfaceDefinitions() {
+        if (astRoot.getServiceDefinitions() != null) {
+            for (AstNode node : astRoot.getServiceDefinitions()) {
+                if (node instanceof InterfaceNode iface) {
+                    if (interfaceDefinitionsMap.put(iface.getName(), iface) != null) {
+                        addError("Duplicate interface definition name '" + iface.getName() + "'.", iface);
+                    }
+                }
+            }
+        }
+         System.out.println("Collected interface definitions: " + interfaceDefinitionsMap.keySet());
+    }
+
     // --- Placeholder validation methods for different blocks --- 
 
     private void validateMachines() {
         if (astRoot.getMachineDefinitions() == null) return;
+        Map<Long, AstNode> seenIds = new HashMap<>(); // Track IDs within this block
+
         for (AstNode node : astRoot.getMachineDefinitions()) {
             if (node instanceof MachineNode machine) {
+                 checkAndRegisterId(machine, seenIds); // Check ID uniqueness
                  validateSingleMachine(machine);
+            } else {
+                 addError("Invalid node type found in machines block: " + node.getClass().getSimpleName(), node);
             }
-            // else: Error? Should only contain MachineNode
         }
     }
 
     private void validateSingleMachine(MachineNode machine) {
         System.out.println("Validating machine: " + machine.getName());
+         Map<Long, AstNode> seenIdsInMachine = new HashMap<>(); // Track IDs within THIS machine
+
+        // Check machine ID itself (already done by validateMachines)
+
+        // Check IDs of actions, guards, invokes, states, transitions etc.
+        machine.getActions().forEach(n -> checkAndRegisterId(n, seenIdsInMachine));
+        machine.getGuards().forEach(n -> checkAndRegisterId(n, seenIdsInMachine));
+        machine.getInvokes().forEach(n -> checkAndRegisterId(n, seenIdsInMachine)); // For invokes block
+        machine.getStates().forEach(n -> {
+            if (n instanceof StateNode state) {
+                checkAndRegisterId(state, seenIdsInMachine);
+                // Check invokes within state
+                state.getInvokes().forEach(inv -> checkAndRegisterId(inv, seenIdsInMachine));
+                // Check transitions within state
+                state.getTransitions().forEach(t -> checkAndRegisterId(t, seenIdsInMachine));
+                // Check history within state
+                state.getHistory().ifPresent(h -> checkAndRegisterId(h, seenIdsInMachine));
+                // TODO: Recursively check nested states' children IDs?
+            }
+        });
+         // Note: Transitions are also collected at machine level, might double check
+         // machine.getTransitions().forEach(n -> checkAndRegisterId(n, seenIdsInMachine));
 
         // Collect all defined state names within this machine (including nested? For now, top-level only)
         Set<String> definedStateNames = machine.getStates().stream()
@@ -148,6 +227,76 @@ public class AstValidator {
          }
 
         // TODO: Add more checks: unreachable states etc.
+        validateUnreachableStates(machine, definedStateNames);
+    }
+
+    // --- State Machine Specific Validations ---
+
+    private void validateUnreachableStates(MachineNode machine, Set<String> definedStateNames) {
+        if (machine.getInitialState().isEmpty() || definedStateNames.isEmpty()) {
+            // Cannot determine reachability without an initial state or any states
+            // Errors for these cases are likely handled elsewhere
+            return;
+        }
+
+        Set<String> reachableStates = new HashSet<>();
+        Deque<String> queue = new ArrayDeque<>();
+        Map<String, StateNode> stateMap = machine.getStates().stream()
+                                             .filter(s -> s instanceof StateNode)
+                                             .map(s -> (StateNode)s)
+                                             .collect(Collectors.toMap(StateNode::getName, s -> s, (s1, s2) -> s1)); // Handle potential duplicates earlier
+
+        String initialStateName = machine.getInitialState().get();
+        if (stateMap.containsKey(initialStateName)) {
+             queue.add(initialStateName);
+             reachableStates.add(initialStateName);
+        } else {
+            // Initial state itself is not defined, error handled elsewhere
+            return;
+        }
+
+        while (!queue.isEmpty()) {
+            String currentStateName = queue.poll();
+            StateNode currentState = stateMap.get(currentStateName);
+            if (currentState == null) continue; // Should not happen if initial check passed
+
+            // Check regular transitions
+            if (currentState.getTransitions() != null) {
+                for (TransitionNode transition : currentState.getTransitions()) {
+                    String target = transition.getTargetState();
+                    if (definedStateNames.contains(target) && reachableStates.add(target)) {
+                        queue.add(target);
+                    }
+                }
+            }
+
+            // Check invoke transitions
+             if (currentState.getInvokes() != null) {
+                 for (InvokeStateNode invoke : currentState.getInvokes()) {
+                     checkAndEnqueueTarget(invoke.getOnDoneTransition(), definedStateNames, reachableStates, queue);
+                     checkAndEnqueueTarget(invoke.getOnErrorTransition(), definedStateNames, reachableStates, queue);
+                 }
+             }
+
+            // TODO: Consider transitions from nested states if validating hierarchical reachability
+        }
+
+        // Find unreachable states
+        Set<String> unreachableStates = new HashSet<>(definedStateNames);
+        unreachableStates.removeAll(reachableStates);
+
+        for (String unreachable : unreachableStates) {
+            StateNode unreachableNode = stateMap.get(unreachable);
+            addWarning("State '" + unreachable + "' is unreachable.", unreachableNode); // Warning for unreachable state
+        }
+    }
+
+    // Helper to check invoke transition target and add to queue if reachable and new
+    private void checkAndEnqueueTarget(Optional<InvokeStateNode.InvokeTransition> transitionOpt, Set<String> definedStates, Set<String> reachableStates, Deque<String> queue) {
+         transitionOpt.flatMap(InvokeStateNode.InvokeTransition::target)
+                      .filter(definedStates::contains)
+                      .filter(reachableStates::add)
+                      .ifPresent(queue::add);
     }
 
     // Helper to validate a list of action references
@@ -190,120 +339,206 @@ public class AstValidator {
 
     private void validateTypes() {
         if (astRoot.getTypeDefinitions() == null) return;
+        Map<Long, AstNode> seenIds = new HashMap<>(); // Track IDs within this block
+
         for (AstNode node : astRoot.getTypeDefinitions()) {
-            // TODO: Validate struct/enum definitions (e.g., unique variant names)
+            checkAndRegisterId(node, seenIds);
              if (node instanceof EnumNode enumNode) {
                  validateEnum(enumNode);
              } else if (node instanceof TypeDefNode structNode) {
-                 // Assuming TypeDefNode is struct for now
                  validateStruct(structNode);
+             } else {
+                 addError("Invalid node type found in types block: " + node.getClass().getSimpleName(), node);
              }
         }
     }
     private void validateEnum(EnumNode node) {
         System.out.println("Validating enum: " + node.getName());
-        // Check for duplicate variant names
         Set<String> variantNames = new HashSet<>();
+        Map<Long, AstNode> seenVariantIds = new HashMap<>(); // IDs within enum variants
+        checkAndRegisterId(node, seenVariantIds); // Check enum ID itself (relative to inner scope?)
+
         if (node.getVariants() != null) {
             for (EnumVariantNode variant : node.getVariants()) {
+                checkAndRegisterId(variant, seenVariantIds);
                 if (!variantNames.add(variant.getName())) {
-                    // Found a duplicate
-                    addError("Duplicate enum variant name '" + variant.getName() + "' defined.", variant); // Point error to the duplicate variant node
+                    addError("Duplicate enum variant name '" + variant.getName() + "' defined.", variant);
                 }
-                // TODO: Validate annotations on variant?
             }
         }
-        // TODO: Check for duplicate variant names
     }
     private void validateStruct(TypeDefNode node) {
         System.out.println("Validating struct: " + node.getName());
-        // Check for duplicate field names
         Set<String> fieldNames = new HashSet<>();
+        Map<Long, AstNode> seenFieldIds = new HashMap<>(); // IDs within struct fields
+        checkAndRegisterId(node, seenFieldIds); // Check struct ID itself (relative to inner scope?)
+
         if (node.getFields() != null) {
             for (FieldNode field : node.getFields()) {
+                checkAndRegisterId(field, seenFieldIds);
                 if (!fieldNames.add(field.getName())) {
-                    // Found a duplicate
-                    addError("Duplicate struct field name '" + field.getName() + "' defined.", field); // Point error to the duplicate field node
+                    addError("Duplicate struct field name '" + field.getName() + "' defined.", field);
                 }
-                // TODO: Validate field type reference (later step)
-                // TODO: Validate annotations on field?
+                validateTypeReference(field.getType(), field);
             }
         }
     }
 
     private void validateServices() {
         if (astRoot.getServiceDefinitions() == null) return;
-        // Collect all defined interface names for implements check
-        Set<String> definedInterfaceNames = astRoot.getServiceDefinitions().stream()
-                                                 .filter(n -> n instanceof InterfaceNode)
-                                                 .map(n -> ((InterfaceNode)n).getName())
-                                                 .collect(Collectors.toSet());
+        Map<Long, AstNode> seenIds = new HashMap<>();
 
         for (AstNode node : astRoot.getServiceDefinitions()) {
-            // TODO: Validate service/interface definitions
+            checkAndRegisterId(node, seenIds);
             if (node instanceof ServiceNode service) {
-                 validateService(service, definedInterfaceNames); // Pass defined interfaces
+                 validateService(service, interfaceDefinitionsMap);
              } else if (node instanceof InterfaceNode iface) {
                  validateInterface(iface);
+             } else {
+                 addError("Invalid node type found in services block: " + node.getClass().getSimpleName(), node);
              }
         }
     }
-    private void validateService(ServiceNode node, Set<String> definedInterfaceNames) {
+    private void validateService(ServiceNode node, Map<String, InterfaceNode> definedInterfaces) {
         System.out.println("Validating service: " + node.getName());
-        // Check for duplicate method names (including implemented ones potentially)
-        // Simple check for now: only check methods directly defined in the service
-        Set<String> methodNames = new HashSet<>();
-        if (node.getMethods() != null) {
-            for (MethodNode method : node.getMethods()) {
-                if (!methodNames.add(method.getName())) {
-                    addError("Duplicate method name '" + method.getName() + "' in service '" + node.getName() + "'.", method);
-                }
-                 // TODO: Validate parameter types, return type reference?
-            }
-        }
-        // TODO: Check for clashes with implemented interface methods
+        Map<Long, AstNode> seenMethodIds = new HashMap<>();
+        checkAndRegisterId(node, seenMethodIds);
 
-        // Check if implemented interfaces exist
+        // Collect methods defined directly in the service for faster lookup and duplicate check
+        Map<String, MethodNode> serviceMethods = new HashMap<>();
+         if (node.getMethods() != null) {
+             for (MethodNode method : node.getMethods()) {
+                 checkAndRegisterId(method, seenMethodIds);
+                 // Check for duplicates among directly defined methods
+                 if (serviceMethods.put(method.getName(), method) != null) {
+                     addError("Duplicate method name '" + method.getName() + "' directly defined in service '" + node.getName() + "'.", method);
+                 }
+                 // Validate parameter/return types
+                 if (method.getParameters() != null) {
+                     for (ParameterNode param : method.getParameters()) {
+                         checkAndRegisterId(param, seenMethodIds);
+                         validateTypeReference(param.getType(), param);
+                     }
+                 }
+                 method.getReturnType().ifPresent(rt -> validateTypeReference(rt, method));
+             }
+         }
+
+
+        // Check implemented interfaces
         if (node.getImplementedInterfaces() != null) {
              for (String interfaceName : node.getImplementedInterfaces()) {
-                 if (!definedInterfaceNames.contains(interfaceName)) {
+                 InterfaceNode implementedInterface = definedInterfaces.get(interfaceName);
+                 if (implementedInterface == null) {
                      addError("Service '" + node.getName() + "' implements undefined interface '" + interfaceName + "'.", node);
+                 } else {
+                     // Check if all methods from the interface are implemented correctly
+                     if (implementedInterface.getMethods() != null) {
+                        for (MethodNode interfaceMethod : implementedInterface.getMethods()) {
+                            MethodNode serviceMethod = serviceMethods.get(interfaceMethod.getName());
+                            if (serviceMethod == null) {
+                                 addError("Service '" + node.getName() + "' is missing implementation for method '" + interfaceMethod.getName() + "' from interface '" + interfaceName + "'.", node);
+                            } else {
+                                 // Check signature match (parameter types and return type)
+                                 if (!compareParameterLists(interfaceMethod.getParameters(), serviceMethod.getParameters())) {
+                                     addError("Method signature mismatch for '" + interfaceMethod.getName() + "' in service '" + node.getName() + "'. Parameter types do not match interface '" + interfaceName + "'.", serviceMethod);
+                                 }
+                                 if (!compareReturnTypes(interfaceMethod.getReturnType(), serviceMethod.getReturnType())) {
+                                      addError("Method signature mismatch for '" + interfaceMethod.getName() + "' in service '" + node.getName() + "'. Return type does not match interface '" + interfaceName + "'.", serviceMethod);
+                                 }
+                            }
+                        }
+                     }
                  }
              }
         }
-
-        // TODO: Check if all methods from implemented interfaces are present (if required)
     }
     private void validateInterface(InterfaceNode node) {
         System.out.println("Validating interface: " + node.getName());
-        // Check for duplicate method names
         Set<String> methodNames = new HashSet<>();
+        Map<Long, AstNode> seenMethodIds = new HashMap<>(); // IDs within interface methods/params
+        checkAndRegisterId(node, seenMethodIds);
+
         if (node.getMethods() != null) {
             for (MethodNode method : node.getMethods()) {
+                checkAndRegisterId(method, seenMethodIds);
                 if (!methodNames.add(method.getName())) {
                     addError("Duplicate method name '" + method.getName() + "' in interface '" + node.getName() + "'.", method);
                 }
-                // TODO: Validate parameter types, return type reference?
+                 if (method.getParameters() != null) {
+                     for (ParameterNode param : method.getParameters()) {
+                         checkAndRegisterId(param, seenMethodIds);
+                         validateTypeReference(param.getType(), param);
+                     }
+                 }
+                 method.getReturnType().ifPresent(returnType -> validateTypeReference(returnType, method));
             }
         }
     }
 
     private void validateActors() {
         if (astRoot.getActorDefinitions() == null) return;
+         Map<Long, AstNode> seenIds = new HashMap<>(); // Track IDs within this block
         for (AstNode node : astRoot.getActorDefinitions()) {
-            // TODO: Validate actor definitions
+            checkAndRegisterId(node, seenIds);
+            if (!(node instanceof ActorNode)) {
+                 addError("Invalid node type found in actors block: " + node.getClass().getSimpleName(), node);
+            }
+            // TODO: Validate actor definitions further if needed
         }
     }
 
     private void validateCommunication() {
         if (astRoot.getCommunicationDefinitions() == null) return;
+        Map<Long, AstNode> seenIds = new HashMap<>(); // Track IDs within this block
         for (AstNode node : astRoot.getCommunicationDefinitions()) {
-            // TODO: Validate protocol/channel/event definitions
+            checkAndRegisterId(node, seenIds);
+            if (node instanceof EventNode eventNode) {
+                validateEvent(eventNode); // Add specific event validation if needed
+            } else if (!(node instanceof ProtocolNode || node instanceof ChannelNode)) {
+                 addError("Invalid node type found in communication block: " + node.getClass().getSimpleName(), node);
+            }
+            // TODO: Validate protocol/channel definitions further if needed
         }
     }
+     private void validateEvent(EventNode node) {
+         System.out.println("Validating event: " + node.getName());
+         Set<String> fieldNames = new HashSet<>();
+         Map<Long, AstNode> seenFieldIds = new HashMap<>(); // IDs within event fields
+         checkAndRegisterId(node, seenFieldIds); // Check event ID itself (relative to inner scope?)
+
+         if (node.getFields() != null) {
+             for (FieldNode field : node.getFields()) {
+                 checkAndRegisterId(field, seenFieldIds);
+                 if (!fieldNames.add(field.getName())) {
+                     addError("Duplicate event field name '" + field.getName() + "' defined.", field);
+                 }
+                 validateTypeReference(field.getType(), field);
+             }
+         }
+     }
 
     private void validateCrossCuttingConcerns() {
-        // TODO: Implement checks that span multiple blocks (e.g., unique IDs globally?)
+        // Example: Check for ID uniqueness across the entire file
+        // Map<Long, AstNode> allSeenIds = new HashMap<>();
+        // collectAndCheckAllIds(astRoot, allSeenIds);
+    }
+
+    // Helper to check and register @id
+    private void checkAndRegisterId(AstNode node, Map<Long, AstNode> seenIds) {
+        if (node instanceof NodeWithId nodeWithId) {
+            nodeWithId.getId().ifPresent(id -> {
+                if (seenIds.containsKey(id)) {
+                    AstNode firstNode = seenIds.get(id);
+                    addError("Duplicate @id(" + id + ") defined. First used near "
+                             + firstNode.getClass().getSimpleName()
+                             + (firstNode instanceof NodeWithName ? (" '" + ((NodeWithName)firstNode).getName() + "'") : "") // Add name if possible
+                             + ".", node);
+                } else {
+                    seenIds.put(id, node);
+                }
+            });
+        }
     }
 
     // Helper method to add an error
@@ -314,5 +549,56 @@ public class AstValidator {
     // Helper method to add a warning
     private void addWarning(String message, AstNode node) {
         errors.add(new ValidationError(message, ValidationError.Severity.WARNING, node));
+    }
+
+    // Helper method to recursively validate type expressions
+    private void validateTypeReference(TypeExprNode typeNode, AstNode ownerNode) {
+        if (typeNode == null) {
+            addError("Type expression is missing or could not be parsed.", ownerNode);
+            return;
+        }
+
+        if (typeNode instanceof ReferenceTypeNode refNode) {
+            String typeName = refNode.getReferencedTypeName();
+            if (!definedTypeNames.contains(typeName)) {
+                 // Check if it's a known primitive before declaring error
+                 // TODO: Define known primitive types centrally
+                 Set<String> primitives = Set.of("string", "bool", "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64", "f32", "f64", "timestamp", "void");
+                 if (!primitives.contains(typeName)) {
+                    addError("Referenced type '" + typeName + "' is not defined.", ownerNode != null ? ownerNode : typeNode);
+                 }
+            }
+        } else if (typeNode instanceof OptionalTypeNode optNode) {
+            validateTypeReference(optNode.getInnerType(), ownerNode); // Validate inner type
+        } else if (typeNode instanceof ListTypeNode listNode) {
+            validateTypeReference(listNode.getElementType(), ownerNode); // Validate element type
+        } else if (typeNode instanceof MapTypeNode mapNode) {
+            validateTypeReference(mapNode.getKeyType(), ownerNode); // Validate key type
+            validateTypeReference(mapNode.getValueType(), ownerNode); // Validate value type
+        } else if (typeNode instanceof PrimitiveTypeNode primNode) {
+            // Optionally validate if primitive type name is known/allowed
+             Set<String> primitives = Set.of("string", "bool", "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64", "f32", "f64", "timestamp", "void");
+             if (!primitives.contains(primNode.getTypeName())) {
+                  addWarning("Unknown primitive type name '" + primNode.getTypeName() + "'.", ownerNode != null ? ownerNode : typeNode);
+             }
+        }
+        // No action needed for PrimitiveTypeNode if any string is allowed
+    }
+
+    // --- Helper methods for signature comparison ---
+    private boolean compareParameterLists(List<ParameterNode> params1, List<ParameterNode> params2) {
+        if (params1.size() != params2.size()) {
+            return false;
+        }
+        for (int i = 0; i < params1.size(); i++) {
+            if (!Objects.equals(params1.get(i).getType(), params2.get(i).getType())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean compareReturnTypes(Optional<TypeExprNode> type1, Optional<TypeExprNode> type2) {
+        return Objects.equals(type1, type2);
     }
 } 
