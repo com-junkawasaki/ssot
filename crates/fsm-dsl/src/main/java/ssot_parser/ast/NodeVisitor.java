@@ -3,9 +3,9 @@ package ssot_parser.ast;
 import ssot_parser.ast.nodes.*;
 import ssot_parser.SsotRoot;
 import ssot_parser.TypeDefNode;
-import ssot_parser.FieldNode;
-import ssot_parser.ActionNode;
-import ssot_parser.StateNode;
+// import ssot_parser.FieldNode; // Removed, now in nodes subpackage
+import ssot_parser.ActionNode; // Will move this
+import ssot_parser.StateNode; // Will move this
 import ssot_parser.TransitionNode;
 import ssot_parser.BlockNode;
 

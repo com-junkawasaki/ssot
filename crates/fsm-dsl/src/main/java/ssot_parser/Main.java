@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.util.List; // Needed for validation errors
 // Remove unused List import if token printing is kept commented
 // import java.util.List;
+import ssot_parser.ast.AstNode;
 
 public class Main {
     public static void main(String[] args) throws Exception {

@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
+import ssot_parser.ast.NodeVisitor;
 
 /**
  * Represents a service definition.
@@ -58,5 +59,12 @@ public class ServiceNode implements AstNode { // Renamed from ServiceDefinitionN
                ", annotations=" + annotations +
                '}';
     }
-     // equals/hashCode omitted
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        return visitor.visitServiceNode(this);
+    }
+
+    // equals/hashCode omitted
 } 

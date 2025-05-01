@@ -422,7 +422,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
         // Using placeholders for unimplemented parts
         System.out.println("Creating MachineNode for: " + name);
         return new MachineNode(
-            annotations,
+            processed.annotationMap(),
             name,
             contextNode,
             actions,

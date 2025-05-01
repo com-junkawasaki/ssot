@@ -10,7 +10,8 @@ import java.util.Optional;
 
 // Basic placeholder for Machine Definition Node
 public class MachineNode implements AstNode {
-    private final List<AnnotationNode> annotations; // Assuming AnnotationNode exists or will be created
+    // private final List<AnnotationNode> annotations; // Assuming AnnotationNode exists or will be created
+    private final Map<String, Object> annotations; // Changed to Map
     private final String name;
     private final Optional<ContextNode> context; // Changed from Optional<AstNode>
     private final List<ActionNode> actions;     // Changed from List<AstNode>
@@ -22,8 +23,12 @@ public class MachineNode implements AstNode {
     private final List<TransitionNode> transitions; // Changed from List<AstNode>
 
     // Constructor - updated states, initialState, and transitions types
-    public MachineNode(List<AnnotationNode> annotations, String name, Optional<ContextNode> context, List<ActionNode> actions, List<GuardNode> guards, List<InvokeNode> invokes, List<StateNode> states, Optional<String> initialState, List<TransitionNode> transitions) {
-        this.annotations = annotations != null ? Collections.unmodifiableList(annotations) : Collections.emptyList();
+    public MachineNode(Map<String, Object> annotations, // Changed type
+                       String name, Optional<ContextNode> context,
+                       List<ActionNode> actions, List<GuardNode> guards, List<InvokeNode> invokes,
+                       List<StateNode> states, Optional<String> initialState,
+                       List<TransitionNode> transitions) {
+        this.annotations = annotations != null ? Collections.unmodifiableMap(annotations) : Collections.emptyMap(); // Assign map
         this.name = name;
         this.context = context; // Assign the Optional<ContextNode>
         this.actions = actions != null ? Collections.unmodifiableList(actions) : Collections.emptyList();
@@ -37,7 +42,11 @@ public class MachineNode implements AstNode {
         // - Validate transition sources/targets refer to actual state names?
     }
 
-    public List<AnnotationNode> getAnnotations() {
+    // public List<AnnotationNode> getAnnotations() {
+    //     return annotations;
+    // }
+    @Override // Added Override
+    public Map<String, Object> getAnnotations() { // Changed return type to Map
         return annotations;
     }
 
@@ -76,8 +85,7 @@ public class MachineNode implements AstNode {
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
         // Assuming a visitor pattern for processing the AST
-        // return visitor.visitMachineNode(this); // Example call
-        throw new UnsupportedOperationException("Visitor pattern not yet implemented for MachineNode");
+        return visitor.visitMachineNode(this);
     }
 
     @Override

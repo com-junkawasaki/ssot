@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
+import ssot_parser.ast.NodeVisitor;
 
 /**
  * Represents an enum type definition in the AST.
@@ -51,4 +52,10 @@ public class EnumNode implements AstNode { // Could potentially extend a common 
     }
 
     // equals and hashCode omitted for brevity
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        return visitor.visitEnumNode(this);
+    }
 } 

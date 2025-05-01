@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.Map;
+import ssot_parser.ast.AstNode;
 
 /**
  * Validates the constructed Abstract Syntax Tree (AST) for semantic errors,

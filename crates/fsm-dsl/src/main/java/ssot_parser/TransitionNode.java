@@ -4,6 +4,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import ssot_parser.ast.AstNode;
+import ssot_parser.ast.NodeVisitor;
 
 /** Represents a transition between states */
 public class TransitionNode implements NodeWithId {

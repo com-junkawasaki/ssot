@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import ssot_parser.ast.AstNode;
 
 /** Represents a generic block (e.g., types {}, machines {}) containing definitions */
 public class BlockNode implements NodeWithId {

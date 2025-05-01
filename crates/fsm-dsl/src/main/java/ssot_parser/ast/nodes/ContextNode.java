@@ -16,33 +16,32 @@ public class ContextNode implements AstNode {
 
     // Assuming context contains field-like definitions
     private final List<FieldNode> variables;
-    // Potentially add annotations specific to the context block if the grammar allows
-    // private final List<AnnotationNode> annotations;
+    private final Map<String, Object> annotations;
 
-    public ContextNode(List<FieldNode> variables) {
+    public ContextNode(List<FieldNode> variables /*, Map<String, Object> annotations */) {
         // Add null check for variables
         this.variables = variables != null ? Collections.unmodifiableList(variables) : Collections.emptyList();
-        // Initialize annotations if added
+        this.annotations = Collections.emptyMap(); // Initialize to empty for now
     }
 
     public List<FieldNode> getVariables() {
         return variables;
     }
 
-    // public List<AnnotationNode> getAnnotations() { return annotations; }
+    @Override
+    public Map<String, Object> getAnnotations() {
+        return annotations;
+    }
 
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        // Assuming a visitor pattern
-        // return visitor.visitContextNode(this);
-        throw new UnsupportedOperationException("Visitor pattern not yet implemented for ContextNode");
+        return visitor.visitContextNode(this);
     }
 
     @Override
     public String toString() {
         return "ContextNode{" +
                "variables=" + variables +
-               // ", annotations=" + annotations +
                '}';
     }
 

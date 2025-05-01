@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
+import ssot_parser.ast.NodeVisitor;
 
 /**
  * Represents a single variant within an enum definition.
@@ -45,4 +46,10 @@ public class EnumVariantNode implements AstNode { // Variants might not need ful
     }
 
     // equals and hashCode omitted for brevity
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        return visitor.visitEnumVariantNode(this);
+    }
 } 

@@ -3,6 +3,7 @@ package ssot_parser.ast.nodes;
 import java.util.Map;
 import java.util.Objects;
 import ssot_parser.ast.AstNode;
+import ssot_parser.ast.NodeVisitor;
 
 /**
  * Represents a single annotation in the AST (e.g., $name(value) or @id(value)).
@@ -60,5 +61,11 @@ public class AnnotationNode implements AstNode {
     @Override
     public int hashCode() {
         return Objects.hash(name, value, isIdAnnotation);
+    }
+
+    // Implementation for AstNode
+    @Override
+    public <T> T accept(NodeVisitor<T> visitor) {
+        return visitor.visitAnnotationNode(this);
     }
 } 
