@@ -141,130 +141,207 @@ public class AstValidator {
 
         for (AstNode node : astRoot.getMachineDefinitions()) {
             if (node instanceof MachineNode machine) {
-                 checkAndRegisterId(machine, seenIds); // Check ID uniqueness
-                 validateSingleMachine(machine);
+                 Map<Long, AstNode> seenIdsInMachine = new HashMap<>(); // Track IDs within THIS machine
+                 checkAndRegisterId(machine, seenIds); // Check top-level machine ID
+                 checkAndRegisterId(machine, seenIdsInMachine); // Also add machine ID to its internal scope
+
+                 // Collect actions/guards defined at machine level
+                 Set<String> definedActionNames = machine.getActions().stream()
+                                                     .filter(a -> a instanceof ActionNode)
+                                                     .map(a -> ((ActionNode)a).getName())
+                                                     .collect(Collectors.toSet());
+                 Set<String> definedGuardNames = machine.getGuards().stream()
+                                                    .filter(g -> g instanceof GuardNode)
+                                                    .map(g -> ((GuardNode)g).getName())
+                                                    .collect(Collectors.toSet());
+                // Collect all state names (including nested) for target validation later?
+                // Set<String> allStateNamesInMachine = collectAllStateNames(machine); // Requires helper
+
+                 // Validate context block first
+                 machine.getContext().ifPresent(context -> validateContext(context, seenIdsInMachine));
+
+                 // Validate hierarchy starting from top level (null parent)
+                 validateMachineStateHierarchy(machine, null, definedActionNames, definedGuardNames, seenIdsInMachine);
+
+                 // Post-hierarchy check: Reachability (needs all states collected)
+                 Set<String> allDefinedStateNames = collectAllStateNames(machine); // Collect all names after hierarchy validation
+                 validateUnreachableStates(machine, allDefinedStateNames);
+
             } else {
                  addError("Invalid node type found in machines block: " + node.getClass().getSimpleName(), node);
             }
         }
     }
 
-    private void validateSingleMachine(MachineNode machine) {
-        System.out.println("Validating machine: " + machine.getName());
-         Map<Long, AstNode> seenIdsInMachine = new HashMap<>(); // Track IDs within THIS machine
+    // Updated signature and logic for hierarchy validation
+    private void validateMachineStateHierarchy(MachineNode machine, StateNode parentState,
+                                             Set<String> definedActionNames, Set<String> definedGuardNames,
+                                             Map<Long, AstNode> seenIdsInScope) {
+        String scopeName = (parentState == null) ? machine.getName() : parentState.getName();
+        System.out.println("Validating states within scope: " + scopeName);
 
-        // Check machine ID itself (already done by validateMachines)
-
-        // Check IDs of actions, guards, invokes, states, transitions etc.
-        machine.getActions().forEach(n -> checkAndRegisterId(n, seenIdsInMachine));
-        machine.getGuards().forEach(n -> checkAndRegisterId(n, seenIdsInMachine));
-        machine.getInvokes().forEach(n -> checkAndRegisterId(n, seenIdsInMachine)); // For invokes block
-        machine.getStates().forEach(n -> {
-            if (n instanceof StateNode state) {
-                checkAndRegisterId(state, seenIdsInMachine);
-                // Check invokes within state
-                state.getInvokes().forEach(inv -> checkAndRegisterId(inv, seenIdsInMachine));
-                // Check transitions within state
-                state.getTransitions().forEach(t -> checkAndRegisterId(t, seenIdsInMachine));
-                // Check history within state
-                state.getHistory().ifPresent(h -> checkAndRegisterId(h, seenIdsInMachine));
-                // TODO: Recursively check nested states' children IDs?
-            }
-        });
-         // Note: Transitions are also collected at machine level, might double check
-         // machine.getTransitions().forEach(n -> checkAndRegisterId(n, seenIdsInMachine));
-
-        // Collect all defined state names within this machine (including nested? For now, top-level only)
-        Set<String> definedStateNames = machine.getStates().stream()
-                                            .filter(s -> s instanceof StateNode) // Ensure it's a StateNode
-                                            .map(s -> ((StateNode)s).getName())
-                                            .collect(Collectors.toSet());
-
-        // Collect defined action and guard names
-        Set<String> definedActionNames = machine.getActions().stream()
-                                             .filter(a -> a instanceof ActionNode)
-                                             .map(a -> ((ActionNode)a).getName())
-                                             .collect(Collectors.toSet());
-        Set<String> definedGuardNames = machine.getGuards().stream()
-                                            .filter(g -> g instanceof GuardNode)
-                                            .map(g -> ((GuardNode)g).getName())
-                                            .collect(Collectors.toSet());
-        // TODO: Consider adding invokes to a resolvable map/set as well?
-
-        // 1. Validate Initial State
-        if (machine.getInitialState().isPresent()) {
-            String initialStateName = machine.getInitialState().get();
-            if (!definedStateNames.contains(initialStateName)) {
-                addError("Initial state '" + initialStateName + "' is not defined.", machine);
-            }
+        List<StateNode> currentLevelStates;
+        if (parentState == null) {
+            currentLevelStates = machine.getStates().stream()
+                                     .filter(s -> s instanceof StateNode)
+                                     .map(s -> (StateNode)s)
+                                     .collect(Collectors.toList());
         } else {
-            // If initial state is required, add error. Visitor currently defaults to first state.
-            if (definedStateNames.isEmpty()) {
-                 addError("Machine has no states defined.", machine);
-             } else {
-                 // Optionally add a warning if explicit initial state is preferred
-                 addWarning("No explicit initial state defined. Defaulting to first state: '" + ((StateNode)machine.getStates().get(0)).getName() + "'", machine);
-             }
+            currentLevelStates = parentState.getNestedStates().stream()
+                                         .filter(s -> s instanceof StateNode)
+                                         .map(s -> (StateNode)s)
+                                         .collect(Collectors.toList());
         }
 
-        // 2. Validate Transitions (Target State Existence + Action/Guard Existence)
-        if (machine.getTransitions() != null) {
-            for (AstNode transitionNode : machine.getTransitions()) {
-                 if (!(transitionNode instanceof TransitionNode)) continue; // Should not happen
-                 TransitionNode transition = (TransitionNode) transitionNode;
-                String targetStateName = transition.getTargetState();
-                if (!definedStateNames.contains(targetStateName)) {
-                    // Try to find the source state node for better error reporting
-                    AstNode sourceNode = machine.getStates().stream()
-                        .filter(s -> s instanceof StateNode && ((StateNode)s).getName().equals(transition.getSourceState()))
-                        .findFirst().orElse(machine); // Default to machine node if source state not found
-                    addError("Transition target state '" + targetStateName + "' for event '" + transition.getEvent() + "' from state '" + transition.getSourceState() + "' is not defined.", sourceNode);
-                }
+        Set<String> definedStateNamesInScope = new HashSet<>();
+        // IDs are checked cumulatively within the machine scope passed down
+        if(parentState != null) checkAndRegisterId(parentState, seenIdsInScope);
 
-                // Validate action reference
-                transition.getAction().ifPresent(actionName -> {
-                    if (!definedActionNames.contains(actionName)) {
-                        addError("Transition action '" + actionName + "' is not defined.", transition);
-                    }
-                });
+        // First pass: Collect names and check IDs/duplicates at this level
+        for (StateNode state : currentLevelStates) {
+             checkAndRegisterId(state, seenIdsInScope);
+             if (!definedStateNamesInScope.add(state.getName())) {
+                 addError("Duplicate state name '" + state.getName() + "' defined within scope '" + scopeName + "'.", state);
+             }
+             // Check IDs of children immediately within this state's definition
+             state.getInvokes().forEach(inv -> checkAndRegisterId(inv, seenIdsInScope));
+             state.getTransitions().forEach(t -> checkAndRegisterId(t, seenIdsInScope));
+             state.getHistory().ifPresent(h -> checkAndRegisterId(h, seenIdsInScope));
+        }
 
-                // Validate guard reference
-                transition.getCondition().ifPresent(guardName -> {
-                    if (!definedGuardNames.contains(guardName)) {
-                        addError("Transition guard '" + guardName + "' is not defined.", transition);
-                    }
-                });
+        // Validate initial state for the current scope
+        validateInitialStateInScope(machine, parentState, currentLevelStates, definedStateNamesInScope);
+
+        // Second pass: Validate transitions, invokes, actions for each state at this level
+        Set<String> allStateNamesInMachine = collectAllStateNames(machine); // Get all state names for target validation
+        for (StateNode state : currentLevelStates) {
+            validateStateContent(state, allStateNamesInMachine, definedActionNames, definedGuardNames);
+
+            // Recursively validate nested states
+            if (state.getNestedStates() != null && !state.getNestedStates().isEmpty()) {
+                 validateMachineStateHierarchy(machine, state, definedActionNames, definedGuardNames, seenIdsInScope); // Pass same maps down
             }
         }
+    }
 
-         // 3. Validate Invokes (Target State Existence in onDone/onError + Action/Guard Existence)
-         if (machine.getStates() != null) {
-             for (AstNode stateNodeAst : machine.getStates()) {
-                 if (!(stateNodeAst instanceof StateNode)) continue;
-                 StateNode stateNode = (StateNode) stateNodeAst;
+    // Helper to validate content of a single state (transitions, invokes, entry/exit)
+    private void validateStateContent(StateNode state, Set<String> allStateNames, Set<String> definedActionNames, Set<String> definedGuardNames) {
+         // Validate onEntry/onExit actions
+         validateActionReferences(state.getEntryActions(), definedActionNames, "onEntry", state);
+         validateActionReferences(state.getExitActions(), definedActionNames, "onExit", state);
 
-                 // Validate onEntry/onExit actions
-                 validateActionReferences(stateNode.getEntryActions(), definedActionNames, "onEntry", stateNode);
-                 validateActionReferences(stateNode.getExitActions(), definedActionNames, "onExit", stateNode);
-
-                 if (stateNode.getInvokes() != null) {
-                     for (InvokeStateNode invoke : stateNode.getInvokes()) {
-                         validateInvokeTransition(invoke.getOnDoneTransition(), definedStateNames, definedActionNames, definedGuardNames, "onDone", invoke);
-                         validateInvokeTransition(invoke.getOnErrorTransition(), definedStateNames, definedActionNames, definedGuardNames, "onError", invoke);
-                         // Validate invoke.getSrc()
-                         String srcName = invoke.getSrc();
-                         if (!definedServiceNames.contains(srcName) && !definedMachineNames.contains(srcName)) {
-                             // TODO: Check other invokable types if they exist (e.g., functions)
-                             addError("Invoke source '" + srcName + "' does not resolve to a defined service or machine.", invoke);
-                         }
-                     }
+         // Validate Transitions
+         if (state.getTransitions() != null) {
+             for (TransitionNode transition : state.getTransitions()) {
+                 // Validate target state existence (against all states in the machine)
+                 if (!allStateNames.contains(transition.getTargetState())) {
+                     addError("Transition target state '" + transition.getTargetState() + "' for event '" + transition.getEvent() + "' from state '" + state.getName() + "' is not defined within the machine.", transition);
                  }
-                 // TODO: Recursively validate nested states?
+                 // Validate action/guard references
+                 transition.getAction().ifPresent(actionName -> {
+                     if (!definedActionNames.contains(actionName)) {
+                         addError("Transition action '" + actionName + "' is not defined.", transition);
+                     }
+                 });
+                 transition.getCondition().ifPresent(guardName -> {
+                     if (!definedGuardNames.contains(guardName)) {
+                         addError("Transition guard '" + guardName + "' is not defined.", transition);
+                     }
+                 });
              }
          }
 
-        // TODO: Add more checks: unreachable states etc.
-        validateUnreachableStates(machine, definedStateNames);
+         // Validate Invokes
+         if (state.getInvokes() != null) {
+             for (InvokeStateNode invoke : state.getInvokes()) {
+                 // Validate invoke source
+                 String srcName = invoke.getSrc();
+                 if (!definedServiceNames.contains(srcName) && !definedMachineNames.contains(srcName)) {
+                     addError("Invoke source '" + srcName + "' does not resolve to a defined service or machine.", invoke);
+                 }
+                 // Validate onDone/onError transitions (target state, action, guard)
+                 validateInvokeTransition(invoke.getOnDoneTransition(), allStateNames, definedActionNames, definedGuardNames, "onDone", invoke);
+                 validateInvokeTransition(invoke.getOnErrorTransition(), allStateNames, definedActionNames, definedGuardNames, "onError", invoke);
+             }
+         }
+    }
+
+     // Helper to collect all state names recursively
+     private Set<String> collectAllStateNames(MachineNode machine) {
+         Set<String> names = new HashSet<>();
+         collectStateNamesRecursive(machine.getStates(), names);
+         return names;
+     }
+
+     private void collectStateNamesRecursive(List<AstNode> states, Set<String> names) {
+         if (states == null) return;
+         for (AstNode node : states) {
+             if (node instanceof StateNode state) {
+                 names.add(state.getName());
+                 collectStateNamesRecursive(state.getNestedStates(), names);
+             }
+         }
+     }
+
+     // Helper to validate initial state within a scope
+     private void validateInitialStateInScope(MachineNode machine, StateNode parentState, List<StateNode> currentLevelStates, Set<String> definedStateNamesInScope) {
+          if (parentState != null && !parentState.getNestedStates().isEmpty()) {
+              // Compound state: Check for initial state among children
+              Optional<String> initialName = findInitialStateName(parentState, currentLevelStates); // TODO: Implement findInitial based on grammar/annotations
+              if (initialName.isPresent()) {
+                  if (!definedStateNamesInScope.contains(initialName.get())) {
+                      addError("Explicit or implicit initial nested state '" + initialName.get() + "' not found in compound state '" + parentState.getName() + "'.", parentState);
+                  }
+              } else if (currentLevelStates.isEmpty()){
+                   addError("Compound state '" + parentState.getName() + "' has no nested states defined.", parentState);
+              } else {
+                   // Convention: default to first if no explicit marker found
+                   addWarning("No explicit initial state defined for compound state '" + parentState.getName() + "'. Defaulting to first nested state: '" + currentLevelStates.get(0).getName() + "'.", parentState);
+              }
+          } else if (parentState == null) {
+              // Top-level machine: Check machine's initial state
+              if (machine.getInitialState().isPresent()) {
+                  String initialStateName = machine.getInitialState().get();
+                  if (!definedStateNamesInScope.contains(initialStateName)) {
+                      addError("Initial state '" + initialStateName + "' is not defined at the top level of machine '" + machine.getName() + "'.", machine);
+                  }
+              } else { // No explicit $initial on machine
+                   if (currentLevelStates.isEmpty()) {
+                       addError("Machine '" + machine.getName() + "' has no states defined.", machine);
+                   } else {
+                       addWarning("No explicit initial state defined for machine '" + machine.getName() + "'. Defaulting to first state: '" + currentLevelStates.get(0).getName() + "'.", machine);
+                   }
+              }
+          }
+     }
+
+     // Placeholder helper to find initial state marker (needs grammar detail)
+     private Optional<String> findInitialStateName(StateNode parentState, List<StateNode> children) {
+         // TODO: Implement logic based on how initial state is marked:
+         // 1. Check for $initial annotation on parentState?
+         // 2. Check for $initial annotation on one of the children?
+         // 3. Rely on parser setting an 'isInitial' flag on a child StateNode?
+         // For now, return empty to test default convention / missing marker warning.
+         return Optional.empty();
+     }
+
+    // --- Context Validation ---
+    private void validateContext(ContextNode node, Map<Long, AstNode> seenIdsInScope) { // Pass scope IDs
+        if (node == null) return;
+        System.out.println("Validating machine context...");
+        Set<String> fieldNames = new HashSet<>();
+        // Map<Long, AstNode> seenFieldIds = new HashMap<>(); // Use passed scope
+        checkAndRegisterId(node, seenIdsInScope); // Check context block ID itself?
+
+        if (node.getVariables() != null) {
+            for (FieldNode field : node.getVariables()) {
+                checkAndRegisterId(field, seenIdsInScope);
+                if (!fieldNames.add(field.getName())) {
+                    addError("Duplicate context variable name '" + field.getName() + "' defined.", field);
+                }
+                validateTypeReference(field.getType(), field); // Validate type ref as well
+            }
+        }
     }
 
     // --- State Machine Specific Validations ---
