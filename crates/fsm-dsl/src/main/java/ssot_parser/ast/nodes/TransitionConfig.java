@@ -6,6 +6,8 @@ import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * Represents the configuration details for a single transition target,
@@ -33,6 +35,12 @@ public class TransitionConfig implements AstNode {
 
     public Optional<String> getCondition() {
         return condition;
+    }
+
+    @Override
+    public Map<String, Object> getAnnotations() {
+        // This node type currently does not support annotations directly
+        return Collections.emptyMap();
     }
 
     @Override

@@ -13,7 +13,7 @@ import ssot_parser.ast.nodes.AnnotationNode;
 import ssot_parser.ast.nodes.InvokeStateNode;
 import ssot_parser.ast.nodes.EventHandlerNode;
 import ssot_parser.ast.nodes.ConditionalTransitionNode;
-import ssot_parser.ast.nodes.type.StateType;
+import ssot_parser.ast.type.StateType;
 
 /**
  * Represents a state definition within the 'states { ... }' block of a machine.

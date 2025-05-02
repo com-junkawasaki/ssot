@@ -1209,7 +1209,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
 
     // Helper to parse transitionSpec rule and create TransitionConfig
     // Returns TransitionConfig based on target, actions, and guards found.
-    private TransitionConfig visitTransitionSpec(SSoTParser.TransitionSpecContext ctx) {
+    @Override
+    public TransitionConfig visitTransitionSpec(SSoTParser.TransitionSpecContext ctx) {
         if (ctx == null) {
             System.err.println("Error: null TransitionSpecContext provided.");
             return new TransitionConfig("UNKNOWN_TARGET", Collections.emptyList(), Optional.empty());

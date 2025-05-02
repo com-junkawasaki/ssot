@@ -6,6 +6,8 @@ import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * Represents a handler for a specific event (or lack thereof for always transitions)
@@ -27,6 +29,12 @@ public class EventHandlerNode implements AstNode {
 
     public List<TransitionConfig> getTransitions() {
         return transitions;
+    }
+
+    @Override
+    public Map<String, Object> getAnnotations() {
+        // This node type currently does not support annotations directly
+        return Collections.emptyMap();
     }
 
     @Override

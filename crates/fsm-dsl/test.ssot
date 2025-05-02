@@ -239,6 +239,41 @@ machines {
 
   } # end machine ComplexMachine
 
+  stateMachine TestMachine {
+    initial state Idle;
+
+    state Idle {
+        on START {
+            transition Running {
+                action: [Action1, Action2];
+                guard: GuardCondition;
+            }
+        }
+    }
+
+    state Running {
+        invoke ServiceInvoker {
+            source: "myService";
+            onDone {
+                transition Success {
+                    action: [NotifySuccess];
+                }
+            }
+            onError {
+                transition Failure {
+                    action: [LogError];
+                }
+            }
+        }
+        on STOP {
+            transition Idle;
+        }
+    }
+
+    state Success {}
+    state Failure {}
+  }
+
 } # end machines block
 
 # ==========================================

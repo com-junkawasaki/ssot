@@ -17,8 +17,8 @@ import ssot_parser.SsotRoot;
  */
 public interface NodeVisitor<T> {
 
-    // Root node
-    T visitRootNode(RootNode node);
+    // Root node for the entire file
+    T visitSsotRoot(SsotRoot node);
 
     // Type Definition Nodes
     T visitTypeDefNode(TypeDefNode node);
@@ -27,7 +27,6 @@ public interface NodeVisitor<T> {
     T visitEnumVariantNode(EnumVariantNode node);
 
     // State Machine Nodes
-    T visitStateMachineNode(StateMachineNode node);
     T visitContextNode(ContextNode node);
     T visitActionNode(ActionNode node);
     T visitGuardNode(GuardNode node);
