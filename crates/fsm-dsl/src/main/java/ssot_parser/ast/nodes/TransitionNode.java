@@ -13,24 +13,24 @@ import ssot_parser.ast.nodes.AnnotationNode;
 
 /**
  * Represents a state transition triggered by an event.
- * Corresponds to the 'onTransition' rule within a state definition.
+ * Corresponds to the 'onTransition' or 'invokeTransition' rule.
  */
-public class TransitionNode implements NodeWithId {
-    private final Optional<Long> id;
-    public final String sourceState; // Renamed from fromState
-    public final String targetState; // Renamed from toState
-    public final String event;
-    public final Optional<String> condition; // Optional guard condition reference (name)
-    public final Optional<String> action;    // Optional action reference (name)
-    private final List<AnnotationNode> annotations;
+public class TransitionNode implements AstNode, NodeWithId {
+    public final Optional<Long> id;
+    public final String sourceStateName; // Name of the source state (if applicable, e.g., not for invoke transitions)
+    public final String targetStateName; // Name of the target state
+    public final String event;           // Event triggering the transition (or onDone/onError for invoke)
+    public final Optional<String> condition;   // Optional guard condition reference (name)
+    public final Optional<String> action;      // Optional action reference (name)
+    private final List<AnnotationNode> annotations; // Keep internal representation as List
 
     // Constructor - includes source state, guard condition (optional), and actions (list, optional)
-    public TransitionNode(Optional<Long> id, String sourceState, String targetState, String event,
+    public TransitionNode(Optional<Long> id, String sourceStateName, String targetStateName, String event,
                           Optional<String> condition, Optional<String> action,
                           List<AnnotationNode> annotations) {
         this.id = id;
-        this.sourceState = sourceState;
-        this.targetState = targetState;
+        this.sourceStateName = sourceStateName; // Can be null/empty for invoke transitions
+        this.targetStateName = targetStateName;
         this.event = event;
         this.condition = condition;
         this.action = action;
@@ -42,30 +42,21 @@ public class TransitionNode implements NodeWithId {
         return id;
     }
 
-    public String getSourceState() {
-        return sourceState;
-    }
-
-    public String getTargetState() {
-        return targetState;
-    }
-
-    public String getEvent() {
-        return event;
-    }
-
-    public Optional<String> getCondition() {
-        return condition;
-    }
-
-    public Optional<String> getAction() {
-        return action;
-    }
-
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() { // Correct return type
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
+
+    // Getters for main properties (optional, use public fields instead if preferred)
+    public String getSourceStateName() { return sourceStateName; }
+    public String getTargetStateName() { return targetStateName; }
+    public String getEvent() { return event; }
+    public Optional<String> getCondition() { return condition; }
+    public Optional<String> getAction() { return action; }
 
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
@@ -74,13 +65,14 @@ public class TransitionNode implements NodeWithId {
 
     @Override
     public String toString() {
+        // Updated toString
         return "TransitionNode{" +
-               "id=" + id +
-               ", sourceState='" + sourceState + "\'" +
-               ", targetState='" + targetState + "\'" +
+               "id=" + id.map(String::valueOf).orElse("none") +
+               ", source='" + sourceStateName + "\'" +
+               ", target='" + targetStateName + "\'" +
                ", event='" + event + "\'" +
-               ", condition=" + condition +
-               ", action=" + action +
+               ", condition=" + condition.orElse("none") +
+               ", action=" + action.orElse("none") +
                ", annotations=" + annotations +
                "}";
     }
