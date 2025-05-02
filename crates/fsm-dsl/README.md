@@ -24,18 +24,20 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
     *   **課題:** 詳細な意味論的検証 (参照解決、型チェック、アノテーション内容の検証など) は未実装です。
 *   **コード生成:** 未実装です。
 
-## 今後のステップ (主な課題)
+## 今後のステップ (ロードマップ案)
 
-1.  **アノテーション処理の実装:** `@id` や各種 `$annotation` をパースし、対応する AST ノードに情報を付加する。
-2.  **State Machine の Visitor/AST 実装:** `machines` ブロック内の `state`, `context`, `action`, `guard`, `invoke`, `transition` 等に対応する Visitor ロジックと AST ノード (必要に応じて再設計) を実装する。
-3.  **Service/Interface の Visitor/AST 実装:** `services` ブロック内の要素を処理する Visitor と AST ノードを実装する。
-4.  **その他のブロックの Visitor/AST 実装:** `actors`, `deployment_config`, `dependencies` ブロックに対応する Visitor と AST ノードを実装する。
-5.  **AST ノード設計の見直し:** 特に `StateNode`, `TransitionNode` など、文法の詳細を表現できるように設計を改善する。
-6.  **AST 検証の強化:** 参照解決、型チェック、アノテーションに基づいたルールなど、より詳細な検証ロジックを `AstValidator` に追加する。
-7.  **Imports の処理:** `import` 文を解釈し、別ファイルの定義を解決できるようにする。
-8.  **エラーハンドリングの強化:** パースエラーや AST 構築・検証時のエラー報告を改善する。
-9.  **テストの導入と拡充:** プロジェクト全体（パーサー、AST ビルダー、バリデーター）に対するユニットテスト、結合テストを導入し、カバレッジを向上させる。
-10. **コード生成器の実装:** AST からターゲット言語 (Rust, TypeScript, Mermaid など) を出力する機能を追加する。
+1.  **(最優先) State Machine の AST 設計と実装:**
+    *   `state`, `context`, `action`, `guard`, `invoke`, `transition` 等を詳細に表現できるよう `StateNode`, `TransitionNode` 等の AST ノード設計を見直す。
+    *   `AstBuilderVisitor` に State Machine ブロックの詳細な AST 構築ロジックを実装する。
+2.  **(次点) AST 検証の強化 (State Machine 中心):**
+    *   State Machine 内の状態遷移の妥当性、参照されている Action/Guard/Context の存在確認など、意味論的な検証を `AstValidator` に追加する。
+3.  **アノテーション処理の実装:** `@id` や各種 `$annotation` をパースし、対応する AST ノードに情報を付加する。検証ロジックでも利用する。
+4.  **Service/Interface の Visitor/AST 実装:** `services` ブロック内の要素を処理する Visitor と AST ノードを実装する。
+5.  **テストの導入と拡充:** 特に State Machine の AST 構築と検証を中心に、ユニットテストを追加する。
+6.  **エラーハンドリングの強化:** パースエラーや AST 検証エラーをより分かりやすく報告するように改善する。
+7.  **その他のブロックの Visitor/AST 実装:** `actors`, `deployment_config`, `dependencies` ブロックに対応する Visitor と AST ノードを実装する。
+8.  **Imports の処理:** `import` 文を解釈し、別ファイルの定義を解決できるようにする。
+9.  **コード生成器の実装:** AST からターゲット言語 (例: Mermaid グラフ定義) を出力する機能を追加する (初期段階)。
 
 ## ビルドと実行
 

@@ -9,10 +9,10 @@ import java.util.ArrayList;
 import ssot_parser.ast.AstNode;
 import ssot_parser.NodeWithId;
 import ssot_parser.ast.NodeVisitor;
-import ssot_parser.ast.nodes.TransitionNode;
 import ssot_parser.ast.nodes.AnnotationNode;
 import ssot_parser.ast.nodes.InvokeStateNode;
-import ssot_parser.ast.nodes.HistoryNode;
+import ssot_parser.ast.nodes.EventHandlerNode;
+import ssot_parser.ast.nodes.ConditionalTransitionNode;
 import ssot_parser.ast.nodes.type.StateType;
 
 /**
@@ -25,19 +25,19 @@ public class StateNode implements AstNode, NodeWithId {
     private final List<AnnotationNode> annotations; // Keep internal representation as List
     public final List<String> entryActions; // List of action names referenced in entry
     public final List<String> exitActions;  // List of action names referenced in exit
-    public final List<TransitionNode> transitions; // Transitions defined within this state using on
+    public final List<EventHandlerNode> eventHandlers; // Handles 'on Event' and always transitions
+    public final List<ConditionalTransitionNode> conditionalTransitions; // Handles 'if guard ...'
     public final Optional<InvokeStateNode> invoke; // Changed to Optional, as a state has at most one invoke
     public final List<StateNode> nestedStates; // List for nested states (children)
-    public final Optional<HistoryNode> history; // Optional history node
     public final StateType type; // Type of state (ATOMIC, COMPOUND, PARALLEL, FINAL)
     public final String initialStateName; // Name of the initial child state (for compound/parallel)
 
     public StateNode(Optional<Long> id, String stateName, List<AnnotationNode> annotations,
                      List<String> entryActions, List<String> exitActions,
-                     List<TransitionNode> transitions,
+                     List<EventHandlerNode> eventHandlers,
+                     List<ConditionalTransitionNode> conditionalTransitions,
                      Optional<InvokeStateNode> invoke,
                      List<StateNode> nestedStates,
-                     Optional<HistoryNode> history,
                      StateType type,
                      String initialStateName) {
         this.id = id;
@@ -45,10 +45,10 @@ public class StateNode implements AstNode, NodeWithId {
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
         this.entryActions = entryActions != null ? Collections.unmodifiableList(new ArrayList<>(entryActions)) : Collections.emptyList();
         this.exitActions = exitActions != null ? Collections.unmodifiableList(new ArrayList<>(exitActions)) : Collections.emptyList();
-        this.transitions = transitions != null ? Collections.unmodifiableList(new ArrayList<>(transitions)) : Collections.emptyList();
+        this.eventHandlers = eventHandlers != null ? Collections.unmodifiableList(new ArrayList<>(eventHandlers)) : Collections.emptyList();
+        this.conditionalTransitions = conditionalTransitions != null ? Collections.unmodifiableList(new ArrayList<>(conditionalTransitions)) : Collections.emptyList();
         this.invoke = invoke;
         this.nestedStates = nestedStates != null ? Collections.unmodifiableList(new ArrayList<>(nestedStates)) : Collections.emptyList();
-        this.history = history;
         this.type = type;
         this.initialStateName = initialStateName;
     }
@@ -79,8 +79,12 @@ public class StateNode implements AstNode, NodeWithId {
         return exitActions;
     }
 
-    public List<TransitionNode> getTransitions() {
-        return transitions;
+    public List<EventHandlerNode> getEventHandlers() {
+        return eventHandlers;
+    }
+
+    public List<ConditionalTransitionNode> getConditionalTransitions() {
+        return conditionalTransitions;
     }
 
     public Optional<InvokeStateNode> getInvoke() {
@@ -89,10 +93,6 @@ public class StateNode implements AstNode, NodeWithId {
 
     public List<StateNode> getNestedStates() {
         return nestedStates;
-    }
-
-    public Optional<HistoryNode> getHistory() {
-        return history;
     }
 
     public StateType getType() {
@@ -118,10 +118,10 @@ public class StateNode implements AstNode, NodeWithId {
                ", annotations=" + annotations +
                ", entryActions=" + entryActions +
                ", exitActions=" + exitActions +
-               ", transitions=" + transitions +
+               ", eventHandlers=" + eventHandlers +
+               ", conditionalTransitions=" + conditionalTransitions +
                ", invoke=" + invoke +
                ", nestedStates=" + nestedStates +
-               ", history=" + history +
                "}";
     }
 

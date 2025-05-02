@@ -34,7 +34,8 @@ public interface NodeVisitor<T> {
     T visitStateNode(StateNode node);
     T visitTransitionNode(TransitionNode node);
     T visitInvokeStateNode(InvokeStateNode node);
-    T visitHistoryNode(HistoryNode node);
+    T visitEventHandlerNode(EventHandlerNode node);
+    T visitConditionalTransitionNode(ConditionalTransitionNode node);
 
     // Service Nodes
     T visitServiceNode(ServiceNode node);
