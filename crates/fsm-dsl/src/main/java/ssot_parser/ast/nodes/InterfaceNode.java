@@ -11,6 +11,7 @@ import java.util.Collections;
 import ssot_parser.ast.nodes.AnnotationNode;
 import ssot_parser.NodeWithId;
 import ssot_parser.ast.nodes.MethodNode;
+import java.util.HashMap;
 
 /**
  * Represents an interface definition.
@@ -19,13 +20,13 @@ public class InterfaceNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
     private final List<AnnotationNode> annotations;
-    private final String name;
-    private final List<MethodNode> methods;
+    public final String name;
+    public final List<MethodNode> methods;
 
     public InterfaceNode(Optional<Long> id, String name, List<MethodNode> methods, List<AnnotationNode> annotations) {
         this.id = id;
         this.name = Objects.requireNonNull(name, "Interface name cannot be null");
-        this.methods = methods != null ? Collections.unmodifiableList(methods) : Collections.emptyList();
+        this.methods = methods != null ? Collections.unmodifiableList(new ArrayList<>(methods)) : Collections.emptyList();
         this.annotations = annotations != null ? Collections.unmodifiableList(new ArrayList<>(annotations)) : Collections.emptyList();
     }
 
@@ -35,8 +36,12 @@ public class InterfaceNode implements AstNode, NodeWithId {
     }
 
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
 
     public String getName() {
@@ -60,8 +65,7 @@ public class InterfaceNode implements AstNode, NodeWithId {
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        System.err.println("Warning: NodeVisitor.visitInterfaceNode not implemented yet.");
-        return null;
+        return visitor.visitInterfaceNode(this);
     }
 
     // equals/hashCode omitted

@@ -10,6 +10,7 @@ import ssot_parser.NodeWithId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.HashMap;
 
 /**
  * Represents a communication channel definition in the AST.
@@ -17,7 +18,7 @@ import java.util.List;
 public class ChannelNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
-    private final String name;
+    public final String name;
     private final List<AnnotationNode> annotations;
     // TODO: Add fields relevant to a channel (e.g., type, participants, protocol?)
 
@@ -27,6 +28,7 @@ public class ChannelNode implements AstNode, NodeWithId {
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
     }
 
+    @Override
     public Optional<Long> getId() {
         return id;
     }
@@ -36,8 +38,12 @@ public class ChannelNode implements AstNode, NodeWithId {
     }
 
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
 
      @Override
@@ -52,8 +58,7 @@ public class ChannelNode implements AstNode, NodeWithId {
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        System.err.println("Warning: NodeVisitor.visitChannelNode not implemented yet.");
-        return null;
+        return visitor.visitChannelNode(this);
     }
 
     // equals/hashCode omitted

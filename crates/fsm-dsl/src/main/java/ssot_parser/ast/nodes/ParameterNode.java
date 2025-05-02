@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.List;
 import ssot_parser.ast.nodes.AnnotationNode;
 import ssot_parser.ast.type.TypeExprNode;
+import java.util.HashMap;
 
 /**
  * Represents a parameter definition within a method signature.
@@ -20,14 +21,14 @@ public class ParameterNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
     private final List<AnnotationNode> annotations;
-    private final String name;
-    private final TypeExprNode type;
+    public final String name;
+    public final TypeExprNode type;
 
     public ParameterNode(Optional<Long> id, List<AnnotationNode> annotations, String name, TypeExprNode type) {
         this.id = id;
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
-        this.name = name;
-        this.type = type;
+        this.name = Objects.requireNonNull(name, "Parameter name cannot be null");
+        this.type = Objects.requireNonNull(type, "Parameter type cannot be null");
     }
 
     @Override
@@ -36,8 +37,12 @@ public class ParameterNode implements AstNode, NodeWithId {
     }
 
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
 
     public String getName() {
@@ -61,10 +66,7 @@ public class ParameterNode implements AstNode, NodeWithId {
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        // TODO: Add visitParameterNode method to NodeVisitor interface
-        // return visitor.visitParameterNode(this);
-        System.err.println("Warning: NodeVisitor.visitParameterNode not implemented yet.");
-        return null; // Placeholder return
+        return visitor.visitParameterNode(this);
     }
 
     // equals/hashCode omitted

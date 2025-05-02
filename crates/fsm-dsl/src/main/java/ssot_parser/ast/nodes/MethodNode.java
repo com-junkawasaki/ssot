@@ -12,6 +12,7 @@ import ssot_parser.ast.nodes.AnnotationNode;
 import ssot_parser.NodeWithId;
 import ssot_parser.ast.nodes.ParameterNode;
 import ssot_parser.ast.type.TypeExprNode;
+import java.util.HashMap;
 
 /**
  * Represents a method definition within an interface or service.
@@ -20,14 +21,14 @@ public class MethodNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
     private final List<AnnotationNode> annotations;
-    private final String name;
-    private final List<ParameterNode> parameters;
-    private final Optional<TypeExprNode> returnType;
+    public final String name;
+    public final List<ParameterNode> parameters;
+    public final Optional<TypeExprNode> returnType;
 
     public MethodNode(Optional<Long> id, String name, List<ParameterNode> parameters, Optional<TypeExprNode> returnType, List<AnnotationNode> annotations) {
         this.id = id;
         this.name = Objects.requireNonNull(name, "Method name cannot be null");
-        this.parameters = parameters != null ? Collections.unmodifiableList(parameters) : Collections.emptyList();
+        this.parameters = parameters != null ? Collections.unmodifiableList(new ArrayList<>(parameters)) : Collections.emptyList();
         this.returnType = returnType;
         this.annotations = annotations != null ? Collections.unmodifiableList(new ArrayList<>(annotations)) : Collections.emptyList();
     }
@@ -50,8 +51,12 @@ public class MethodNode implements AstNode, NodeWithId {
     }
 
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
 
     @Override
@@ -68,8 +73,7 @@ public class MethodNode implements AstNode, NodeWithId {
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        System.err.println("Warning: NodeVisitor.visitMethodNode not implemented yet.");
-        return null;
+        return visitor.visitMethodNode(this);
     }
 
     // equals/hashCode omitted

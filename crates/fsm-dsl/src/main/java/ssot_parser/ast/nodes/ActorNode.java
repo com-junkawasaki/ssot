@@ -10,6 +10,7 @@ import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
 import ssot_parser.ast.nodes.AnnotationNode;
 import ssot_parser.NodeWithId;
+import java.util.HashMap;
 
 /**
  * Represents an actor definition in the AST.
@@ -17,7 +18,7 @@ import ssot_parser.NodeWithId;
 public class ActorNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
-    private final String name;
+    public final String name;
     private final List<AnnotationNode> annotations;
     // TODO: Add more fields based on actor grammar (e.g., properties, interfaces implemented?)
 
@@ -27,6 +28,7 @@ public class ActorNode implements AstNode, NodeWithId {
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
     }
 
+    @Override
     public Optional<Long> getId() {
         return id;
     }
@@ -36,8 +38,12 @@ public class ActorNode implements AstNode, NodeWithId {
     }
 
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
 
     @Override
@@ -54,7 +60,6 @@ public class ActorNode implements AstNode, NodeWithId {
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        System.err.println("Warning: NodeVisitor.visitActorNode not implemented yet.");
-        return null;
+        return visitor.visitActorNode(this);
     }
 } 

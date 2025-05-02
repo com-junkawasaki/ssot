@@ -11,6 +11,7 @@ import java.util.Collections;
 import ssot_parser.NodeWithId;
 import ssot_parser.ast.nodes.AnnotationNode;
 import ssot_parser.ast.nodes.MethodNode;
+import java.util.HashMap;
 
 /**
  * Represents a service definition.
@@ -21,16 +22,16 @@ public class ServiceNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
     private final List<AnnotationNode> annotations;
-    private final String name;
-    private final List<MethodNode> methods; // Methods defined directly in the service
-    private final List<String> implementedInterfaces; // Names of implemented interfaces
+    public final String name;
+    public final List<MethodNode> methods;
+    public final List<String> implementedInterfaces;
 
     public ServiceNode(Optional<Long> id, String name, List<MethodNode> methods,
                        List<String> implementedInterfaces, List<AnnotationNode> annotations) {
         this.id = id;
         this.name = Objects.requireNonNull(name, "Service name cannot be null");
-        this.methods = methods != null ? Collections.unmodifiableList(methods) : Collections.emptyList();
-        this.implementedInterfaces = implementedInterfaces != null ? Collections.unmodifiableList(implementedInterfaces) : Collections.emptyList();
+        this.methods = methods != null ? Collections.unmodifiableList(new ArrayList<>(methods)) : Collections.emptyList();
+        this.implementedInterfaces = implementedInterfaces != null ? Collections.unmodifiableList(new ArrayList<>(implementedInterfaces)) : Collections.emptyList();
         this.annotations = annotations != null ? Collections.unmodifiableList(new ArrayList<>(annotations)) : Collections.emptyList();
     }
 
@@ -52,8 +53,12 @@ public class ServiceNode implements AstNode, NodeWithId {
     }
 
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
 
     @Override
@@ -70,9 +75,8 @@ public class ServiceNode implements AstNode, NodeWithId {
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        System.err.println("Warning: NodeVisitor.visitServiceNode not implemented yet.");
-        return null;
+        return visitor.visitServiceNode(this);
     }
 
     // equals/hashCode omitted
-} 
+}
