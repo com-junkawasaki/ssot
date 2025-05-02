@@ -316,6 +316,57 @@ public class StateMachineAstTest {
         assertTrue(onError.annotations().isEmpty());
     }
 
+    @Test
+    void testNestedStatesParsing() throws Exception {
+        String input = """
+        machines {
+            TrafficLight {
+                 $initial("Red");
+                 states {
+                     Red { on Timer target Green; }
+                     Green { on Timer target Yellow; }
+                     Yellow { on Timer target Red; }
+                     Off {
+                         $initial("Solid"); // Initial state for nested
+                         history shallow; // History for Off state
+                         states {
+                             Solid { on PowerOn target Red; }
+                             Flashing { on PowerOn target Red; }
+                         }
+                         on PowerOff target Solid; // Transition within parent state
+                     }
+                 }
+            }
+        }
+        """;
+        SsotRoot root = parseAndBuildAst(input);
+        assertEquals(1, root.getMachineDefinitions().size());
+        MachineNode machine = (MachineNode) root.getMachineDefinitions().get(0);
+        assertEquals("TrafficLight", machine.getName());
+        assertEquals(Optional.of("Red"), machine.getInitialState());
+        assertEquals(4, machine.getStates().size()); // Red, Green, Yellow, Off
+
+        StateNode offState = machine.getStates().stream().filter(s -> s.getName().equals("Off")).map(s->(StateNode)s).findFirst().orElse(null);
+        assertNotNull(offState);
+        assertEquals(1, offState.getTransitions().size()); // PowerOff transition
+        assertEquals("Solid", offState.getTransitions().get(0).getTargetState());
+        assertTrue(offState.getHistory().isPresent());
+        assertEquals(HistoryNode.HistoryType.SHALLOW, offState.getHistory().get().getHistoryType());
+
+        assertEquals(2, offState.getNestedStates().size()); // Solid, Flashing
+        StateNode solidState = offState.getNestedStates().stream().filter(s -> s.getName().equals("Solid")).map(s->(StateNode)s).findFirst().orElse(null);
+        StateNode flashingState = offState.getNestedStates().stream().filter(s -> s.getName().equals("Flashing")).map(s->(StateNode)s).findFirst().orElse(null);
+        assertNotNull(solidState);
+        assertNotNull(flashingState);
+
+        assertEquals(1, solidState.getTransitions().size());
+        assertEquals("Red", solidState.getTransitions().get(0).getTargetState());
+        assertEquals("PowerOn", solidState.getTransitions().get(0).getEvent());
+
+        // Note: Nested states might have their own initial state marker within the grammar
+        // The validator might need to check this. Here we just check parsing.
+    }
+
     // TODO: Add tests for context, actions, guards, initial state markers, etc.
     // TODO: Add tests for nested states and history states
 } 

@@ -26,6 +26,8 @@ public class AstValidator {
     private final List<ValidationError> errors;
     private final Set<String> definedTypeNames; // For type reference validation
     private final Map<String, InterfaceNode> interfaceDefinitionsMap; // Add map
+    private final Set<String> definedServiceNames; // For invoke source validation
+    private final Set<String> definedMachineNames; // For invoke source validation
     // Add maps to store definitions for faster lookup if needed elsewhere
     // private final Map<String, TypeDefNode> typeDefinitionsMap;
     // private final Map<String, InterfaceNode> interfaceDefinitionsMap;
@@ -36,6 +38,8 @@ public class AstValidator {
         this.errors = new ArrayList<>();
         this.definedTypeNames = new HashSet<>();
         this.interfaceDefinitionsMap = new HashMap<>(); // Initialize map
+        this.definedServiceNames = new HashSet<>(); // Initialize
+        this.definedMachineNames = new HashSet<>(); // Initialize
         // this.typeDefinitionsMap = new HashMap<>();
         // this.interfaceDefinitionsMap = new HashMap<>();
     }
@@ -49,6 +53,8 @@ public class AstValidator {
         errors.clear();
         definedTypeNames.clear();
         interfaceDefinitionsMap.clear(); // Clear map
+        definedServiceNames.clear(); // Clear
+        definedMachineNames.clear(); // Clear
 
         if (astRoot == null) {
             errors.add(new ValidationError("AST Root cannot be null.", ValidationError.Severity.ERROR));
@@ -58,7 +64,7 @@ public class AstValidator {
         // --- Pre-collect definitions for reference checks ---
         collectDefinedTypeNames();
         collectInterfaceDefinitions(); // Collect interfaces
-        // collectServiceNames(); // If needed
+        collectServiceAndMachineNames(); // Collect invokable names
 
         // --- Run validation checks --- 
         validateMachines();
@@ -99,6 +105,32 @@ public class AstValidator {
             }
         }
          System.out.println("Collected interface definitions: " + interfaceDefinitionsMap.keySet());
+    }
+
+    private void collectServiceAndMachineNames() {
+        // Collect Service Names
+        if (astRoot.getServiceDefinitions() != null) {
+            for (AstNode node : astRoot.getServiceDefinitions()) {
+                if (node instanceof ServiceNode service) {
+                     if (!definedServiceNames.add(service.getName())) {
+                          // Duplicate service name error (might be handled elsewhere)
+                     }
+                }
+                // Interfaces are collected separately
+            }
+        }
+        // Collect Machine Names
+        if (astRoot.getMachineDefinitions() != null) {
+             for (AstNode node : astRoot.getMachineDefinitions()) {
+                 if (node instanceof MachineNode machine) {
+                     if (!definedMachineNames.add(machine.getName())) {
+                          addError("Duplicate machine definition name '" + machine.getName() + "'.", machine);
+                     }
+                 }
+             }
+        }
+         System.out.println("Collected service names: " + definedServiceNames);
+         System.out.println("Collected machine names: " + definedMachineNames);
     }
 
     // --- Placeholder validation methods for different blocks --- 
@@ -219,7 +251,12 @@ public class AstValidator {
                      for (InvokeStateNode invoke : stateNode.getInvokes()) {
                          validateInvokeTransition(invoke.getOnDoneTransition(), definedStateNames, definedActionNames, definedGuardNames, "onDone", invoke);
                          validateInvokeTransition(invoke.getOnErrorTransition(), definedStateNames, definedActionNames, definedGuardNames, "onError", invoke);
-                         // TODO: Validate invoke.getSrc() resolves to a service/machine?
+                         // Validate invoke.getSrc()
+                         String srcName = invoke.getSrc();
+                         if (!definedServiceNames.contains(srcName) && !definedMachineNames.contains(srcName)) {
+                             // TODO: Check other invokable types if they exist (e.g., functions)
+                             addError("Invoke source '" + srcName + "' does not resolve to a defined service or machine.", invoke);
+                         }
                      }
                  }
                  // TODO: Recursively validate nested states?

@@ -435,6 +435,33 @@ public class AstValidatorTest {
                     "Return type mismatch error not found for WrongReturnService.read");
     }
 
+    @Test
+    void testUndefinedInvokeSource() throws Exception {
+         String input = """
+         services { service RealService {} }
+         machines {
+             machine RealMachine {}
+             machine Caller {
+                 states {
+                     S1 { invoke RealService; } // OK
+                     S2 { invoke RealMachine; } // OK
+                     S3 { invoke UndefinedThing; } // Error
+                 }
+             }
+         }
+         """;
+         SsotRoot root = parseAndBuildAst(input);
+         AstValidator validator = new AstValidator(root);
+         List<ValidationError> errors = validator.validate();
+
+         // Should have 1 error for UndefinedThing, plus maybe 1 warning for default initial state
+         assertEquals(1, errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).count(), "Should have 1 ERROR");
+         ValidationError error = errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).findFirst().get();
+
+         assertTrue(error.getMessage().contains("Invoke source 'UndefinedThing' does not resolve to a defined service or machine"), "Error message mismatch");
+         assertTrue(error.getNode() instanceof InvokeStateNode, "Error should point to InvokeStateNode");
+    }
+
     // TODO: Add tests for context, initial state markers, etc.
     // TODO: Add tests for nested states and history states
 
