@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.ArrayList;
 import ssot_parser.ast.nodes.AnnotationNode;
+import java.util.HashMap;
 
 /**
  * Represents the 'context { ... }' block within a machine definition.
@@ -18,19 +19,16 @@ public class ContextNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
     // Assuming context contains field-like definitions
-    private final List<FieldNode> variables;
-    // private final Map<String, Object> annotations; // Change to List<AnnotationNode>
+    public final List<FieldNode> variables;
     private final List<AnnotationNode> annotations;
 
-    public ContextNode(Optional<Long> id, List<FieldNode> variables, List<AnnotationNode> annotations) { // Update constructor
-        this.id = id; // Assign id
-        // Add null check for variables
-        this.variables = variables != null ? Collections.unmodifiableList(variables) : Collections.emptyList();
-        // this.annotations = Collections.emptyMap(); // Initialize to empty for now
-        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList()); // Assign annotations list
+    public ContextNode(Optional<Long> id, List<FieldNode> variables, List<AnnotationNode> annotations) {
+        this.id = id;
+        this.variables = variables != null ? Collections.unmodifiableList(new ArrayList<>(variables)) : Collections.emptyList();
+        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
     }
 
-    @Override // Add Override for getId
+    @Override
     public Optional<Long> getId() {
         return id;
     }
@@ -40,9 +38,12 @@ public class ContextNode implements AstNode, NodeWithId {
     }
 
     @Override
-    // public Map<String, Object> getAnnotations() { // Change return type
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
 
     @Override
@@ -53,9 +54,9 @@ public class ContextNode implements AstNode, NodeWithId {
     @Override
     public String toString() {
         return "ContextNode{" +
-               "id=" + id.map(String::valueOf).orElse("none") + // Add id
+               "id=" + id.map(String::valueOf).orElse("none") +
                ", variables=" + variables +
-               ", annotations=" + annotations + // Add annotations
+               ", annotations=" + annotations +
                '}';
     }
 

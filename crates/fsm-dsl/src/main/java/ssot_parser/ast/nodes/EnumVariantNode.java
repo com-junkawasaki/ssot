@@ -9,6 +9,7 @@ import ssot_parser.NodeWithId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.HashMap;
 
 /**
  * Represents a variant (member) within an enum definition.
@@ -18,7 +19,7 @@ public class EnumVariantNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
     private final List<AnnotationNode> annotations;
-    private final String name;
+    public final String name;
 
     public EnumVariantNode(Optional<Long> id, List<AnnotationNode> annotations, String name) {
         this.id = id;
@@ -32,8 +33,12 @@ public class EnumVariantNode implements AstNode, NodeWithId {
     }
 
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
 
     public String getName() {
@@ -54,9 +59,6 @@ public class EnumVariantNode implements AstNode, NodeWithId {
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        // TODO: Add visitEnumVariantNode method to NodeVisitor interface
-        // return visitor.visitEnumVariantNode(this);
-        System.err.println("Warning: NodeVisitor.visitEnumVariantNode not implemented yet.");
-        return null; // Placeholder return
+        return visitor.visitEnumVariantNode(this);
     }
 } 

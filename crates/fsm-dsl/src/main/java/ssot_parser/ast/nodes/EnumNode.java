@@ -9,16 +9,17 @@ import ssot_parser.ast.NodeVisitor;
 import ssot_parser.NodeWithId;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 
 /**
  * Represents an enum type definition in the AST.
  */
-public class EnumNode implements AstNode, TypeDefNode, NodeWithId { // Implement TypeDefNode for consistency?
+public class EnumNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
     private final List<AnnotationNode> annotations;
-    private final String name;
-    private final List<EnumVariantNode> variants;
+    public final String name;
+    public final List<EnumVariantNode> variants;
 
     public EnumNode(Optional<Long> id, List<AnnotationNode> annotations, String name, List<EnumVariantNode> variants) {
         this.id = id;
@@ -33,19 +34,16 @@ public class EnumNode implements AstNode, TypeDefNode, NodeWithId { // Implement
     }
 
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
 
-    @Override
     public String getName() {
         return name;
-    }
-
-    // Method required by TypeDefNode if implemented
-    @Override
-    public List<FieldNode> getFields() {
-        return Collections.emptyList(); // Enums don't have fields like structs
     }
 
     public List<EnumVariantNode> getVariants() {
@@ -67,9 +65,6 @@ public class EnumNode implements AstNode, TypeDefNode, NodeWithId { // Implement
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        // TODO: Add visitEnumNode method to NodeVisitor interface
-        // return visitor.visitEnumNode(this);
-        System.err.println("Warning: NodeVisitor.visitEnumNode not implemented yet.");
-        return null; // Placeholder return
+        return visitor.visitEnumNode(this);
     }
 } 

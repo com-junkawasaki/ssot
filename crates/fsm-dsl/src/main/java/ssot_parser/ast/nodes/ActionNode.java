@@ -15,7 +15,7 @@ import ssot_parser.ast.nodes.AnnotationNode;
  * Represents an action definition within the 'actions { ... }' block of a machine.
  * Corresponds to the 'actionDefinition' rule in the grammar.
  */
-public class ActionNode implements NodeWithId {
+public class ActionNode implements AstNode, NodeWithId {
     // ID annotation is optional for actions
     private final Optional<Long> id;
     public final String name;
@@ -39,8 +39,12 @@ public class ActionNode implements NodeWithId {
     }
 
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
 
     @Override

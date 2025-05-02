@@ -13,7 +13,7 @@ import ssot_parser.ast.nodes.AnnotationNode;
 import ssot_parser.ast.type.TypeExprNode;
 
 /** Represents a field within a type definition */
-public class FieldNode implements NodeWithId {
+public class FieldNode implements NodeWithId, AstNode {
     private final Optional<Long> id;
     public final String name;
     public final TypeExprNode type;
@@ -36,15 +36,18 @@ public class FieldNode implements NodeWithId {
     public TypeExprNode getType() { return type; }
 
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
 
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        System.err.println("Warning: NodeVisitor.visitFieldNode not implemented or called.");
-        return null;
+        return visitor.visitFieldNode(this);
     }
 
     // Optional: Add toString, equals, hashCode if needed
