@@ -10,22 +10,14 @@ import ssot_parser.ast.NodeVisitor;
  */
 public class AnnotationNode implements AstNode {
 
-    private final String name; // e.g., "id" for @id or "myAnnotation" for $myAnnotation
-    private final Object value; // The value associated with the annotation (can be Boolean, String, Number, List, Map)
+    public final String name; // e.g., "id" for @id or "myAnnotation" for $myAnnotation
+    public final Object value; // The value associated with the annotation (can be Boolean, String, Number, List, Map)
     private final boolean isIdAnnotation; // Flag to distinguish @id
 
     public AnnotationNode(String name, Object value, boolean isIdAnnotation) {
         this.name = Objects.requireNonNull(name, "Annotation name cannot be null");
         this.value = value; // Value can be null for flags like $flag; represented as true
         this.isIdAnnotation = isIdAnnotation;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public Object getValue() {
-        return value;
     }
 
     public boolean isIdAnnotation() {
@@ -41,11 +33,18 @@ public class AnnotationNode implements AstNode {
 
     @Override
     public String toString() {
-        return "AnnotationNode{" +
-               "name='" + name + '\'' +
-               ", value=" + value +
-               ", isIdAnnotation=" + isIdAnnotation +
-               '}';
+        String prefix = isIdAnnotation ? "@" : "$";
+        if (value instanceof Boolean && (Boolean)value) {
+            // Handle boolean flags ($flag;)
+            return prefix + name;
+        } else if (value != null) {
+            // Handle annotations with values ($description("text"), @id(123))
+            String valueStr = (value instanceof String) ? "\"" + value + "\"" : value.toString();
+            return prefix + name + "(" + valueStr + ")";
+        } else {
+            // Should not happen frequently, maybe $name() without value?
+            return prefix + name + "(null)";
+        }
     }
 
     @Override
@@ -66,6 +65,7 @@ public class AnnotationNode implements AstNode {
     // Implementation for AstNode
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        return visitor.visitAnnotationNode(this);
+        System.err.println("Warning: NodeVisitor.visitAnnotationNode called, but might not be intended.");
+        return null;
     }
 } 

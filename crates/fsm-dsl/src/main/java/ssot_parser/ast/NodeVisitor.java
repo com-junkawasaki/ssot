@@ -18,7 +18,7 @@ import ssot_parser.SsotRoot;
 public interface NodeVisitor<T> {
 
     // Root node
-    T visitSsotRoot(SsotRoot node);
+    T visitRootNode(RootNode node);
 
     // Type Definition Nodes
     T visitTypeDefNode(TypeDefNode node);
@@ -27,13 +27,14 @@ public interface NodeVisitor<T> {
     T visitEnumVariantNode(EnumVariantNode node);
 
     // State Machine Nodes
-    T visitMachineNode(MachineNode node);
+    T visitStateMachineNode(StateMachineNode node);
     T visitContextNode(ContextNode node);
     T visitActionNode(ActionNode node);
     T visitGuardNode(GuardNode node);
-    T visitInvokeNode(InvokeNode node);
     T visitStateNode(StateNode node);
     T visitTransitionNode(TransitionNode node);
+    T visitInvokeStateNode(InvokeStateNode node);
+    T visitHistoryNode(HistoryNode node);
 
     // Service Nodes
     T visitServiceNode(ServiceNode node);
@@ -50,7 +51,7 @@ public interface NodeVisitor<T> {
     T visitEventNode(EventNode node);
 
     // Annotation Node (might not be visited directly, but included for completeness)
-    T visitAnnotationNode(AnnotationNode node);
+    // T visitAnnotationNode(AnnotationNode node);
 
     // Add other node types as they are created
     // T visitBlockNode(BlockNode node); // If BlockNode becomes part of traversable AST

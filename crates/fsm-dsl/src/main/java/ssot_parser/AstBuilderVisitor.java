@@ -786,31 +786,38 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
          List<String> implementedInterfaces = new ArrayList<>();
 
          // Iterate through service body elements based on grammar
-         if (ctx.serviceBodyElement() != null) {
-            for (SSoTParser.ServiceBodyElementContext bodyElement : ctx.serviceBodyElement()) {
-                if (bodyElement.annotation() != null) {
-                    System.out.println("Info: Annotation found inside service body: " + bodyElement.annotation().getText() + " - Currently ignored.");
-                } else if (bodyElement.methodDefinition() != null) {
-                    Object methodResult = visitMethodDefinition(bodyElement.methodDefinition());
+         if (ctx.serviceBody() != null && ctx.serviceBody().serviceEntry() != null) { // Check serviceBody and serviceEntry
+            for (SSoTParser.ServiceEntryContext entryCtx : ctx.serviceBody().serviceEntry()) { // Iterate over serviceEntry
+                // Check which element is present within the entry
+                if (entryCtx.methodDefinition() != null) {
+                    Object methodResult = visitMethodDefinition(entryCtx.methodDefinition());
                     if (methodResult instanceof MethodNode) {
                         methods.add((MethodNode) methodResult);
                     } else if (methodResult != null) {
                          System.err.println("Warning: visitMethodDefinition did not return MethodNode for service: " + name + ". Got: " + methodResult.getClass().getName());
                     }
-                } else if (bodyElement.implementsDeclaration() != null) {
+                } else if (entryCtx.implementsDeclaration() != null) {
                     // Parse implemented interfaces
-                    SSoTParser.ImplementsDeclarationContext implCtx = bodyElement.implementsDeclaration();
-                    if (implCtx.typeExpr() != null) {
-                        for (SSoTParser.TypeExprContext typeCtx : implCtx.typeExpr()) {
+                    SSoTParser.ImplementsDeclarationContext implCtx = entryCtx.implementsDeclaration();
+                    if (implCtx.typeExprList() != null && implCtx.typeExprList().typeExpr() != null) { // Check typeExprList and its content
+                        for (SSoTParser.TypeExprContext typeCtx : implCtx.typeExprList().typeExpr()) {
                             // Assuming typeExpr directly gives the interface name for now
-                            implementedInterfaces.add(typeCtx.getText());
+                            // A more robust approach might involve visiting typeExpr and ensuring it's a simple reference
+                            Object typeResult = visit(typeCtx); // Visit the type expression
+                            if (typeResult instanceof ReferenceTypeNode) { // Check if it's a ReferenceTypeNode
+                                implementedInterfaces.add(((ReferenceTypeNode) typeResult).getReferencedTypeName());
+                            } else {
+                                 System.err.println("Warning: Implemented type is not a simple reference: " + typeCtx.getText());
+                                 implementedInterfaces.add(typeCtx.getText()); // Fallback to getText?
+                            }
                         }
                     }
+                } else if (entryCtx.annotation() != null) {
+                     // Annotations inside the body are currently ignored, but could be attached to the service
+                     System.out.println("Info: Annotation found inside service body: " + entryCtx.annotation().getText() + " - Currently ignored.");
                 }
             }
          }
-
-         // TODO: Handle annotations inside LBRACE if they have specific meaning
 
          return new ServiceNode(
              serviceAnnotations.id(),
@@ -1180,6 +1187,160 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
              System.err.println("Warning: Unrecognized type expression: " + ctx.getText());
              return null; // Or a specific UnknownTypeNode
         }
+    }
+
+    @Override
+    public Object visitOnTransition(SSoTParser.OnTransitionContext ctx) { // Return Object
+        System.out.println("Visiting OnTransition...");
+        String event = ctx.IDENTIFIER(0).getText(); // First IDENTIFIER is the event
+        String targetState = ctx.IDENTIFIER(1).getText(); // Second IDENTIFIER is the target state
+
+        Optional<String> condition = Optional.empty();
+        if (ctx.IF() != null && ctx.IDENTIFIER(2) != null) {
+            condition = Optional.of(ctx.IDENTIFIER(2).getText());
+        }
+
+        Optional<String> action = Optional.empty();
+        if (ctx.DO() != null && ctx.IDENTIFIER().size() > (condition.isPresent() ? 3 : 2)) { // Check index based on condition presence
+            int actionIdIndex = condition.isPresent() ? 3 : 2;
+            action = Optional.of(ctx.IDENTIFIER(actionIdIndex).getText());
+        }
+
+        // Process annotations attached to the transition
+        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+
+        // Ensure currentStateName is set (should be set by visitStateDefinition)
+        String sourceState = currentStateName;
+        if (sourceState == null) {
+            System.err.println("Error: currentStateName is null when visiting transition for event '" + event + "'. This indicates an AST building logic error.");
+            // Handle error: return null, throw exception, or create transition with placeholder source?
+            sourceState = "UNKNOWN_SOURCE_STATE"; // Placeholder
+        }
+
+         // Handle target state potentially including history marker (e.g., Parent.H)
+        // The parser rule might already split this, or we handle it here.
+        // Assuming targetState is just the name for now.
+        String targetStateName = targetState;
+        // If grammar allows qualified names like Parent.H, ctx.qualifiedIdentifier() might be used instead of ID(1)
+        // Example check:
+        // if (ctx.qualifiedIdentifier() != null) {
+        //     targetStateName = ctx.qualifiedIdentifier().getText();
+        // }
+
+        return new TransitionNode(
+            processed.id(),
+            sourceState,
+            targetStateName,
+            event,
+            condition,
+            action,
+            processed.annotations()
+        );
+    }
+
+    // Visitor for invoke declarations within a state
+    public Object visitInvokeState(SSoTParser.InvokeStateContext ctx) {
+        System.out.println("Visiting InvokeState...");
+        // Process annotations attached to the invoke itself
+        ProcessedAnnotations invokeAnnotations = processAnnotations(ctx.annotation());
+
+        String invokedName = "UNKNOWN_INVOKE_TARGET";
+        if (ctx.IDENTIFIER() != null) {
+            invokedName = ctx.IDENTIFIER().getText();
+        } else if (ctx.STRING() != null) {
+            invokedName = stripQuotes(ctx.STRING().getText()); // Handle string literal for src
+        } else {
+             System.err.println("Error: Missing identifier or string for invoke target.");
+             return null;
+        }
+
+        Optional<InvokeTransition> onDone = Optional.empty();
+        Optional<InvokeTransition> onError = Optional.empty();
+        List<TransitionNode> transitions = new ArrayList<>(); // Store parsed transitions
+
+        // Process onDone and onError clauses within invokeBody
+        if (ctx.invokeBody() != null && ctx.invokeBody().invokeTransition() != null) {
+            for(SSoTParser.InvokeTransitionContext transitionCtx : ctx.invokeBody().invokeTransition()) {
+                 if (transitionCtx.ON_DONE() != null) {
+                     InvokeTransition parsed = parseInvokeTransitionSpec(transitionCtx.transitionSpec());
+                     onDone = Optional.of(parsed);
+                     // Create TransitionNode for onDone
+                     parsed.target().ifPresent(target -> transitions.add(new TransitionNode(
+                         Optional.empty(), // ID usually not on invoke transitions directly
+                         currentStateName, // Source is the state containing invoke
+                         target,
+                         "onDone", // Event type
+                         parsed.guard(),
+                         parsed.action(),
+                         parsed.annotations() // Annotations from the invoke transition spec
+                     )));
+                 } else if (transitionCtx.ON_ERROR() != null) {
+                     InvokeTransition parsed = parseInvokeTransitionSpec(transitionCtx.transitionSpec());
+                     onError = Optional.of(parsed);
+                     // Create TransitionNode for onError
+                     parsed.target().ifPresent(target -> transitions.add(new TransitionNode(
+                         Optional.empty(),
+                         currentStateName,
+                         target,
+                         "onError",
+                         parsed.guard(),
+                         parsed.action(),
+                         parsed.annotations()
+                     )));
+                 }
+            }
+        }
+
+        return new InvokeStateNode(
+            invokeAnnotations.id(),
+            invokeAnnotations.annotations(),
+            invokedName,
+            onDone, // Pass Optional<InvokeTransition>
+            onError, // Pass Optional<InvokeTransition>
+            transitions // Pass the generated TransitionNodes
+        );
+    }
+
+    // Helper method to parse the common part of onDone/onError transitions
+    private InvokeStateNode.InvokeTransition parseInvokeTransitionSpec(SSoTParser.TransitionSpecContext specCtx) {
+         Optional<String> target = Optional.empty();
+         Optional<String> guard = Optional.empty();
+         Optional<String> action = Optional.empty();
+         List<AnnotationNode> annotations = Collections.emptyList(); // TODO: Parse annotations if grammar allows here
+
+         if (specCtx == null) {
+              System.err.println("Warning: null transitionSpecContext passed to parseInvokeTransitionSpec");
+              return new InvokeStateNode.InvokeTransition(target, action, guard, annotations);
+         }
+
+         // Grammar: GOTO targetState (IF guard)? (DO action)? annotation*
+         // Target is mandatory based on this snippet
+         if (specCtx.IDENTIFIER(0) != null) { // First ID is the target state
+             target = Optional.of(specCtx.IDENTIFIER(0).getText());
+         } else {
+              System.err.println("Error: Missing target state in invoke transition spec: " + specCtx.getText());
+              // Return default or throw? Returning default for now.
+              return new InvokeStateNode.InvokeTransition(target, action, guard, annotations);
+         }
+
+         // Check for guard (IF ID)
+         if (specCtx.IF() != null && specCtx.IDENTIFIER(1) != null) {
+             guard = Optional.of(specCtx.IDENTIFIER(1).getText());
+         }
+
+         // Check for action (DO ID)
+         // Need to check index carefully based on guard presence
+         int actionIdIndex = (specCtx.IF() != null) ? 2 : 1;
+         if (specCtx.DO() != null && specCtx.IDENTIFIER().size() > actionIdIndex) {
+             action = Optional.of(specCtx.IDENTIFIER(actionIdIndex).getText());
+         }
+
+         // TODO: Process annotations if present in specCtx.annotation()
+         // ProcessedAnnotations processed = processAnnotations(specCtx.annotation());
+         // annotations = processed.annotations();
+         // We might need to handle potential ID from annotation if needed.
+
+         return new InvokeStateNode.InvokeTransition(target, action, guard, annotations);
     }
 
     // ... other visit methods as needed ...
