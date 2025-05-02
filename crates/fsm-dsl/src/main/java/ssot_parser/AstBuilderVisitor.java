@@ -27,9 +27,6 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
     // Record to hold results from processing a list of annotations
     private record ProcessedAnnotations(Optional<Long> id, List<AnnotationNode> annotations) {}
 
-    // Record to hold results from visiting statesDefinition
-    private record StatesInfo(List<StateNode> states, Optional<String> initialStatename) {}
-
     @Override
     public Object visitFile(SSoTParser.FileContext ctx) { // Return type changed to Object
         System.out.println("Visiting File node...");
@@ -300,68 +297,72 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
 
     @Override
     public Object visitFieldDefinition(SSoTParser.FieldDefinitionContext ctx) { // Return Object
-         // Grammar: ID COLON typeExpr annotation* (LBRACE annotation* RBRACE)? SEMI
-         String name = ctx.ID().getText();
-         Object typeResult = visitTypeExpr(ctx.typeExpr()); // Use visitTypeExpr
-         TypeExprNode typeNode = null;
-         if (typeResult instanceof TypeExprNode) {
-             typeNode = (TypeExprNode) typeResult;
-         } else {
-              System.err.println("Warning: visitTypeExpr did not return TypeExprNode for field '" + name + "'. Using placeholder.");
-              typeNode = new PrimitiveTypeNode("UNKNOWN_TYPE"); // Example placeholder
-         }
+        System.out.println("Visiting FieldDefinition...");
+        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+        String name = ctx.IDENTIFIER().getText();
+        TypeExprNode type = null; // Initialize to null
+        if (ctx.typeExpr() != null) {
+            Object typeResult = visit(ctx.typeExpr()); // Call visit on typeExpr
+            if (typeResult instanceof TypeExprNode) {
+                type = (TypeExprNode) typeResult;
+            } else {
+                 System.err.println("Warning: visitTypeExpr did not return a TypeExprNode for field '" + name + "'. Got: " + (typeResult != null ? typeResult.getClass().getName() : "null"));
+                 // Decide how to handle error: return null, throw, create default TypeExprNode?
+                 return null; // Return null to indicate error in field definition
+            }
+        }
+        if (type == null) {
+             System.err.println("Error: Type expression missing for field '" + name + "'.");
+             return null; // Cannot create FieldNode without type
+        }
 
-         System.out.println("Visiting FieldDefinition: " + name + " (" + typeNode.toString() + ")");
+        // Default value handling - depends on grammar for defaultValue
+        // Optional<Object> defaultValue = Optional.empty();
+        // if (ctx.defaultValue() != null) { ... visit defaultValue ... }
 
-         // Process annotations associated with the field
-         ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+        return new FieldNode(processed.id(), name, type, processed.annotations());
+    }
 
-         // TODO: Handle annotations inside braces: (LBRACE annotation* RBRACE)?
+    // Visitor for Enum Variant
+    public Object visitEnumVariant(SSoTParser.EnumVariantContext ctx) {
+        System.out.println("Visiting EnumVariant: " + ctx.ID().getText());
+        String name = ctx.ID().getText();
+        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+        return new EnumVariantNode(processed.id(), processed.annotations(), name);
+    }
 
-         // Pass processed ID and annotations map to constructor
-         return new FieldNode(processed.id(), name, typeNode, processed.annotations()); // Pass typeNode
-     }
+    // Assuming visitEnumDefinition is needed
+    @Override
+    public Object visitEnumDefinition(SSoTParser.EnumDefinitionContext ctx) { // Return Object
+        String name = ctx.ID().getText();
+        System.out.println("Visiting EnumDefinition: " + name);
 
-     // Visitor for Enum Variant
-     public Object visitEnumVariant(SSoTParser.EnumVariantContext ctx) {
-         System.out.println("Visiting EnumVariant: " + ctx.ID().getText());
-         String name = ctx.ID().getText();
-         ProcessedAnnotations processed = processAnnotations(ctx.annotation());
-         return new EnumVariantNode(processed.id(), processed.annotations(), name);
-     }
+        // Process annotations on the enum itself
+        List<AnnotationContext> allAnnotationCtxs = new ArrayList<>();
+        if (ctx.annotation() != null) {
+            allAnnotationCtxs.addAll(ctx.annotation()); // Before and after LBRACE
+        }
+        ProcessedAnnotations enumAnnotations = processAnnotations(allAnnotationCtxs);
 
-     // Assuming visitEnumDefinition is needed
-     @Override
-     public Object visitEnumDefinition(SSoTParser.EnumDefinitionContext ctx) { // Return Object
-         String name = ctx.ID().getText();
-         System.out.println("Visiting EnumDefinition: " + name);
+        List<EnumVariantNode> variants = new ArrayList<>();
+        if (ctx.enumVariant() != null) {
+            for (SSoTParser.EnumVariantContext variantCtx : ctx.enumVariant()) {
+                Object variantResult = visitEnumVariant(variantCtx);
+                if (variantResult instanceof EnumVariantNode) {
+                    variants.add((EnumVariantNode) variantResult);
+                } else if (variantResult != null) {
+                    System.err.println("Warning: visitEnumVariant did not return EnumVariantNode. Got: " + variantResult.getClass().getName());
+                }
+            }
+        }
 
-         // Process annotations on the enum itself
-         List<AnnotationContext> allAnnotationCtxs = new ArrayList<>();
-         if (ctx.annotation() != null) {
-             allAnnotationCtxs.addAll(ctx.annotation()); // Before and after LBRACE
-         }
-         ProcessedAnnotations enumAnnotations = processAnnotations(allAnnotationCtxs);
-
-         List<EnumVariantNode> variants = new ArrayList<>();
-         if (ctx.enumVariant() != null) {
-             for (SSoTParser.EnumVariantContext variantCtx : ctx.enumVariant()) {
-                 Object variantResult = visitEnumVariant(variantCtx);
-                 if (variantResult instanceof EnumVariantNode) {
-                     variants.add((EnumVariantNode) variantResult);
-                 } else if (variantResult != null) {
-                     System.err.println("Warning: visitEnumVariant did not return EnumVariantNode. Got: " + variantResult.getClass().getName());
-                 }
-             }
-         }
-
-         // TODO: Implement EnumNode creation (needs EnumNode class) -- Implementing now
-         // Extract name ctx.ID()
-         // Iterate ctx.enumVariant()
-         // System.err.println("Warning: visitEnumDefinition not fully implemented.");
-         // return null;
-         return new EnumNode(enumAnnotations.id(), enumAnnotations.annotations(), name, variants);
-     }
+        // TODO: Implement EnumNode creation (needs EnumNode class) -- Implementing now
+        // Extract name ctx.ID()
+        // Iterate ctx.enumVariant()
+        // System.err.println("Warning: visitEnumDefinition not fully implemented.");
+        // return null;
+        return new EnumNode(enumAnnotations.id(), enumAnnotations.annotations(), name, variants);
+    }
 
     // --- Machine related visitors ---
 
@@ -548,31 +549,25 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
 
      public ContextNode visitContextDefinition(SSoTParser.ContextDefinitionContext ctx) { // Changed return type
         System.out.println("Visiting ContextDefinition...");
+        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
 
-        // Process annotations attached to the context block itself
-        List<AnnotationContext> allAnnotationCtxs = new ArrayList<>();
-        if (ctx.annotation() != null) {
-            allAnnotationCtxs.addAll(ctx.annotation()); // Collect annotations before and after LBRACE
-        }
-        // The grammar might have two annotation* locations, ANTLR collects them in order.
-        // Example grammar: CONTEXT annotation* LBRACE annotation* fieldDefinition* RBRACE
-        // ctx.annotation() should contain all annotations from both locations.
-        ProcessedAnnotations contextAnnotations = processAnnotations(allAnnotationCtxs);
-
-        // Assuming context block contains field definitions similar to struct
         List<FieldNode> variables = new ArrayList<>();
-        if (ctx.fieldDefinition() != null) {
-            for (SSoTParser.FieldDefinitionContext fieldCtx : ctx.fieldDefinition()) {
-                Object fieldResult = visitFieldDefinition(fieldCtx);
-                if (fieldResult instanceof FieldNode) {
-                    variables.add((FieldNode) fieldResult);
-                } else if (fieldResult != null) {
-                     System.err.println("Warning: visitFieldDefinition inside context did not return a FieldNode. Got: " + fieldResult.getClass().getName());
+        if (ctx.contextBody() != null && ctx.contextBody().contextEntry() != null) {
+            for (SSoTParser.ContextEntryContext entry : ctx.contextBody().contextEntry()) {
+                if (entry.fieldDefinition() != null) { // Check if fieldDefinition exists in entry
+                    Object fieldResult = visit(entry.fieldDefinition()); // Visit the field definition
+                    if (fieldResult instanceof FieldNode) {
+                        variables.add((FieldNode) fieldResult);
+                    } else if (fieldResult != null) {
+                        System.err.println("Warning: visitFieldDefinition within context did not return FieldNode. Got: " + fieldResult.getClass().getName());
+                    }
+                } else {
+                     // Handle other possible context entries if grammar allows (e.g., nested context?)
                 }
             }
         }
-        // TODO: Process annotations specific to the context block itself if the grammar allows
-        return new ContextNode(contextAnnotations.id(), variables, contextAnnotations.annotations());
+
+        return new ContextNode(processed.id(), variables, processed.annotations());
      }
 
      public Object visitActionsDefinition(SSoTParser.ActionsDefinitionContext ctx) { // Removed @Override if not in BaseVisitor
@@ -631,414 +626,137 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
      @Override
      public Object visitStatesDefinition(SSoTParser.StatesDefinitionContext ctx) { // Return Object, should be StatesInfo
          System.out.println("Visiting StatesDefinition...");
-         List<StateNode> stateNodes = new ArrayList<>();
-         Optional<String> initialStateName = Optional.empty();
+         List<StateNode> states = new ArrayList<>();
+         String initialStatename = null; // Changed from Optional<String>
+
+         // Check for explicit initial state declaration
+         if (ctx.initialStateClause() != null && ctx.initialStateClause().IDENTIFIER() != null) {
+             initialStatename = ctx.initialStateClause().IDENTIFIER().getText();
+             System.out.println("Found explicit initial state: " + initialStatename);
+         }
 
          if (ctx.stateDefinition() != null) {
              for (SSoTParser.StateDefinitionContext stateCtx : ctx.stateDefinition()) {
-                 Object result = visitStateDefinition(stateCtx); // Should return StateNode
-                 if (result instanceof StateNode) {
-                     StateNode stateNode = (StateNode) result;
-                     stateNodes.add(stateNode);
-                     // Check if this state is marked as initial
-                     if (stateNode.isInitial()) {
-                        if (initialStateName.isPresent()) {
-                           // Handle multiple initial states - error or use last one?
-                           System.err.println("Warning: Multiple initial states defined or marked. Using state: " + stateNode.getName() + " as initial, overwriting previous: " + initialStateName.get());
-                        }
-                        initialStateName = Optional.of(stateNode.getName());
-                     }
-                 } else if (result != null) {
-                    System.err.println("Warning: visitStateDefinition did not return a StateNode. Got: " + result.getClass().getName());
+                 Object stateResult = visit(stateCtx); // visitStateDefinition returns StateNode
+                 if (stateResult instanceof StateNode) {
+                     states.add((StateNode) stateResult);
+                 } else if (stateResult != null) {
+                     System.err.println("Warning: visitStateDefinition did not return StateNode. Got: " + stateResult.getClass().getName());
                  }
              }
          }
 
-         // TODO: If initial state is marked by a keyword *outside* stateDefinition (e.g., initial = ID;), handle it here.
-
-         if (initialStateName.isEmpty() && !stateNodes.isEmpty()) {
-            // Convention: If no initial state is explicitly marked, use the first state defined.
-            initialStateName = Optional.of(stateNodes.get(0).getName());
-            System.out.println("Info: No initial state explicitly marked. Using first defined state '" + initialStateName.get() + "' as initial.");
-            // Note: We might need to update the isInitial flag on the actual StateNode object if desired.
-            // stateNodes.get(0).setInitial(true); // Requires StateNode to be mutable or recreated
+         // If no explicit initial state, default to the first state defined (if any)
+         if (initialStatename == null && !states.isEmpty()) {
+             initialStatename = states.get(0).stateName; // Use stateName
+             System.out.println("Defaulting initial state to first defined: " + initialStatename);
          }
 
-         // Return the collected states and the determined initial state name
-         return new StatesInfo(stateNodes, initialStateName);
+         // Instead of StatesInfo, maybe just return the list and let the caller (visitMachineDefinition) handle initial state?
+         // For now, let's return a simple Map as a placeholder for StatesInfo
+         Map<String, Object> result = new HashMap<>();
+         result.put("states", states);
+         result.put("initialStateName", initialStatename); // Pass the determined name
+         return result; // Returning Map, caller needs to cast and extract
      }
 
      @Override
      public Object visitStateDefinition(SSoTParser.StateDefinitionContext ctx) { // Return Object, should be StateNode
-         // Grammar: stateName=ID annotation* LBRACE annotation* stateBodyElement* RBRACE
-         String name = ctx.stateName.getText(); // Use label stateName
-         System.out.println("Visiting StateDefinition: " + name);
-         this.currentStateName = name; // Store current state name for transitions
+          String name = ctx.IDENTIFIER().getText();
+          currentStateName = name; // Set current state name for transitions
+          System.out.println("Visiting StateDefinition: " + name);
 
-         List<String> entryActions = new ArrayList<>(); // Store action names
-         List<String> exitActions = new ArrayList<>();  // Store action names
-         List<TransitionNode> transitions = new ArrayList<>();
-         List<InvokeStateNode> invokes = new ArrayList<>(); // Add list to collect invokes
-         List<StateNode> nestedStates = new ArrayList<>(); // Add list to collect nested states
-         Optional<HistoryNode> historyNode = Optional.empty(); // Optional history node
+          // Process annotations
+          List<AnnotationContext> allAnnotationsCtx = new ArrayList<>();
+          if (ctx.annotation() != null) allAnnotationsCtx.addAll(ctx.annotation());
+          ProcessedAnnotations processedAnnotations = processAnnotations(allAnnotationsCtx);
 
-         // Process state-level annotations (e.g., @id, maybe $initial)
-         ProcessedAnnotations stateAnnotations = processAnnotations(ctx.annotation());
+          List<String> entryActions = new ArrayList<>();
+          List<String> exitActions = new ArrayList<>();
+          List<TransitionNode> transitions = new ArrayList<>();
+          Optional<InvokeStateNode> invoke = Optional.empty(); // Changed from List
+          List<StateNode> nestedStates = new ArrayList<>();
+          Optional<HistoryNode> history = Optional.empty();
+          StateType type = StateType.ATOMIC; // Default to ATOMIC
+          String initialStateName = null;
 
-         // Iterate through state body elements
-         if (ctx.stateBodyElement() != null) {
-            for (SSoTParser.StateBodyElementContext bodyElement : ctx.stateBodyElement()) {
-                if (bodyElement.annotation() != null) {
-                    // Annotations within the body might apply to the state or subsequent elements?
-                    // For now, assume state-level annotations handled above. Log if found.
-                    System.out.println("Info: Annotation found inside state body: " + bodyElement.annotation().getText() + " - Currently ignored.");
-                } else if (bodyElement.onEntryExit() != null) {
-                    // Grammar: onEntryExit : (ON_ENTRY | ON_EXIT) actionReference SEMI;
-                    SSoTParser.OnEntryExitContext entryExitCtx = bodyElement.onEntryExit();
-                    // Assuming actionReference directly gives the name
-                    String actionName = entryExitCtx.actionReference().getText();
-                    if (entryExitCtx.ON_ENTRY() != null) {
-                        entryActions.add(actionName);
-                    } else if (entryExitCtx.ON_EXIT() != null) {
-                        exitActions.add(actionName);
-                    }
-                } else if (bodyElement.onTransition() != null) {
-                     // Delegate to visitOnTransition, which now returns TransitionNode
-                     Object transitionResult = visitOnTransition(bodyElement.onTransition());
-                     if (transitionResult instanceof TransitionNode) {
-                         transitions.add((TransitionNode) transitionResult);
-                     } else if (transitionResult != null) {
-                         System.err.println("Warning: visitOnTransition did not return a TransitionNode. Got: " + transitionResult.getClass().getName());
-                     }
-                } else if (bodyElement.invokeState() != null) {
-                    // TODO: Call visitInvokeState and add result to StateNode (needs InvokeNode list in StateNode)
-                    Object invokeResult = visitInvokeState(bodyElement.invokeState()); // Returns InvokeStateNode
-                    if (invokeResult instanceof InvokeStateNode) {
-                        invokes.add((InvokeStateNode) invokeResult);
-                    } else if (invokeResult != null) {
-                        System.err.println("Warning: visitInvokeState did not return an InvokeStateNode. Got: " + invokeResult.getClass().getName());
-                    }
-                } else if (bodyElement.statesDefinition() != null) {
-                    // TODO: Call visitStatesDefinition for nested states and add result to StateNode (needs nestedStates list in StateNode)
-                    Object nestedStatesResultRaw = visitStatesDefinition(bodyElement.statesDefinition());
-                    if (nestedStatesResultRaw instanceof StatesInfo) {
-                        StatesInfo nestedStatesResult = (StatesInfo) nestedStatesResultRaw;
-                        nestedStates.addAll(nestedStatesResult.states());
-                        if (initialStateName.isPresent() && nestedStatesResult.initialStatename().isPresent()) {
-                            System.err.println("Warning: Initial state potentially redefined. Using value from last 'states' block: " + nestedStatesResult.initialStatename().get());
-                        }
-                        if (nestedStatesResult.initialStatename().isPresent()) {
-                            initialStateName = nestedStatesResult.initialStatename();
-                        }
-                        for (StateNode nestedState : nestedStatesResult.states()) {
-                            transitions.addAll(nestedState.getTransitions());
-                        }
-                    } else if (nestedStatesResultRaw != null) {
-                        System.err.println("Warning: visitStatesDefinition (for nested states) did not return StatesInfo. Got: " + nestedStatesResultRaw.getClass().getName());
-                    }
-                } else if (bodyElement.historyDefinition() != null) {
-                    // TODO: Call visitHistoryDefinition and add result to StateNode (needs history field in StateNode)
-                    if (historyNode.isPresent()) {
-                        System.err.println("Warning: Multiple history definitions found in state '" + name + "'. Using the first one.");
-                    } else {
-                        Object historyResult = visitHistoryDefinition(bodyElement.historyDefinition());
-                        if (historyResult instanceof HistoryNode) {
-                            historyNode = Optional.of((HistoryNode) historyResult);
-                        } else if (historyResult != null) {
-                            System.err.println("Warning: visitHistoryDefinition did not return a HistoryNode. Got: " + historyResult.getClass().getName());
-                        }
-                    }
-                } else if (bodyElement.afterTransition() != null) { // Assuming afterTransition exists
-                    // TODO: Call visitAfterTransition and potentially add to StateNode or transitions
-                    Object afterResult = visitAfterTransition(bodyElement.afterTransition());
-                    System.err.println("Warning: afterTransition handling not fully implemented.");
-                }
-                // TODO: Handle invokeState, afterTransition, nested statesDefinition, historyDefinition -- Partially added branches
-            }
-         }
-
-         this.currentStateName = null; // Clear current state name after visiting
-
-         // Create and return the StateNode
-         return new StateNode(stateAnnotations.id(), name, stateAnnotations.annotations(),
-                            entryActions, exitActions, transitions, invokes,
-                            nestedStates, historyNode /* Pass history node */);
-     }
-
-     // This method corresponds to the 'onTransition' rule in the grammar
-     @Override
-     public Object visitOnTransition(SSoTParser.OnTransitionContext ctx) { // Return Object
-         // Grammar: ON event=ID annotation* transitionSpec SEMI
-         String event = ctx.event.getText(); // Use label 'event'
-         System.out.println("Visiting OnTransition: on " + event);
-
-         // Process the transitionSpec part
-         if (ctx.transitionSpec() != null) {
-             SSoTParser.TransitionSpecContext specCtx = ctx.transitionSpec();
-             String targetState = specCtx.targetState().getText(); // Get target state text
-             // String condition = null; // Placeholder - needs parsing from specCtx.transitionOptions() -> GUARD - Changed to Optional
-             Optional<String> condition = Optional.empty();
-             Optional<String> action = Optional.empty(); // Placeholder - needs parsing from specCtx.transitionOptions() -> ACTION
-
-             if (specCtx.transitionOptions() != null) {
-                 // TODO: Implement parsing logic for transitionOptions to find ACTION and GUARD - Implementing basic parsing
-                 // Example (simplified):
-                 for (SSoTParser.TransitionOptionContext option : specCtx.transitionOptions().transitionOption()) {
-                     if (option.ACTION() != null && option.actionReferenceList() != null && !option.actionReferenceList().actionReference().isEmpty()) {
-                         // Revert guess - just get text from the list context for now - Get first action name
-                         // action = Optional.of(option.actionReferenceList().getText());
-                         // System.err.println("Warning: Using getText() on actionReferenceList - requires grammar check.");
-                         String firstActionName = option.actionReferenceList().actionReference(0).getText();
-                         if (action.isPresent()) {
-                            System.err.println("Warning: Multiple ACTION clauses found for transition on event '" + event + "'. Using first one: '" + action.get() + "'. Ignoring: '" + firstActionName + "'");
-                         } else {
-                            action = Optional.of(firstActionName);
-                         }
-                         if (option.actionReferenceList().actionReference().size() > 1) {
-                            System.err.println("Warning: Multiple actions defined in ACTION clause for transition on event '" + event + "'. Only using the first one: '" + firstActionName + "'. List handling is not implemented.");
-                         }
-                     } else if (option.GUARD() != null && option.guardReferenceList() != null && !option.guardReferenceList().guardReference().isEmpty()) {
-                         // Revert guess - just get text from the list context for now - Get first guard name
-                         // condition = Optional.<String>of(option.guardReferenceList().getText()); // Added type witness <String>
-                         // System.err.println("Warning: Using getText() on guardReferenceList - requires grammar check.");
-                         String firstGuardName = option.guardReferenceList().guardReference(0).getText();
-                         if (condition.isPresent()) {
-                             System.err.println("Warning: Multiple GUARD clauses found for transition on event '" + event + "'. Using first one: '" + condition.get() + "'. Ignoring: '" + firstGuardName + "'");
-                         } else {
-                             condition = Optional.of(firstGuardName);
-                         }
-                          if (option.guardReferenceList().guardReference().size() > 1) {
-                              System.err.println("Warning: Multiple guards defined in GUARD clause for transition on event '" + event + "'. Only using the first one: '" + firstGuardName + "'. List handling is not implemented.");
+          // Process state body elements
+          if (ctx.stateBody() != null && ctx.stateBody().stateBodyElement() != null) {
+              for (SSoTParser.StateBodyElementContext elementCtx : ctx.stateBody().stateBodyElement()) {
+                  if (elementCtx.entryAction() != null) {
+                      entryActions.add(elementCtx.entryAction().IDENTIFIER().getText());
+                  } else if (elementCtx.exitAction() != null) {
+                      exitActions.add(elementCtx.exitAction().IDENTIFIER().getText());
+                  } else if (elementCtx.onTransition() != null) {
+                      Object transitionResult = visit(elementCtx.onTransition());
+                      if (transitionResult instanceof TransitionNode) {
+                          transitions.add((TransitionNode) transitionResult);
+                      }
+                  } else if (elementCtx.invokeState() != null) {
+                      Object invokeResult = visit(elementCtx.invokeState());
+                      if (invokeResult instanceof InvokeStateNode) {
+                          if (invoke.isPresent()) {
+                              System.err.println("Warning: Multiple invoke declarations found in state '" + name + "'. Only the last one will be used.");
                           }
-                     } else if (option.annotation() != null) {
-                        // TODO: Process annotations within transition options if needed (e.g., for specific actions/guards?)
-                        System.out.println("Info: Annotation found inside transition options: " + option.annotation().getText() + " - Currently ignored.");
-                     }
-                 }
-             }
+                          invoke = Optional.of((InvokeStateNode) invokeResult);
+                      } else if (invokeResult != null) {
+                            System.err.println("Warning: visitInvokeState did not return InvokeStateNode. Got: " + invokeResult.getClass().getName());
+                      }
+                  } else if (elementCtx.nestedStateDefinition() != null) {
+                       Object nestedStateResult = visit(elementCtx.nestedStateDefinition().stateDefinition());
+                       if (nestedStateResult instanceof StateNode) {
+                            nestedStates.add((StateNode) nestedStateResult);
+                       } else if (nestedStateResult != null) {
+                            System.err.println("Warning: visitStateDefinition for nested state did not return StateNode. Got: " + nestedStateResult.getClass().getName());
+                       }
+                  } else if (elementCtx.historyDefinition() != null) {
+                       Object historyResult = visit(elementCtx.historyDefinition());
+                       if (historyResult instanceof HistoryNode) {
+                           if (history.isPresent()) {
+                               System.err.println("Warning: Multiple history declarations found in state '" + name + "'. Only the last one will be used.");
+                           }
+                           history = Optional.of((HistoryNode) historyResult);
+                       }
+                  } else if (elementCtx.initialStateClause() != null) {
+                       initialStateName = elementCtx.initialStateClause().IDENTIFIER().getText();
+                  } else if (elementCtx.stateType() != null) {
+                      if (elementCtx.stateType().COMPOUND() != null) type = StateType.COMPOUND;
+                      else if (elementCtx.stateType().PARALLEL() != null) type = StateType.PARALLEL;
+                      else if (elementCtx.stateType().FINAL() != null) type = StateType.FINAL;
+                  }
+              }
+          }
 
-             // Process annotations for the transition itself
-             ProcessedAnnotations transitionAnnotations = processAnnotations(ctx.annotation());
+          // Determine state type if not explicitly set
+           if (type == StateType.ATOMIC) { // Only override if still default ATOMIC
+               if (!nestedStates.isEmpty()) {
+                    type = StateType.COMPOUND; // Default to compound if nested states exist
+               }
+           }
 
-             // Constructor: TransitionNode(Optional<Long> id, String fromState, String toState, String event, Optional<String> condition, Optional<String> action)
-             // Use the stored currentStateName as fromState
-             String fromState = (this.currentStateName != null) ? this.currentStateName : "UNKNOWN_SOURCE";
-             // Add transitionAnnotations map to constructor
-             return new TransitionNode(transitionAnnotations.id(), fromState, targetState, event, Optional.ofNullable(condition), action, transitionAnnotations.annotations());
+          // If initial state wasn't set by initialStateClause, and it's a compound/parallel state,
+          // default to the first nested state defined.
+          if (initialStateName == null && (type == StateType.COMPOUND || type == StateType.PARALLEL) && !nestedStates.isEmpty()) {
+                initialStateName = nestedStates.get(0).stateName;
+          }
 
-         } else {
-             System.err.println("Warning: onTransition rule missing transitionSpec for event: " + event);
-             return null;
-         }
-     }
+          // Reset current state name after processing this state
+          currentStateName = null;
 
-
-     // This method handles the 'actionDefinition' rule inside an 'actions' block
-     @Override
-     public Object visitActionDefinition(SSoTParser.ActionDefinitionContext ctx) { // Return Object, should be ActionNode
-        String name = "UNKNOWN_ACTION";
-         // Check if ID exists (grammar might allow actions without explicit names? unlikely)
-         if (ctx.ID() != null) { // Assuming ID() returns a single TerminalNode now
-            name = ctx.ID().getText();
-         } else {
-            System.err.println("Warning: No ID found for action definition: " + ctx.getText());
-         }
-        System.out.println("Visiting ActionDefinition: " + name);
-
-        // Process annotations for the action definition
-        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
-
-        // TODO: Parse parameters and return type if needed for a more detailed ActionNode based on grammar
-
-        // Constructor: ActionNode(Optional<Long> id, String name, Map<String, Object> annotations)
-        return new ActionNode(processed.id(), name, processed.annotations());
-     }
-
-    // Visitor for the 'guardDefinition' rule (assuming similar structure to actionDefinition)
-    public Object visitGuardDefinition(SSoTParser.GuardDefinitionContext ctx) {
-        String name = "UNKNOWN_GUARD";
-        // Assuming ID() returns a single node or null
-        if (ctx.ID() != null && !ctx.ID().isEmpty()) { // Check if ID list exists and is not empty
-            name = ctx.ID(0).getText(); // Get text from the first ID terminal node
-         } else {
-             System.err.println("Warning: No ID found for guard definition: " + ctx.getText());
-         }
-
-        // Process annotations
-        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
-
-        // TODO: Add parsing for parameters/return type if grammar supports them
-
-        // Constructor: GuardNode(Optional<Long> id, String name, Map<String, Object> annotations)
-        return new GuardNode(processed.id(), name, processed.annotations());
-    }
-
-    // --- Helper to parse TransitionSpec or similar structure within invoke options ---
-    private InvokeStateNode.InvokeTransition parseInvokeTransitionSpec(SSoTParser.TransitionSpecContext specCtx) {
-        if (specCtx == null) {
-            return new InvokeStateNode.InvokeTransition(); // Empty transition if spec is missing
-        }
-
-        Optional<String> target = Optional.ofNullable(specCtx.targetState()).map(ParseTree::getText);
-        Optional<String> action = Optional.empty();
-        Optional<String> guard = Optional.empty();
-        List<AnnotationNode> annotations = new ArrayList<>();
-
-        if (specCtx.transitionOptions() != null) {
-            for (SSoTParser.TransitionOptionContext option : specCtx.transitionOptions().transitionOption()) {
-                if (option.ACTION() != null && option.actionReferenceList() != null && !option.actionReferenceList().actionReference().isEmpty()) {
-                    // Get first action name
-                    String firstActionName = option.actionReferenceList().actionReference(0).getText();
-                    if (action.isPresent()) {
-                        System.err.println("Warning: Multiple ACTION clauses found for invoke transition. Using first one: '" + action.get() + "'.");
-                    } else {
-                        action = Optional.of(firstActionName);
-                    }
-                     if (option.actionReferenceList().actionReference().size() > 1) {
-                        System.err.println("Warning: Multiple actions defined in invoke transition ACTION clause. List handling not implemented.");
-                     }
-                } else if (option.GUARD() != null && option.guardReferenceList() != null && !option.guardReferenceList().guardReference().isEmpty()) {
-                    // Get first guard name
-                    String firstGuardName = option.guardReferenceList().guardReference(0).getText();
-                    if (guard.isPresent()) {
-                        System.err.println("Warning: Multiple GUARD clauses found for invoke transition. Using first one: '" + guard.get() + "'.");
-                    } else {
-                        guard = Optional.of(firstGuardName);
-                    }
-                     if (option.guardReferenceList().guardReference().size() > 1) {
-                        System.err.println("Warning: Multiple guards defined in invoke transition GUARD clause. List handling not implemented.");
-                     }
-                } else if (option.annotation() != null) {
-                     Object annotationResult = visitAnnotation(option.annotation());
-                     if (annotationResult instanceof AnnotationNode) {
-                         annotations.add((AnnotationNode) annotationResult);
-                     }
-                }
-            }
-        }
-        return new InvokeStateNode.InvokeTransition(target, action, guard, annotations);
-    }
-
-    // Placeholder for visitInvokeState - Needs implementation based on grammar
-    public Object visitInvokeState(SSoTParser.InvokeStateContext ctx) {
-        System.out.println("Visiting InvokeState...");
-
-        // Process annotations for the invoke definition itself
-        List<AnnotationContext> allAnnotationCtxs = new ArrayList<>();
-        if (ctx.annotation() != null) {
-            allAnnotationCtxs.addAll(ctx.annotation());
-        }
-        ProcessedAnnotations invokeAnnotations = processAnnotations(allAnnotationCtxs);
-
-        // Determine the source ('src') of the invocation
-        String src = "UNKNOWN_INVOKE_SRC";
-        // Note: $src annotation processing might conflict if handled within general processAnnotations
-        // Check if $src exists and remove it from the general list if handled specially.
-        Optional<AnnotationNode> srcAnnotation = invokeAnnotations.annotations().stream()
-            .filter(a -> a.getName().equals("src"))
-            .findFirst();
-
-        if (srcAnnotation.isPresent() && srcAnnotation.get().getValue() instanceof String) {
-            src = (String) srcAnnotation.get().getValue();
-            System.out.println("  Using $src annotation: " + src);
-            // Remove $src from general annotations as it's handled specifically
-            // Using removeIf for safer concurrent modification avoidance if list was shared (though it isn't here)
-            invokeAnnotations.annotations().removeIf(a -> a.getName().equals("src"));
-        } else if (ctx.ID() != null) {
-            src = ctx.ID().getText();
-            System.out.println("  Using INVOKE ID: " + src);
-        } else {
-            System.err.println("Warning: Could not determine invoke source (neither $src annotation nor INVOKE ID found) for: " + ctx.getText());
-        }
-
-        // Parse invokeOptions (onDone, onError transitions, etc.)
-        // Optional<String> onDoneTarget = Optional.empty(); // Old way
-        // Optional<String> onErrorTarget = Optional.empty(); // Old way
-        Optional<InvokeStateNode.InvokeTransition> onDone = Optional.empty();
-        Optional<InvokeStateNode.InvokeTransition> onError = Optional.empty();
-
-        if (ctx.invokeOptions() != null && ctx.invokeOptions().invokeOption() != null) {
-             System.out.println("  Parsing invoke options...");
-            for (SSoTParser.InvokeOptionContext option : ctx.invokeOptions().invokeOption()) {
-                if (option.ONDONE() != null) {
-                    InvokeStateNode.InvokeTransition transition = parseInvokeTransitionSpec(option.transitionSpec());
-                    if (onDone.isPresent()) {
-                        System.err.println("Warning: Multiple onDone handlers specified for invoke '" + src + "'. Using first one.");
-                    } else {
-                        onDone = Optional.of(transition);
-                        System.out.println("    Parsed onDone transition: " + transition);
-                    }
-                } else if (option.ONERROR() != null) {
-                    InvokeStateNode.InvokeTransition transition = parseInvokeTransitionSpec(option.transitionSpec());
-                     if (onError.isPresent()) {
-                         System.err.println("Warning: Multiple onError handlers specified for invoke '" + src + "'. Using first one.");
-                     } else {
-                         onError = Optional.of(transition);
-                         System.out.println("    Parsed onError transition: " + transition);
-                     }
-                } else if (option.annotation() != null) {
-                     // Handle annotations within invoke options (e.g., $data)
-                     // These might have already been collected by processAnnotations above.
-                     // If not, process them here and add to invokeAnnotations.annotations()
-                     // For now, assume they are handled by the main processAnnotations call.
-                      System.out.println("Info: Annotation found inside invoke options: " + option.annotation().getText() + " - Might be handled globally.");
-                }
-                 // TODO: Handle other invoke options like data mapping ($data)
-            }
-        }
-        // TODO: Parse invokeOptions (onDone, onError transitions, data mapping) -- Basic transition parsing added
-
-        // Constructor: InvokeStateNode(Optional<Long> id, List<AnnotationNode> annotations, String src)
-        // Updated constructor: InvokeStateNode(Optional<Long> id, List<AnnotationNode> annotations, String src, Optional<InvokeTransition> onDone, Optional<InvokeTransition> onError)
-        return new InvokeStateNode(invokeAnnotations.id(), invokeAnnotations.annotations(), src, onDone, onError);
-    }
-
-    // Visitor for the 'invokeDefinition' rule (within 'invokes' block - keep separate for now)
-    public Object visitInvokeDefinition(SSoTParser.InvokeDefinitionContext ctx) {
-        String name = "UNKNOWN_INVOKE";
-        if (ctx.ID() != null) {
-            name = ctx.ID().getText();
-        } else {
-            // The grammar might be different, e.g., referring to a service directly?
-            // Adjust parsing based on the actual SSoT.g4 rule for invokeDefinition
-            System.err.println("Warning: No ID found for invoke definition: " + ctx.getText() + ". Grammar needs checking.");
-            // For now, use the full text as a placeholder name if ID is missing
-            name = ctx.getText(); 
-        }
-        System.out.println("Visiting InvokeDefinition: " + name);
-
-        // Process annotations
-        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
-
-        // TODO: Add parsing for other details like src, data, onDone, onError based on grammar
-
-        // Constructor: InvokeNode(Optional<Long> id, String name, Map<String, Object> annotations)
-        return new InvokeNode(processed.id(), name, processed.annotations());
-    }
-
-    // Placeholder for visitHistoryDefinition - Needs implementation based on grammar
-    public Object visitHistoryDefinition(SSoTParser.HistoryDefinitionContext ctx) {
-        System.out.println("Visiting HistoryDefinition...");
-
-        // Process annotations
-        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
-
-        // Determine history type (default to SHALLOW if keyword is omitted? Grammar dependent)
-        HistoryNode.HistoryType type = HistoryNode.HistoryType.SHALLOW; // Default
-        if (ctx.DEEP() != null) {
-            type = HistoryNode.HistoryType.DEEP;
-        } else if (ctx.SHALLOW() != null) {
-            type = HistoryNode.HistoryType.SHALLOW;
-        } // If neither is present, use default SHALLOW (assuming grammar allows HISTORY SEMI)
-         else if (ctx.HISTORY() != null && ctx.SHALLOW() == null && ctx.DEEP() == null) {
-             // Explicitly handle the case where only HISTORY keyword is present
-             System.out.println("Info: No history type (SHALLOW/DEEP) specified, defaulting to SHALLOW.");
-             type = HistoryNode.HistoryType.SHALLOW;
-        }
-
-        // Constructor: HistoryNode(Optional<Long> id, List<AnnotationNode> annotations, HistoryType historyType)
-        return new HistoryNode(processed.id(), processed.annotations(), type);
-    }
+          return new StateNode(
+                  processedAnnotations.id(),
+                  name,
+                  processedAnnotations.annotations(),
+                  entryActions,
+                  exitActions,
+                  transitions,
+                  invoke,
+                  nestedStates,
+                  history,
+                  type,
+                  initialStateName
+          );
+      }
 
     // --- Service related visitors ---
     @Override
@@ -1139,44 +857,26 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
 
       @Override
       public Object visitMethodDefinition(SSoTParser.MethodDefinitionContext ctx) { // Return Object
-           String name = ctx.ID() != null ? ctx.ID().getText() : "UNKNOWN_METHOD";
-           System.out.println("Visiting MethodDefinition: " + name);
-
-           // Process annotations for the method itself (on ID and potentially in LBRACE RBRACE)
-           List<AnnotationContext> allAnnotationCtxs = new ArrayList<>();
-           if (ctx.annotation() != null) {
-                allAnnotationCtxs.addAll(ctx.annotation()); // Collect annotations before LPAREN and inside LBRACE RBRACE
-           }
-           ProcessedAnnotations methodAnnotations = processAnnotations(allAnnotationCtxs);
-
+           System.out.println("Visiting MethodDefinition...");
+           ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+           String name = ctx.IDENTIFIER().getText();
            List<ParameterNode> parameters = new ArrayList<>();
            if (ctx.parameterList() != null) {
-               parameters = visitParameterList(ctx.parameterList());
+               parameters = visitParameterList(ctx.parameterList()); // Use helper
            }
 
-           // Optional<String> returnType = Optional.empty(); // Old way
-           Optional<TypeExprNode> returnTypeNode = Optional.empty(); // Change type
-           if (ctx.ARROW() != null && ctx.typeExpr() != null) {
-                // returnType = Optional.of(ctx.typeExpr().getText()); // Use getText() for now - Old way
-                Object typeResult = visitTypeExpr(ctx.typeExpr()); // Use visitTypeExpr
-                 if (typeResult instanceof TypeExprNode) {
-                     returnTypeNode = Optional.of((TypeExprNode) typeResult);
-                 } else {
-                      System.err.println("Warning: visitTypeExpr did not return TypeExprNode for return type of method '" + name + "'. Assuming void.");
-                 }
-           } else if (ctx.ARROW() != null && ctx.typeExpr() == null) {
-                System.err.println("Warning: Method '" + name + "' has arrow -> but no return type specified. Assuming void.");
+           Optional<TypeExprNode> returnType = Optional.empty();
+           if (ctx.typeExpr() != null) {
+               Object typeResult = visit(ctx.typeExpr()); // Visit the return type expression
+               if (typeResult instanceof TypeExprNode) {
+                    returnType = Optional.of((TypeExprNode) typeResult);
+               } else {
+                    System.err.println("Warning: visitTypeExpr did not return a TypeExprNode for return type of method '" + name + "'. Got: " + (typeResult != null ? typeResult.getClass().getName() : "null"));
+                    // Decide handling: Optional.empty() or placeholder?
+               }
            }
 
-           // TODO: Handle annotations inside LBRACE RBRACE if they have specific meaning beyond general method annotations
-
-           return new MethodNode(
-               methodAnnotations.id(),
-               name,
-               parameters,
-               returnTypeNode, // Pass Optional<TypeExprNode>
-               methodAnnotations.annotations()
-           );
+           return new MethodNode(processed.id(), name, parameters, returnType, processed.annotations());
       }
 
      // --- Actor related visitors ---
@@ -1407,36 +1107,23 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<Object> {
     // Placeholder for visitParameter - Needs implementation based on grammar
     public Object visitParameter(SSoTParser.ParameterContext ctx) {
         System.out.println("Visiting Parameter...");
-        String name = "UNKNOWN_PARAM";
-        // String type = "UNKNOWN_TYPE"; // Old way
-        TypeExprNode typeNode = null;
-        List<AnnotationNode> annotations = Collections.emptyList();
-        Optional<Long> id = Optional.empty();
-
-        if (ctx.ID() != null) {
-            name = ctx.ID().getText();
-        }
+        ProcessedAnnotations processed = processAnnotations(ctx.annotation());
+        String name = ctx.IDENTIFIER().getText();
+        TypeExprNode type = null;
         if (ctx.typeExpr() != null) {
-            // type = ctx.typeExpr().getText(); // Use getText() for now, needs TypeExprNode later - Old way
-            Object typeResult = visitTypeExpr(ctx.typeExpr()); // Use visitTypeExpr
-             if (typeResult instanceof TypeExprNode) {
-                 typeNode = (TypeExprNode) typeResult;
-             } else {
-                  System.err.println("Warning: visitTypeExpr did not return TypeExprNode for parameter '" + name + "'. Using placeholder.");
-                  typeNode = new PrimitiveTypeNode("UNKNOWN_TYPE");
-             }
+            Object typeResult = visit(ctx.typeExpr());
+            if (typeResult instanceof TypeExprNode) {
+                type = (TypeExprNode) typeResult;
+            } else {
+                 System.err.println("Warning: visitTypeExpr did not return a TypeExprNode for parameter '" + name + "'. Got: " + (typeResult != null ? typeResult.getClass().getName() : "null"));
+                 return null; // Indicate error
+            }
         } else {
-             System.err.println("Warning: Parameter '" + name + "' missing type expression.");
-             typeNode = new PrimitiveTypeNode("UNKNOWN_TYPE"); // Placeholder if typeExpr is missing
+             System.err.println("Error: Type expression missing for parameter '" + name + "'.");
+             return null; // Indicate error
         }
 
-        if (ctx.annotation() != null) {
-            ProcessedAnnotations processed = processAnnotations(ctx.annotation());
-            id = processed.id();
-            annotations = processed.annotations();
-        }
-
-        return new ParameterNode(id, annotations, name, typeNode); // Pass typeNode
+        return new ParameterNode(processed.id(), processed.annotations(), name, type);
     }
 
     // Placeholder for visitParameterList - Needs implementation based on grammar

@@ -6,8 +6,10 @@ import ssot_parser.NodeWithId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
+import java.util.HashMap;
 
 /**
  * Represents an 'invoke' declaration within a state definition.
@@ -37,20 +39,22 @@ public class InvokeStateNode implements AstNode, NodeWithId {
 
     private final Optional<Long> id;
     private final List<AnnotationNode> annotations;
-    private final String src; // The ID/name of the service/machine/lambda to invoke (extracted from $src or grammar)
-    private final Optional<InvokeTransition> onDoneTransition;
-    private final Optional<InvokeTransition> onErrorTransition;
-    // TODO: Add fields for parameters/data mapping, etc.
+    public final String invokedStateMachineName; // Renamed from src for clarity
+    public final Optional<InvokeTransition> onDoneTransition;
+    public final Optional<InvokeTransition> onErrorTransition;
+    // Convenience list for transitions, parsed from onDone/onError
+    public final List<TransitionNode> transitions;
 
-    public InvokeStateNode(Optional<Long> id, List<AnnotationNode> annotations, String src,
+    public InvokeStateNode(Optional<Long> id, List<AnnotationNode> annotations, String invokedStateMachineName,
                            Optional<InvokeTransition> onDoneTransition,
-                           Optional<InvokeTransition> onErrorTransition
-                           /* Add other params */) {
+                           Optional<InvokeTransition> onErrorTransition,
+                           List<TransitionNode> transitions) {
         this.id = id;
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
-        this.src = src;
+        this.invokedStateMachineName = Objects.requireNonNull(invokedStateMachineName, "Invoked state machine name cannot be null");
         this.onDoneTransition = Objects.requireNonNull(onDoneTransition, "onDoneTransition cannot be null");
         this.onErrorTransition = Objects.requireNonNull(onErrorTransition, "onErrorTransition cannot be null");
+        this.transitions = Collections.unmodifiableList(transitions != null ? new ArrayList<>(transitions) : Collections.emptyList());
     }
 
     @Override
@@ -59,12 +63,16 @@ public class InvokeStateNode implements AstNode, NodeWithId {
     }
 
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new HashMap<>();
+        for (AnnotationNode annotation : this.annotations) {
+            annotationMap.put(annotation.name, annotation.value);
+        }
+        return Collections.unmodifiableMap(annotationMap);
     }
 
-    public String getSrc() {
-        return src;
+    public String getInvokedStateMachineName() {
+        return invokedStateMachineName;
     }
 
     public Optional<InvokeTransition> getOnDoneTransition() {
@@ -75,24 +83,24 @@ public class InvokeStateNode implements AstNode, NodeWithId {
         return onErrorTransition;
     }
 
-    // TODO: Add getters for other fields (data mapping etc.)
+    public List<TransitionNode> getTransitions() {
+        return transitions;
+    }
 
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        // TODO: Add visitInvokeStateNode method to NodeVisitor interface
-        // return visitor.visitInvokeStateNode(this);
-        System.err.println("Warning: NodeVisitor.visitInvokeStateNode not implemented yet.");
-        return null; // Placeholder return
+        return visitor.visitInvokeStateNode(this);
     }
 
     @Override
     public String toString() {
         return "InvokeStateNode{" +
                "id=" + id.map(String::valueOf).orElse("none") +
-               ", src='" + src + '\'' +
+               ", invokedStateMachineName='" + invokedStateMachineName + "\'" +
                ", annotations=" + annotations +
                ", onDone=" + onDoneTransition.map(InvokeTransition::toString).orElse("none") +
                ", onError=" + onErrorTransition.map(InvokeTransition::toString).orElse("none") +
+               ", transitions=" + transitions +
                '}';
     }
 

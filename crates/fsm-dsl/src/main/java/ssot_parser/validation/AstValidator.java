@@ -176,7 +176,7 @@ public class AstValidator {
     // Updated signature and logic for hierarchy validation
     private void validateMachineStateHierarchy(MachineNode machine, StateNode parentState,
                                              Set<String> definedActionNames, Set<String> definedGuardNames,
-                                             Map<Long, AstNode> seenIdsInScope) {
+                                             Map<Long, ssot_parser.ast.AstNode> seenIdsInScope) {
         String scopeName = (parentState == null) ? machine.getName() : parentState.getName();
         System.out.println("Validating states within scope: " + scopeName);
 
@@ -326,7 +326,7 @@ public class AstValidator {
      }
 
     // --- Context Validation ---
-    private void validateContext(ContextNode node, Map<Long, AstNode> seenIdsInScope) { // Pass scope IDs
+    private void validateContext(ContextNode node, Map<Long, ssot_parser.ast.AstNode> seenIdsInScope) { // Pass scope IDs
         if (node == null) return;
         System.out.println("Validating machine context...");
         Set<String> fieldNames = new HashSet<>();
@@ -639,11 +639,13 @@ public class AstValidator {
     }
 
     // Helper to check and register @id
-    private void checkAndRegisterId(AstNode node, Map<Long, AstNode> seenIds) {
+    private void checkAndRegisterId(ssot_parser.ast.AstNode node, Map<Long, ssot_parser.ast.AstNode> seenIds) {
         if (node instanceof NodeWithId nodeWithId) {
-            nodeWithId.getId().ifPresent(id -> {
+            Optional<Long> idOpt = nodeWithId.getId();
+            if (idOpt.isPresent()) {
+                Long id = idOpt.get();
                 if (seenIds.containsKey(id)) {
-                    AstNode firstNode = seenIds.get(id);
+                    ssot_parser.ast.AstNode firstNode = seenIds.get(id);
                     addError("Duplicate @id(" + id + ") defined. First used near "
                              + firstNode.getClass().getSimpleName()
                              + (firstNode instanceof NodeWithName ? (" '" + ((NodeWithName)firstNode).getName() + "'") : "") // Add name if possible
@@ -651,22 +653,22 @@ public class AstValidator {
                 } else {
                     seenIds.put(id, node);
                 }
-            });
+            }
         }
     }
 
     // Helper method to add an error
-    private void addError(String message, AstNode node) {
+    private void addError(String message, ssot_parser.ast.AstNode node) {
         errors.add(new ValidationError(message, ValidationError.Severity.ERROR, node));
     }
 
     // Helper method to add a warning
-    private void addWarning(String message, AstNode node) {
+    private void addWarning(String message, ssot_parser.ast.AstNode node) {
         errors.add(new ValidationError(message, ValidationError.Severity.WARNING, node));
     }
 
     // Helper method to recursively validate type expressions
-    private void validateTypeReference(TypeExprNode typeNode, AstNode ownerNode) {
+    private void validateTypeReference(TypeExprNode typeNode, ssot_parser.ast.AstNode ownerNode) {
         if (typeNode == null) {
             addError("Type expression is missing or could not be parsed.", ownerNode);
             return;
