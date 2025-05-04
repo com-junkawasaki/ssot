@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.Objects;
+import java.util.Map;
 
 /**
  * Represents a list type 'list<T>'.
@@ -32,8 +33,8 @@ public class ListTypeNode implements TypeExprNode {
 
     // AstNode requirements
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return Collections.emptyList();
+    public Map<String, Object> getAnnotations() {
+        return Collections.emptyMap();
     }
     @Override
      public Optional<Long> getId() {

@@ -3,32 +3,36 @@ package ssot_parser.ast.nodes;
 import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
+import java.util.Collections;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Map;
 
 /**
- * Represents a conditional transition based on a guard.
- * Corresponds to the 'if guardName { ... } else { ... }' syntax.
+ * Represents a conditional transition within a state, triggered by a guard condition.
+ * Corresponds to the 'if guardName { transition ... }' or 'if guardName transition ...' syntax.
  */
 public class ConditionalTransitionNode implements AstNode {
-    public final String guardName;
-    public final TransitionConfig thenTransition;
-    public final Optional<TransitionConfig> elseTransition;
+    public final String guardName; // Name of the referenced guard, potentially with "(not)"
+    public final TransitionNode transition;
 
-    public ConditionalTransitionNode(String guardName, TransitionConfig thenTransition, Optional<TransitionConfig> elseTransition) {
+    public ConditionalTransitionNode(String guardName, TransitionNode transition) {
         this.guardName = guardName;
-        this.thenTransition = thenTransition;
-        this.elseTransition = elseTransition;
+         if (transition == null) {
+             System.err.println("Error: ConditionalTransitionNode created with null transition for guard: " + guardName);
+             this.transition = new TransitionNode("ERROR_NULL_TRANSITION", Optional.empty(), Collections.emptyList(), Collections.emptyList());
+        } else {
+             this.transition = transition;
+        }
     }
 
+    // Getters
     public String getGuardName() {
         return guardName;
     }
 
-    public TransitionConfig getThenTransition() {
-        return thenTransition;
-    }
-
-    public Optional<TransitionConfig> getElseTransition() {
-        return elseTransition;
+    public TransitionNode getTransition() {
+        return transition;
     }
 
     @Override
@@ -39,11 +43,12 @@ public class ConditionalTransitionNode implements AstNode {
     @Override
     public String toString() {
         return "ConditionalTransitionNode{" +
-               "guard='" + guardName + "\'" +
-               ", then=" + thenTransition +
-               ", else=" + elseTransition.map(Object::toString).orElse("none") +
+               "guardName='" + guardName + "\'" +
+               ", transition=" + transition +
                "}";
     }
 
-    // Consider adding equals() and hashCode()
+    // No ID or annotations directly on this node, they are within the TransitionNode
+     @Override public Map<String, Object> getAnnotations() { return transition != null ? transition.getAnnotations() : Collections.emptyMap(); }
+     @Override public Optional<Long> getId() { return transition != null ? transition.getId() : Optional.empty(); }
 } 

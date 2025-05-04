@@ -22,7 +22,7 @@ import ssot_parser.ast.type.StateType;
 public class StateNode implements AstNode, NodeWithId {
     private final Optional<Long> id; // Optional @id annotation
     public final String stateName;
-    private final List<AnnotationNode> annotations; // Keep internal representation as List
+    private final Map<String, Object> annotations; // Change type to Map
     public final List<String> entryActions; // List of action names referenced in entry
     public final List<String> exitActions;  // List of action names referenced in exit
     public final List<EventHandlerNode> eventHandlers; // Handles 'on Event' and always transitions
@@ -32,7 +32,7 @@ public class StateNode implements AstNode, NodeWithId {
     public final StateType type; // Type of state (ATOMIC, COMPOUND, PARALLEL, FINAL)
     public final String initialStateName; // Name of the initial child state (for compound/parallel)
 
-    public StateNode(Optional<Long> id, String stateName, List<AnnotationNode> annotations,
+    public StateNode(Optional<Long> id, String stateName, Map<String, Object> annotations,
                      List<String> entryActions, List<String> exitActions,
                      List<EventHandlerNode> eventHandlers,
                      List<ConditionalTransitionNode> conditionalTransitions,
@@ -42,7 +42,7 @@ public class StateNode implements AstNode, NodeWithId {
                      String initialStateName) {
         this.id = id;
         this.stateName = stateName;
-        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
+        this.annotations = annotations != null ? Collections.unmodifiableMap(new HashMap<>(annotations)) : Collections.emptyMap();
         this.entryActions = entryActions != null ? Collections.unmodifiableList(new ArrayList<>(entryActions)) : Collections.emptyList();
         this.exitActions = exitActions != null ? Collections.unmodifiableList(new ArrayList<>(exitActions)) : Collections.emptyList();
         this.eventHandlers = eventHandlers != null ? Collections.unmodifiableList(new ArrayList<>(eventHandlers)) : Collections.emptyList();
@@ -64,11 +64,7 @@ public class StateNode implements AstNode, NodeWithId {
 
     @Override
     public Map<String, Object> getAnnotations() {
-        Map<String, Object> annotationMap = new HashMap<>();
-        for (AnnotationNode annotation : this.annotations) {
-            annotationMap.put(annotation.name, annotation.value);
-        }
-        return Collections.unmodifiableMap(annotationMap);
+        return this.annotations;
     }
 
     public List<String> getEntryActions() {
@@ -115,7 +111,7 @@ public class StateNode implements AstNode, NodeWithId {
                ", stateName='" + stateName + "\'" +
                ", type=" + type +
                ", initialStateName='" + initialStateName + "\'" +
-               ", annotations=" + annotations +
+               ", annotations=" + (annotations != null ? annotations.toString() : "{}") +
                ", entryActions=" + entryActions +
                ", exitActions=" + exitActions +
                ", eventHandlers=" + eventHandlers +

@@ -19,13 +19,13 @@ public class TypeDefNode implements NodeWithId, AstNode {
     private final Optional<Long> id;
     public final String name;
     public final List<FieldNode> fields;
-    private final List<AnnotationNode> annotations; // Keep internal representation as List
+    private final Map<String, Object> annotations; // Change type to Map
 
-    public TypeDefNode(Optional<Long> id, String name, List<FieldNode> fields, List<AnnotationNode> annotations) {
+    public TypeDefNode(Optional<Long> id, String name, List<FieldNode> fields, Map<String, Object> annotations) {
         this.id = id;
         this.name = name;
         this.fields = fields;
-        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList()); // Use unmodifiableList
+        this.annotations = annotations != null ? Collections.unmodifiableMap(new HashMap<>(annotations)) : Collections.emptyMap();
     }
 
     @Override
@@ -48,11 +48,7 @@ public class TypeDefNode implements NodeWithId, AstNode {
      */
     @Override
     public Map<String, Object> getAnnotations() { // Correct return type
-        Map<String, Object> annotationMap = new HashMap<>();
-        for (AnnotationNode annotation : this.annotations) {
-            annotationMap.put(annotation.name, annotation.value); // Use name and value from AnnotationNode
-        }
-        return Collections.unmodifiableMap(annotationMap); // Return unmodifiable map
+        return this.annotations;
     }
 
     // Implementation for AstNode

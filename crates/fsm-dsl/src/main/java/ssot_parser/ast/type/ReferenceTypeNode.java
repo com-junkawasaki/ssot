@@ -5,6 +5,7 @@ import ssot_parser.ast.nodes.AnnotationNode;
 import java.util.List;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.Map;
 
 /**
  * Represents a reference to another defined type (e.g., a struct or enum name).
@@ -32,8 +33,8 @@ public class ReferenceTypeNode implements TypeExprNode {
 
     // AstNode requirements
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return Collections.emptyList();
+    public Map<String, Object> getAnnotations() {
+        return Collections.emptyMap();
     }
     @Override
      public Optional<Long> getId() {

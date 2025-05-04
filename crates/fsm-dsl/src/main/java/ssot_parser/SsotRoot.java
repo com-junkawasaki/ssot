@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
 
@@ -23,6 +24,7 @@ public class SsotRoot implements AstNode {
     // Add other top-level block lists as needed (imports, actors, communication, etc.)
     private final List<AstNode> actorDefinitions; // Added
     private final List<AstNode> communicationDefinitions; // Added
+    private final Optional<Long> id; // Add Optional<Long> for file ID
     private final Map<String, Object> annotations; // For top-level file annotations
 
     // Constructor (modify as needed based on how AstBuilderVisitor works)
@@ -32,6 +34,7 @@ public class SsotRoot implements AstNode {
             List<AstNode> machineDefinitions,
             List<AstNode> actorDefinitions, // Added
             List<AstNode> communicationDefinitions, // Added
+            Optional<Long> id, // Add id parameter
             Map<String, Object> annotations
             /* Add other lists */
             ) {
@@ -41,6 +44,7 @@ public class SsotRoot implements AstNode {
         this.machineDefinitions = Collections.unmodifiableList(machineDefinitions != null ? machineDefinitions : Collections.emptyList());
         this.actorDefinitions = Collections.unmodifiableList(actorDefinitions != null ? actorDefinitions : Collections.emptyList()); // Added
         this.communicationDefinitions = Collections.unmodifiableList(communicationDefinitions != null ? communicationDefinitions : Collections.emptyList()); // Added
+        this.id = id; // Store id
         this.annotations = Collections.unmodifiableMap(annotations != null ? new HashMap<>(annotations) : Collections.emptyMap());
         // Initialize other lists
     }
@@ -66,6 +70,11 @@ public class SsotRoot implements AstNode {
         return communicationDefinitions;
     }
 
+    // Add getter for ID if needed (consistent with NodeWithId, though SsotRoot might not implement it)
+    public Optional<Long> getId() {
+        return id;
+    }
+
     @Override
     public Map<String, Object> getAnnotations() {
         return annotations;
@@ -81,6 +90,7 @@ public class SsotRoot implements AstNode {
                ", machineDefinitions=" + machineDefinitions +
                ", actorDefinitions=" + actorDefinitions + // Added
                ", communicationDefinitions=" + communicationDefinitions + // Added
+               ", id=" + id.map(String::valueOf).orElse("none") + // Add id to toString
                ", annotations=" + annotations +
                '}';
     }
