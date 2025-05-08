@@ -9,46 +9,39 @@ import java.util.ArrayList;
 import java.util.Map;
 
 /**
- * Represents an event handler within a state, such as 'on EVENT', 'after DURATION', or 'always'.
- * It links the trigger (event, delay, always) to a specific transition specification.
+ * Represents an event handler within a state (e.g., 'on EVENT { ... }').
+ * It groups transitions (direct and conditional) triggered by one or more events.
  */
 public class EventHandlerNode implements AstNode {
-    // Event details
-    public final Optional<String> eventName; // Name of the event, or special markers like "always", "after(delay)"
-    public final boolean isAlwaysTransition;
-    public final Optional<String> delay; // e.g., "100ms", present only for 'after' transitions
+    private final List<String> eventRefs;
+    private final List<TransitionNode> directTransitions;
+    private final List<ConditionalTransitionNode> conditionalTransitions;
+    private final List<AnnotationNode> annotations; // Annotations on the ON block itself
 
-    // The transition specification triggered by this handler
-    public final TransitionNode transition;
-
-    public EventHandlerNode(String eventName, boolean isAlwaysTransition, Optional<String> delay, TransitionNode transition) {
-        this.eventName = Optional.ofNullable(eventName);
-        this.isAlwaysTransition = isAlwaysTransition;
-        this.delay = delay;
-        if (transition == null) {
-             System.err.println("Error: EventHandlerNode created with null transition for event: " + eventName);
-             // Create a dummy transition to avoid NullPointerExceptions downstream?
-             this.transition = new TransitionNode("ERROR_NULL_TRANSITION", Optional.empty(), Collections.emptyList(), Collections.emptyList());
-        } else {
-             this.transition = transition;
-        }
+    public EventHandlerNode(List<String> eventRefs,
+                            List<TransitionNode> directTransitions,
+                            List<ConditionalTransitionNode> conditionalTransitions,
+                            List<AnnotationNode> annotations) {
+        this.eventRefs = Collections.unmodifiableList(eventRefs != null ? new ArrayList<>(eventRefs) : Collections.emptyList());
+        this.directTransitions = Collections.unmodifiableList(directTransitions != null ? new ArrayList<>(directTransitions) : Collections.emptyList());
+        this.conditionalTransitions = Collections.unmodifiableList(conditionalTransitions != null ? new ArrayList<>(conditionalTransitions) : Collections.emptyList());
+        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
     }
 
-    // Getters
-    public Optional<String> getEventName() {
-        return eventName;
+    public List<String> getEventRefs() {
+        return eventRefs;
     }
 
-    public boolean isAlwaysTransition() {
-        return isAlwaysTransition;
+    public List<TransitionNode> getDirectTransitions() {
+        return directTransitions;
     }
 
-    public Optional<String> getDelay() {
-        return delay;
+    public List<ConditionalTransitionNode> getConditionalTransitions() {
+        return conditionalTransitions;
     }
 
-    public TransitionNode getTransition() {
-        return transition;
+    public List<AnnotationNode> getAnnotations() {
+        return annotations;
     }
 
     @Override
@@ -59,14 +52,12 @@ public class EventHandlerNode implements AstNode {
     @Override
     public String toString() {
         return "EventHandlerNode{" +
-               "event='" + eventName.orElse("none") + "\'" +
-               ", isAlways=" + isAlwaysTransition +
-               ", delay=" + delay.orElse("none") +
-               ", transition=" + transition +
+               "events=" + eventRefs +
+               ", directTransitions=" + directTransitions +
+               ", conditionalTransitions=" + conditionalTransitions +
+               ", annotations=" + annotations +
                "}";
     }
 
-    // No ID or annotations directly on the handler, they are within the TransitionNode
-     @Override public Map<String, Object> getAnnotations() { return transition != null ? transition.getAnnotations() : Collections.emptyMap(); }
-     @Override public Optional<Long> getId() { return transition != null ? transition.getId() : Optional.empty(); }
+    // Consider adding equals() and hashCode()
 } 

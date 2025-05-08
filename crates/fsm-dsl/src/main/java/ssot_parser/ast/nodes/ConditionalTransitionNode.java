@@ -15,6 +15,8 @@ import java.util.Map;
 public class ConditionalTransitionNode implements AstNode {
     public final String guardName; // Name of the referenced guard, potentially with "(not)"
     public final TransitionNode transition;
+    private TransitionNode elseTransition; // Optional transition if the guard evaluates to false
+    private final List<AnnotationNode> annotations; // Annotations associated with the IF/ELSE structure
 
     public ConditionalTransitionNode(String guardName, TransitionNode transition) {
         this.guardName = guardName;
@@ -24,6 +26,16 @@ public class ConditionalTransitionNode implements AstNode {
         } else {
              this.transition = transition;
         }
+        this.elseTransition = null; // Initialize else transition as null
+        this.annotations = new ArrayList<>(); // Initialize annotations list
+    }
+
+    // Constructor allowing else transition initially
+    public ConditionalTransitionNode(String guardName, TransitionNode transition, TransitionNode elseTransition, List<AnnotationNode> annotations) {
+        this.guardName = guardName;
+        this.transition = transition;
+        this.elseTransition = elseTransition;
+        this.annotations = new ArrayList<>(annotations != null ? annotations : Collections.emptyList());
     }
 
     // Getters
@@ -33,6 +45,24 @@ public class ConditionalTransitionNode implements AstNode {
 
     public TransitionNode getTransition() {
         return transition;
+    }
+
+    public Optional<TransitionNode> getElseTransition() {
+        return Optional.ofNullable(elseTransition);
+    }
+
+    public void setElseTransition(TransitionNode elseTransition) {
+        this.elseTransition = elseTransition;
+    }
+
+    public List<AnnotationNode> getAnnotations() {
+        return Collections.unmodifiableList(annotations);
+    }
+
+    public void addAnnotations(List<AnnotationNode> annotations) {
+        if (annotations != null) {
+            this.annotations.addAll(annotations);
+        }
     }
 
     @Override
@@ -45,10 +75,12 @@ public class ConditionalTransitionNode implements AstNode {
         return "ConditionalTransitionNode{" +
                "guardName='" + guardName + "\'" +
                ", transition=" + transition +
+               (elseTransition != null ? ", else=" + elseTransition : "") +
+               ", annotations=" + annotations +
                "}";
     }
 
     // No ID or annotations directly on this node, they are within the TransitionNode
-     @Override public Map<String, Object> getAnnotations() { return transition != null ? transition.getAnnotations() : Collections.emptyMap(); }
+     @Override public Map<String, Object> getAnnotationsMap() { return transition != null ? transition.getAnnotations() : Collections.emptyMap(); }
      @Override public Optional<Long> getId() { return transition != null ? transition.getId() : Optional.empty(); }
 } 

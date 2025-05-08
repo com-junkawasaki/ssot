@@ -22,35 +22,43 @@ import ssot_parser.ast.type.StateType;
 public class StateNode implements AstNode, NodeWithId {
     private final Optional<Long> id; // Optional @id annotation
     public final String stateName;
-    private final Map<String, Object> annotations; // Change type to Map
+    private final String displayName; // From $name annotation or defaults to stateName
     public final List<String> entryActions; // List of action names referenced in entry
     public final List<String> exitActions;  // List of action names referenced in exit
+    public final List<InvokeStateNode> invokeInvocations;
     public final List<EventHandlerNode> eventHandlers; // Handles 'on Event' and always transitions
-    public final List<ConditionalTransitionNode> conditionalTransitions; // Handles 'if guard ...'
-    public final Optional<InvokeStateNode> invoke; // Changed to Optional, as a state has at most one invoke
+    public final List<ConditionalTransitionNode> ifTransitions; // Handles 'if guard ...'
     public final List<StateNode> nestedStates; // List for nested states (children)
     public final StateType type; // Type of state (ATOMIC, COMPOUND, PARALLEL, FINAL)
     public final String initialStateName; // Name of the initial child state (for compound/parallel)
+    public final List<HistoryStateNode> historyStates;
+    private final List<AnnotationNode> annotations;
 
-    public StateNode(Optional<Long> id, String stateName, Map<String, Object> annotations,
-                     List<String> entryActions, List<String> exitActions,
-                     List<EventHandlerNode> eventHandlers,
-                     List<ConditionalTransitionNode> conditionalTransitions,
-                     Optional<InvokeStateNode> invoke,
-                     List<StateNode> nestedStates,
+    public StateNode(Optional<Long> id,
+                     String stateName,
+                     String displayName,
                      StateType type,
-                     String initialStateName) {
+                     List<String> entryActions,
+                     List<String> exitActions,
+                     List<InvokeStateNode> invokeInvocations,
+                     List<EventHandlerNode> eventHandlers,
+                     List<ConditionalTransitionNode> ifTransitions,
+                     List<StateNode> nestedStates,
+                     List<HistoryStateNode> historyStates,
+                     List<AnnotationNode> annotations) {
         this.id = id;
         this.stateName = stateName;
-        this.annotations = annotations != null ? Collections.unmodifiableMap(new HashMap<>(annotations)) : Collections.emptyMap();
-        this.entryActions = entryActions != null ? Collections.unmodifiableList(new ArrayList<>(entryActions)) : Collections.emptyList();
-        this.exitActions = exitActions != null ? Collections.unmodifiableList(new ArrayList<>(exitActions)) : Collections.emptyList();
-        this.eventHandlers = eventHandlers != null ? Collections.unmodifiableList(new ArrayList<>(eventHandlers)) : Collections.emptyList();
-        this.conditionalTransitions = conditionalTransitions != null ? Collections.unmodifiableList(new ArrayList<>(conditionalTransitions)) : Collections.emptyList();
-        this.invoke = invoke;
-        this.nestedStates = nestedStates != null ? Collections.unmodifiableList(new ArrayList<>(nestedStates)) : Collections.emptyList();
+        this.displayName = displayName != null ? displayName : stateName;
         this.type = type;
-        this.initialStateName = initialStateName;
+        this.entryActions = Collections.unmodifiableList(entryActions != null ? new ArrayList<>(entryActions) : Collections.emptyList());
+        this.exitActions = Collections.unmodifiableList(exitActions != null ? new ArrayList<>(exitActions) : Collections.emptyList());
+        this.invokeInvocations = Collections.unmodifiableList(invokeInvocations != null ? new ArrayList<>(invokeInvocations) : Collections.emptyList());
+        this.eventHandlers = Collections.unmodifiableList(eventHandlers != null ? new ArrayList<>(eventHandlers) : Collections.emptyList());
+        this.ifTransitions = Collections.unmodifiableList(ifTransitions != null ? new ArrayList<>(ifTransitions) : Collections.emptyList());
+        this.nestedStates = Collections.unmodifiableList(nestedStates != null ? new ArrayList<>(nestedStates) : Collections.emptyList());
+        this.historyStates = Collections.unmodifiableList(historyStates != null ? new ArrayList<>(historyStates) : Collections.emptyList());
+        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
+        this.initialStateName = null; // Assuming initialStateName is not provided in the constructor
     }
 
     @Override
@@ -62,9 +70,23 @@ public class StateNode implements AstNode, NodeWithId {
         return stateName;
     }
 
+    public String getDisplayName() {
+        return displayName;
+    }
+
     @Override
     public Map<String, Object> getAnnotations() {
-        return this.annotations;
+        Map<String, Object> annotationMap = new HashMap<>();
+        if (this.annotations != null) {
+             for (AnnotationNode annotation : this.annotations) {
+                if (!"@id".equals(annotation.name) || !id.isPresent()) {
+                     annotationMap.put(annotation.name, annotation.value);
+                 }
+             }
+        }
+        // Add $name implicitly if not present?
+        // annotationMap.putIfAbsent("$name", this.displayName);
+        return Collections.unmodifiableMap(annotationMap);
     }
 
     public List<String> getEntryActions() {
@@ -75,16 +97,16 @@ public class StateNode implements AstNode, NodeWithId {
         return exitActions;
     }
 
+    public List<InvokeStateNode> getInvokeInvocations() {
+        return invokeInvocations;
+    }
+
     public List<EventHandlerNode> getEventHandlers() {
         return eventHandlers;
     }
 
-    public List<ConditionalTransitionNode> getConditionalTransitions() {
-        return conditionalTransitions;
-    }
-
-    public Optional<InvokeStateNode> getInvoke() {
-        return invoke;
+    public List<ConditionalTransitionNode> getIfTransitions() {
+        return ifTransitions;
     }
 
     public List<StateNode> getNestedStates() {
@@ -99,6 +121,14 @@ public class StateNode implements AstNode, NodeWithId {
         return initialStateName;
     }
 
+    public List<HistoryStateNode> getHistoryStates() {
+        return historyStates;
+    }
+
+    public List<AnnotationNode> getAnnotationNodes() {
+        return annotations;
+    }
+
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
         return visitor.visitStateNode(this);
@@ -110,14 +140,14 @@ public class StateNode implements AstNode, NodeWithId {
                "id=" + id.map(String::valueOf).orElse("none") +
                ", stateName='" + stateName + "\'" +
                ", type=" + type +
-               ", initialStateName='" + initialStateName + "\'" +
-               ", annotations=" + (annotations != null ? annotations.toString() : "{}") +
                ", entryActions=" + entryActions +
                ", exitActions=" + exitActions +
+               ", invokes=" + invokeInvocations +
                ", eventHandlers=" + eventHandlers +
-               ", conditionalTransitions=" + conditionalTransitions +
-               ", invoke=" + invoke +
-               ", nestedStates=" + nestedStates +
+               ", ifTransitions=" + ifTransitions +
+               ", nestedStates=" + nestedStates.size() +
+               ", historyStates=" + historyStates.size() +
+               ", annotations=" + annotations +
                "}";
     }
 

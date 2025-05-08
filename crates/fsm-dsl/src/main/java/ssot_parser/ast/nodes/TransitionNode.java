@@ -9,54 +9,108 @@ import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
 import java.util.ArrayList;
 import ssot_parser.ast.nodes.AnnotationNode;
+import ssot_parser.NodeWithId;
 
 /**
- * Represents a state transition specification, typically used within
- * an EventHandlerNode, ConditionalTransitionNode, or InvokeCompletionHandler.
- * It defines the target state, optional guard condition, and actions to execute.
+ * Represents a state transition triggered by an event, timer, or condition.
+ * Includes target state, optional guard, actions, and annotations.
  */
-public class TransitionNode implements AstNode {
-    public final String targetStateName; // Name of the target state (e.g., "StateName", ".history")
-    public final Optional<String> condition;   // Optional guard condition reference (name, includes potential "(not)")
-    public final List<String> actions;     // List of action references (names)
-    private final List<AnnotationNode> annotations; // Annotations defined within the transition { ... } block
-    // Optional ID can be derived from annotations if needed.
+public class TransitionNode implements AstNode, NodeWithId {
+    private final Optional<Long> id;
+    private String sourceStateName; // Added later during linking/validation?
+    private String event; // Event name, or synthetic like AFTER_duration, ALWAYS, IF_guard
+    public final String targetStateName;
+    public final Optional<String> conditionRef; // Guard reference
+    public final List<String> actionRefs; // Action references
+    private final List<AnnotationNode> annotations;
 
-    // Simplified Constructor
-    public TransitionNode(String targetStateName,
-                          Optional<String> condition,
-                          List<String> actions,
+    // Fields for specific transition types
+    private String delay; // For AFTER transitions (e.g., "100ms")
+    private boolean always = false; // For ALWAYS transitions
+
+    // Constructor - potentially needs updates based on usage
+    public TransitionNode(Optional<Long> id,
+                          String sourceStateName, // Can be null initially
+                          String event, // Can be null initially
+                          String targetStateName,
+                          Optional<String> conditionRef,
+                          List<String> actionRefs,
                           List<AnnotationNode> annotations) {
-        // Source state and event are implicit from the context where this node is used.
+        this.id = id;
+        this.sourceStateName = sourceStateName;
+        this.event = event;
         this.targetStateName = targetStateName;
-        this.condition = condition;
-        this.actions = actions != null ? Collections.unmodifiableList(new ArrayList<>(actions)) : Collections.emptyList();
+        this.conditionRef = conditionRef;
+        this.actionRefs = Collections.unmodifiableList(actionRefs != null ? new ArrayList<>(actionRefs) : Collections.emptyList());
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
+        this.delay = null;
+        this.always = false;
     }
 
-    // Optional: Add getId() that searches annotations if needed.
+    @Override
     public Optional<Long> getId() {
-        return annotations.stream()
-                .filter(anno -> "@id".equals(anno.name) && anno.value instanceof Long)
-                .map(anno -> (Long) anno.value)
-                .findFirst();
+        return id;
     }
 
-    // getAnnotations() can remain similar, but it's now based on internal list
+    public Optional<String> getSourceStateName() {
+        return Optional.ofNullable(sourceStateName);
+    }
+
+    public void setSourceStateName(String sourceStateName) {
+        this.sourceStateName = sourceStateName;
+    }
+
+    public Optional<String> getEvent() {
+        return Optional.ofNullable(event);
+    }
+
+    public void setEvent(String event) {
+        this.event = event;
+    }
+
+    public String getTargetStateName() {
+        return targetStateName;
+    }
+
+    public Optional<String> getConditionRef() {
+        return conditionRef;
+    }
+
+    public List<String> getActionRefs() {
+        return actionRefs;
+    }
+
+    @Override
     public Map<String, Object> getAnnotations() {
         Map<String, Object> annotationMap = new HashMap<>();
         for (AnnotationNode annotation : this.annotations) {
-             // Filter out @id if getId() is the primary way to access it?
-             // Or include it here? Let's include it for completeness.
-            annotationMap.put(annotation.name, annotation.value);
+             if (!"@id".equals(annotation.name) || !id.isPresent()) { // Exclude @id if already exposed via getId()
+                annotationMap.put(annotation.name, annotation.value);
+            }
         }
         return Collections.unmodifiableMap(annotationMap);
     }
 
-    // Getters for main properties
-    public String getTargetStateName() { return targetStateName; }
-    public Optional<String> getCondition() { return condition; }
-    public List<String> getActions() { return actions; }
+     public List<AnnotationNode> getAnnotationNodes() {
+        return annotations;
+    }
+
+    // Getters and Setters for new fields
+    public Optional<String> getDelay() {
+        return Optional.ofNullable(delay);
+    }
+
+    public void setDelay(String delay) {
+        this.delay = delay;
+    }
+
+    public boolean isAlways() {
+        return always;
+    }
+
+    public void setAlways(boolean always) {
+        this.always = always;
+    }
 
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
@@ -65,12 +119,18 @@ public class TransitionNode implements AstNode {
 
     @Override
     public String toString() {
-        return "TransitionNode{" +
-               "target='" + targetStateName + "\'" +
-               ", condition=" + condition.orElse("none") +
-               ", actions=" + actions +
-               ", annotations=" + annotations +
-               "}";
+        StringBuilder sb = new StringBuilder("TransitionNode{");
+        sb.append("id=").append(id.map(String::valueOf).orElse("none"));
+        getEvent().ifPresent(e -> sb.append(", event=").append(e));
+        getSourceStateName().ifPresent(s -> sb.append(", source=").append(s));
+        sb.append(", target=").append(targetStateName);
+        conditionRef.ifPresent(c -> sb.append(", condition=").append(c));
+        if (!actionRefs.isEmpty()) sb.append(", actions=").append(actionRefs);
+        getDelay().ifPresent(d -> sb.append(", delay=").append(d));
+        if (always) sb.append(", always=true");
+        if (!annotations.isEmpty()) sb.append(", annotations=").append(annotations);
+        sb.append("}");
+        return sb.toString();
     }
 
     // Consider adding equals() and hashCode()
