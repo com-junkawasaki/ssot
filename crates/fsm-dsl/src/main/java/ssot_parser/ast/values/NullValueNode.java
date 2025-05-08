@@ -6,28 +6,24 @@ import java.util.Map;
 import java.util.Collections;
 
 // implements ValueNode (no generics)
-public class BooleanValueNode implements ValueNode {
-    private final Boolean value;
-
-    public BooleanValueNode(Boolean value) {
-        this.value = value;
-    }
+public class NullValueNode implements ValueNode {
+    public NullValueNode() {}
 
     // Return type is Object
     @Override
     public Object getValue() {
-        return value;
+        return null;
     }
 
     @Override
     public String getRawValue() {
-        return value.toString();
+        return "null";
     }
 
     // Use ValueNodeType enum
     @Override
     public ValueNodeType getType() {
-        return ValueNodeType.BOOLEAN;
+        return ValueNodeType.NULL;
     }
 
     @Override
@@ -37,7 +33,7 @@ public class BooleanValueNode implements ValueNode {
 
     @Override
     public String toString() {
-        return value.toString();
+        return "null";
     }
 
     @Override

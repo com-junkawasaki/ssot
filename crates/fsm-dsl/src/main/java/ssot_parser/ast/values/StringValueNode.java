@@ -1,21 +1,21 @@
 package ssot_parser.ast.values;
 
-import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
 import java.util.Optional;
 import java.util.Map;
 import java.util.Collections;
 
-// Ensure this class is public
-public class StringValueNode implements ValueNode<String> {
+// implements ValueNode (no generics)
+public class StringValueNode implements ValueNode {
     private final String value;
 
     public StringValueNode(String value) {
         this.value = value;
     }
 
+    // Return type is Object
     @Override
-    public String getValue() {
+    public Object getValue() {
         return value;
     }
 
@@ -24,6 +24,7 @@ public class StringValueNode implements ValueNode<String> {
         return value;
     }
 
+    // Use ValueNodeType enum
     @Override
     public ValueNodeType getType() {
         return ValueNodeType.STRING;
@@ -39,6 +40,7 @@ public class StringValueNode implements ValueNode<String> {
 
     @Override
     public String toString() {
+        // Keep quotes for string representation if desired
         return "\"" + value + "\"";
     }
 

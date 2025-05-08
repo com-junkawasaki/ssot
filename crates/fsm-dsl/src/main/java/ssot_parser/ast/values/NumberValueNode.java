@@ -6,10 +6,10 @@ import java.util.Map;
 import java.util.Collections;
 
 // implements ValueNode (no generics)
-public class BooleanValueNode implements ValueNode {
-    private final Boolean value;
+public class NumberValueNode implements ValueNode {
+    private final Number value;
 
-    public BooleanValueNode(Boolean value) {
+    public NumberValueNode(Number value) {
         this.value = value;
     }
 
@@ -27,7 +27,7 @@ public class BooleanValueNode implements ValueNode {
     // Use ValueNodeType enum
     @Override
     public ValueNodeType getType() {
-        return ValueNodeType.BOOLEAN;
+        return ValueNodeType.NUMBER;
     }
 
     @Override
