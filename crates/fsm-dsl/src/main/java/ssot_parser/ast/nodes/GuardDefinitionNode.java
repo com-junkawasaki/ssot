@@ -3,7 +3,7 @@ package ssot_parser.ast.nodes;
 import ssot_parser.ast.AstNode;
 import ssot_parser.NodeWithId;
 import ssot_parser.ast.NodeVisitor;
-import ssot_parser.ast.type.TypeNode;
+import ssot_parser.ast.type.TypeExprNode;
 import ssot_parser.ast.type.BaseType;
 import java.util.Map;
 import java.util.Optional;
@@ -19,25 +19,37 @@ import java.util.ArrayList;
 public class GuardDefinitionNode implements AstNode, NodeWithId {
     private final Optional<Long> id;
     public final String guardName;
-    // For now, parameters are just illustrative names in the DSL (ctx)
-    // A more complex implementation might parse formal parameters.
-    public final TypeNode returnType; // DSL specifies "-> bool"
-    private final List<AnnotationNode> annotations; // Although not shown in DSL example.
+    public final TypeExprNode returnType;
+    private final List<AnnotationNode> annotations;
+    private final Map<String, Object> namedAnnotationsMap;
+    public final String expression;
+    public final Map<String, TypeExprNode> parameters;
 
-    public GuardDefinitionNode(Optional<Long> id, String guardName, TypeNode returnType, List<AnnotationNode> annotations) {
+    public GuardDefinitionNode(Optional<Long> id, 
+                               String guardName, 
+                               List<AnnotationNode> annotations,
+                               TypeExprNode returnType,
+                               String expression, 
+                               Map<String, TypeExprNode> parameters) {
         this.id = id;
         this.guardName = guardName;
-        // Basic validation: Ensure the specified return type is boolean
-        if (returnType == null || returnType.getBaseType() != BaseType.BOOLEAN) {
-            // In a real implementation, this should throw a specific semantic validation error
-            // during the validation phase, not necessarily at construction.
-            // For now, we can assign a default boolean type or log a warning.
-            System.err.println("Warning: Guard '" + guardName + "' must return bool. Defaulting return type.");
-            this.returnType = new TypeNode(BaseType.BOOLEAN);
+        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
+        this.namedAnnotationsMap = mapAnnotations(this.annotations);
+        this.expression = expression;
+        this.parameters = parameters != null ? Collections.unmodifiableMap(new HashMap<>(parameters)) : Collections.emptyMap();
+
+        if (returnType instanceof BaseType) {
+            BaseType baseReturnType = (BaseType) returnType;
+            if (!"boolean".equalsIgnoreCase(baseReturnType.getTypeName())) {
+                System.err.println("Warning: Guard '" + guardName + "' must return bool. Received: " + baseReturnType.getTypeName());
+                this.returnType = new BaseType("boolean", Optional.empty(), Collections.emptyMap());
+            } else {
+                this.returnType = returnType;
+            }
         } else {
+            System.err.println("Warning: Guard '" + guardName + "' return type is not a BaseType ('" + returnType.getClass().getSimpleName() + "'). Validation needed to ensure it resolves to boolean.");
             this.returnType = returnType;
         }
-        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
     }
 
     @Override
@@ -49,19 +61,31 @@ public class GuardDefinitionNode implements AstNode, NodeWithId {
         return guardName;
     }
 
-    public TypeNode getReturnType() {
+    public TypeExprNode getReturnType() {
         return returnType;
+    }
+    
+    public String getExpression() {
+        return expression;
+    }
+
+    public Map<String, TypeExprNode> getParameters() {
+        return parameters;
     }
 
     @Override
     public Map<String, Object> getAnnotations() {
-        Map<String, Object> annotationMap = new HashMap<>();
-        if (this.annotations != null) {
-            for (AnnotationNode annotation : this.annotations) {
-                annotationMap.put(annotation.name, annotation.value);
+        return this.namedAnnotationsMap;
+    }
+
+    private Map<String, Object> mapAnnotations(List<AnnotationNode> annotationNodes) {
+        Map<String, Object> map = new HashMap<>();
+        if (annotationNodes != null) {
+            for (AnnotationNode annotation : annotationNodes) {
+                map.put(annotation.getName(), annotation.getValue().orElse(Boolean.TRUE));
             }
         }
-        return Collections.unmodifiableMap(annotationMap);
+        return Collections.unmodifiableMap(map);
     }
 
     @Override
@@ -73,8 +97,10 @@ public class GuardDefinitionNode implements AstNode, NodeWithId {
     public String toString() {
         return "GuardDefinitionNode{" +
                "id=" + id.map(String::valueOf).orElse("none") +
-               ", guardName='" + guardName + "\'" +
+               ", guardName='" + guardName + "'" +
                ", returnType=" + returnType +
+               ", expression='" + expression + "'" +
+               ", parameters=" + parameters +
                ", annotations=" + annotations +
                "}";
     }

@@ -5,9 +5,9 @@ import ssot_parser.ast.AstNode;
 import ssot_parser.NodeWithId;
 import ssot_parser.ast.NodeVisitor;
 import ssot_parser.ast.nodes.ContextNode;
-import ssot_parser.ast.nodes.ActionNode;
-import ssot_parser.ast.nodes.GuardNode;
-import ssot_parser.ast.nodes.InvokeServiceNode; // Assuming InvokeNode was meant to be this
+import ssot_parser.ast.nodes.ActionDefinitionNode;
+import ssot_parser.ast.nodes.GuardDefinitionNode;
+import ssot_parser.ast.nodes.InvokeDefinitionNode;
 import ssot_parser.ast.nodes.StateNode;
 
 /**
@@ -18,9 +18,9 @@ public class MachineDefinitionNode implements AstNode, NodeWithId {
     public final String machineName;
     private final Map<String, Object> annotations;
     public final ContextNode context; // Assuming Optional<ContextNode> might be better, but using direct for now
-    public final List<ActionNode> actions;
-    public final List<GuardNode> guards;
-    public final List<InvokeServiceNode> invokes;
+    public final List<ActionDefinitionNode> actions;
+    public final List<GuardDefinitionNode> guards;
+    public final List<InvokeDefinitionNode> invokes;
     public final List<StateNode> states;
     public final String initialStateName; // Name of the initial state
 
@@ -28,9 +28,9 @@ public class MachineDefinitionNode implements AstNode, NodeWithId {
                                  String machineName,
                                  Map<String, Object> annotations,
                                  ContextNode context,
-                                 List<ActionNode> actions,
-                                 List<GuardNode> guards,
-                                 List<InvokeServiceNode> invokes,
+                                 List<ActionDefinitionNode> actions,
+                                 List<GuardDefinitionNode> guards,
+                                 List<InvokeDefinitionNode> invokes,
                                  List<StateNode> states,
                                  String initialStateName) {
         this.id = id;
@@ -69,26 +69,24 @@ public class MachineDefinitionNode implements AstNode, NodeWithId {
     // Getters for other fields...
     public String getMachineName() { return machineName; }
     public ContextNode getContext() { return context; }
-    public List<ActionNode> getActions() { return actions; }
-    public List<GuardNode> getGuards() { return guards; }
-    public List<InvokeServiceNode> getInvokes() { return invokes; }
+    public List<ActionDefinitionNode> getActions() { return actions; }
+    public List<GuardDefinitionNode> getGuards() { return guards; }
+    public List<InvokeDefinitionNode> getInvokes() { return invokes; }
     public List<StateNode> getStates() { return states; }
     public String getInitialStateName() { return initialStateName; }
 
 
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        // return visitor.visitMachineDefinitionNode(this); // Add to visitor
-        System.err.println("Warning: NodeVisitor.visitMachineDefinitionNode not implemented yet.");
-        return null;
+        return visitor.visitMachineDefinitionNode(this);
     }
 
     @Override
     public String toString() {
         return "MachineDefinitionNode{" +
                "id=" + id.map(String::valueOf).orElse("none") +
-               ", machineName='" + machineName + ''' +
-               ", initialStateName='" + initialStateName + ''' +
+               ", machineName='" + machineName + "'" +
+               ", initialStateName='" + initialStateName + "'" +
                ", annotations=" + annotations +
                ", context=" + context +
                ", actions=" + actions +

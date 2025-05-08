@@ -19,36 +19,45 @@ public interface NodeVisitor<T> {
 
     // Root node for the entire file
     T visitSsotRoot(SsotRoot node);
+    T visitImportNode(ImportNode node);
 
     // Type Definition Nodes
     T visitTypeDefNode(TypeDefNode node);
     T visitFieldNode(FieldNode node);
-    T visitEnumNode(EnumNode node);
     T visitEnumVariantNode(EnumVariantNode node);
 
     // State Machine Nodes
+    T visitMachineDefinitionNode(MachineDefinitionNode node);
     T visitContextNode(ContextNode node);
-    T visitActionNode(ActionNode node);
-    T visitGuardNode(GuardNode node);
+    T visitContextVariableNode(ContextVariableNode node);
+    T visitActionDefinitionNode(ActionDefinitionNode node);
+    T visitGuardDefinitionNode(GuardDefinitionNode node);
+    T visitInvokeDefinitionNode(InvokeDefinitionNode node);
     T visitStateNode(StateNode node);
+    T visitHistoryStateNode(HistoryStateNode node);
     T visitTransitionNode(TransitionNode node);
     T visitInvokeStateNode(InvokeStateNode node);
     T visitEventHandlerNode(EventHandlerNode node);
     T visitConditionalTransitionNode(ConditionalTransitionNode node);
 
     // Service Nodes
-    T visitServiceNode(ServiceNode node);
-    T visitInterfaceNode(InterfaceNode node);
-    T visitMethodNode(MethodNode node);
-    T visitParameterNode(ParameterNode node);
+    T visitServiceDefinitionNode(ServiceDefinitionNode node);
+    T visitInterfaceDefinitionNode(InterfaceDefinitionNode node);
+    T visitMethodDefinitionNode(MethodDefinitionNode node);
+    T visitParameterDefinitionNode(ParameterDefinitionNode node);
 
     // Actor Node
     T visitActorNode(ActorNode node);
 
     // Communication Nodes
+    T visitCommunicationNode(CommunicationNode node);
     T visitProtocolNode(ProtocolNode node);
     T visitChannelNode(ChannelNode node);
     T visitEventNode(EventNode node);
+
+    // Deployment and Dependency Nodes
+    T visitDeploymentConfigNode(DeploymentConfigNode node);
+    T visitDependencyNode(DependencyNode node);
 
     // Annotation Node (might not be visited directly, but included for completeness)
     // T visitAnnotationNode(AnnotationNode node);
