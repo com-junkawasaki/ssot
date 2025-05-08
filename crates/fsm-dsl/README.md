@@ -14,28 +14,32 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
     *   Maven (`pom.xml`) を使用して ANTLR コード生成と Java コードのコンパイルを行うビルドプロセスが確立されています。
     *   ANTLR で生成されたレキサー (`SSoTLexer`) とパーサー (`SSoTParser`) を使用して、入力 `.ssot` ファイルの構文解析を行います (`src/main/java/ssot_parser/Main.java`)。
 *   **AST 構築 (部分的):**
-    *   主要な AST ノードクラス (`SsotRoot`, `TypeDefNode`, `FieldNode`, `StateNode`, `TransitionNode`, `ActionNode` など) が `src/main/java/ssot_parser/` に定義されています。
+    *   主要な AST ノードクラス (`SsotRoot`, `TypeDefNode`, `FieldNode`, `EnumVariantNode`, `AnnotationNode` など) が `src/main/java/ssot_parser/ast/nodes/` に定義されています。
+    *   状態マシン (`machines` ブロック) に関する AST ノード (`MachineNode`, `ContextNode`, `ActionDefinitionNode`, `GuardDefinitionNode`, `InvokeDefinitionNode`, `StateNode`, `TransitionNode`, `EventHandlerNode`, `ConditionalTransitionNode`, `InvokeStateNode`, `ValueNode`, `InvokeCompletionHandler`) が設計・実装されました。
     *   ANTLR の Visitor パターンを用いた `AstBuilderVisitor.java` が実装されており、Parse Tree から AST を構築します。
-    *   `types` ブロック (`struct`, `field`)、基本的なアノテーション (`@id`, `$name`) の AST ノードが生成されます。
-    *   `communication` ブロックと `actors` ブロックも訪問され、基本的なコンテナノードは生成されますが、詳細な内部要素の AST 構築は不完全です。
-    *   **課題:** 状態マシン (`machines` ブロック: state, transition, context, action, guard, invoke など)、サービス (`services` ブロック: service, interface, method など) の詳細な AST 構築は未実装または非常に不完全です。`deployment_config`, `dependencies` ブロックも未対応です。
+    *   `types` ブロック (`struct`, `enum`, `field`, `variant`)、基本的なアノテーション (`@id`, `$name`) の AST ノードが生成されます。
+    *   `machines` ブロック内の `context`, `actions`, `guards`, `invokes` 定義部分の基本的な AST 構築ロジックが `AstBuilderVisitor` に実装されました。
+    *   `states` ブロック内の `state` 定義の AST 構築 (entry/exit action, on transition, conditional transition, invoke) も部分的に `AstBuilderVisitor` に実装されました。
+    *   `communication` ブロックと `actors` ブロックも基本的なコンテナノードは生成されますが、詳細な内部要素の AST 構築は不完全です。
+    *   **課題:** 状態マシン (`machines` ブロック) の AST 構築、特に `invoke` の `input` マッピングや `history` 状態などの詳細、および `AstBuilderVisitor` と `InvokeStateNode` における `ValueNode` と `InvokeCompletionHandler` の利用の修正が必要です。サービス (`services` ブロック: service, interface, method など)、`deployment_config`, `dependencies` ブロックも未対応です。
 *   **AST 検証 (部分的):**
     *   基本的な `AstValidator.java` が存在し、型名の一意性チェックなど、ごく一部の検証が行われます。
-    *   **課題:** 詳細な意味論的検証 (参照解決、型チェック、アノテーション内容の検証など) は未実装です。
+    *   **課題:** 詳細な意味論的検証 (参照解決、型チェック、状態マシンの妥当性検証など) は未実装です。
 *   **コード生成:** 未実装です。
 
 ## 今後のステップ (ロードマップ案)
 
-1.  **(最優先) State Machine の AST 設計と実装:**
-    *   `state`, `context`, `action`, `guard`, `invoke`, `transition` 等を詳細に表現できるよう `StateNode`, `TransitionNode` 等の AST ノード設計を見直す。
-    *   `AstBuilderVisitor` に State Machine ブロックの詳細な AST 構築ロジックを実装する。
+1.  **(最優先) State Machine の AST 構築完了と Visitor 修正:**
+    *   `AstBuilderVisitor.java` と `InvokeStateNode.java` でトップレベルの `ValueNode` と `InvokeCompletionHandler` を正しく使用するように修正する。
+    *   `AstBuilderVisitor` 内の `visitStateDefinition` を完成させ、`invoke` の `input` マッピングや `history` 状態など、全ての状態要素を文法に基づいて正確に処理するようにする。
+    *   状態マシン関連の AST 構築に関するユニットテストを追加する。
 2.  **(次点) AST 検証の強化 (State Machine 中心):**
-    *   State Machine 内の状態遷移の妥当性、参照されている Action/Guard/Context の存在確認など、意味論的な検証を `AstValidator` に追加する。
-3.  **アノテーション処理の実装:** `@id` や各種 `$annotation` をパースし、対応する AST ノードに情報を付加する。検証ロジックでも利用する。
+    *   状態マシン内の状態遷移の妥当性、参照されている Action/Guard/Context/Invoke/State の存在確認、初期状態の検証など、意味論的な検証を `AstValidator` に追加する。
+3.  **アノテーション処理の拡充:** `@id` や各種 `$annotation` をパースし、対応する AST ノードに情報を付加するロジックを確認・拡充する。検証ロジックでも利用する。
 4.  **Service/Interface の Visitor/AST 実装:** `services` ブロック内の要素を処理する Visitor と AST ノードを実装する。
-5.  **テストの導入と拡充:** 特に State Machine の AST 構築と検証を中心に、ユニットテストを追加する。
+5.  **テストの導入と拡充:** 特に Service/Interface の AST 構築と検証を中心に、ユニットテストを追加する。
 6.  **エラーハンドリングの強化:** パースエラーや AST 検証エラーをより分かりやすく報告するように改善する。
-7.  **その他のブロックの Visitor/AST 実装:** `actors`, `deployment_config`, `dependencies` ブロックに対応する Visitor と AST ノードを実装する。
+7.  **その他のブロックの Visitor/AST 実装:** `actors`, `communication`, `deployment_config`, `dependencies` ブロックに対応する Visitor と AST ノードを実装する。
 8.  **Imports の処理:** `import` 文を解釈し、別ファイルの定義を解決できるようにする。
 9.  **コード生成器の実装:** AST からターゲット言語 (例: Mermaid グラフ定義) を出力する機能を追加する (初期段階)。
 
