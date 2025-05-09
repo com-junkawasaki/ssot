@@ -3,34 +3,51 @@ package ssot_parser.ast.nodes;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
 import ssot_parser.ast.nodes.state.HistoryStateType;
+import ssot_parser.NodeWithId;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.ArrayList;
 
 /**
  * Represents a history pseudo-state (shallow or deep) within a state machine.
- * Can contain transitions (e.g., default target if no history exists).
+ * Can contain a default target transition if no history exists.
  */
-public class HistoryStateNode implements AstNode {
+public class HistoryStateNode implements AstNode, NodeWithId {
+    private final Optional<Long> id;
+    private final String name;
     private final HistoryStateType type;
-    private final List<EventHandlerNode> eventHandlers; // Transitions defined within the history state body
+    private final Optional<TransitionNode> defaultTransition;
     private final List<AnnotationNode> annotations;
 
-    public HistoryStateNode(HistoryStateType type,
-                            List<EventHandlerNode> eventHandlers,
+    public HistoryStateNode(Optional<Long> id,
+                            String name,
+                            HistoryStateType type,
+                            Optional<TransitionNode> defaultTransition,
                             List<AnnotationNode> annotations) {
+        this.id = id;
+        this.name = name;
         this.type = type;
-        this.eventHandlers = Collections.unmodifiableList(eventHandlers != null ? new ArrayList<>(eventHandlers) : Collections.emptyList());
+        this.defaultTransition = defaultTransition;
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
+    }
+
+    @Override
+    public Optional<Long> getId() {
+        return id;
+    }
+
+    public String getName() {
+        return name;
     }
 
     public HistoryStateType getType() {
         return type;
     }
 
-    public List<EventHandlerNode> getEventHandlers() {
-        return eventHandlers;
+    public Optional<TransitionNode> getDefaultTransition() {
+        return defaultTransition;
     }
 
     public List<AnnotationNode> getAnnotations() {
@@ -45,10 +62,12 @@ public class HistoryStateNode implements AstNode {
     @Override
     public String toString() {
         return "HistoryStateNode{" +
-               "type=" + type +
-               ", eventHandlers=" + eventHandlers +
+               "id=" + id.map(String::valueOf).orElse("none") +
+               ", name='" + name + '\'' +
+               ", type=" + type +
+               ", defaultTransition=" + defaultTransition.map(TransitionNode::toString).orElse("none") +
                ", annotations=" + annotations +
-               "}";
+               '}';
     }
 
     // Consider adding equals() and hashCode()

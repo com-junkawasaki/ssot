@@ -16,12 +16,19 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
 *   **AST 構築 (部分的):**
     *   主要な AST ノードクラス (`SsotRoot`, `TypeDefNode`, `FieldNode`, `EnumVariantNode`, `AnnotationNode` など) が `src/main/java/ssot_parser/ast/nodes/` に定義されています。
     *   状態マシン (`machines` ブロック) に関する AST ノード (`MachineNode`, `ContextNode`, `ActionDefinitionNode`, `GuardDefinitionNode`, `InvokeDefinitionNode`, `StateNode`, `TransitionNode`, `EventHandlerNode`, `ConditionalTransitionNode`, `InvokeStateNode`, `ValueNode`, `InvokeCompletionHandler`) が設計・実装されました。
+    *   `HistoryStateNode.java` がDSL仕様 (`history ID (DEEP)? (transitionSpec)? annotation*;`) と整合するように修正され、ID、名前、型、オプショナルなデフォルト遷移、アノテーションを持つようになりました。
     *   ANTLR の Visitor パターンを用いた `AstBuilderVisitor.java` が実装されており、Parse Tree から AST を構築します。
+        *   `visitInvokeState` メソッドにおける `InvokeStateNode` の生成処理が修正され、正しいコンストラクタ引数（`invokeDefinitionRef` の抽出、`inputMapping`、`annotations` リストの直接使用、`onDone`/`onError` ハンドラの `Optional` 化を含む）を使用するようになりました。
+        *   `parseInvokeCompletionHandler` メソッドが修正され、`InvokeCompletionHandler` の実際のコンストラクタを直接使用し、DSL文法に従って `actionReferenceList` または `transitionSpec` を正しく処理するようになりました。
+        *   `visitHistoryStateDefinition` メソッドが修正され、更新された `HistoryStateNode` を正しく生成するようになりました。
     *   `types` ブロック (`struct`, `enum`, `field`, `variant`)、基本的なアノテーション (`@id`, `$name`) の AST ノードが生成されます。
     *   `machines` ブロック内の `context`, `actions`, `guards`, `invokes` 定義部分の基本的な AST 構築ロジックが `AstBuilderVisitor` に実装されました。
     *   `states` ブロック内の `state` 定義の AST 構築 (entry/exit action, on transition, conditional transition, invoke) も部分的に `AstBuilderVisitor` に実装されました。
     *   `communication` ブロックと `actors` ブロックも基本的なコンテナノードは生成されますが、詳細な内部要素の AST 構築は不完全です。
-    *   **課題:** 状態マシン (`machines` ブロック) の AST 構築、特に `invoke` の `input` マッピングや `history` 状態などの詳細、および `AstBuilderVisitor` と `InvokeStateNode` における `ValueNode` と `InvokeCompletionHandler` の利用の修正が必要です。サービス (`services` ブロック: service, interface, method など)、`deployment_config`, `dependencies` ブロックも未対応です。
+    *   **課題:**
+        *   **(最優先) `AstBuilderVisitor.visitStateDefinition` の大規模リファクタリング:** 現在の `StateNode.java` の定義 (複数の `invokeInvocations` リスト、`historyStates` リスト、`StateType` enum、特定の遷移タイプリストなど、より詳細な構造を持つ) に合わせて、`visitStateDefinition` を全面的に修正し、状態の全要素 (特に合成状態、並列状態の構造、初期状態指定、各種遷移、複数のinvoke) を正確に処理できるようにする必要があります。
+        *   `AstBuilderVisitor.visitMachineDefinition` における状態リストの処理を、`StateNode` と `HistoryStateNode` の両方を含むように更新する必要があります。
+        *   サービス (`services` ブロック: service, interface, method など)、`deployment_config`, `dependencies` ブロックも未対応です。
 *   **AST 検証 (部分的):**
     *   基本的な `AstValidator.java` が存在し、型名の一意性チェックなど、ごく一部の検証が行われます。
     *   **課題:** 詳細な意味論的検証 (参照解決、型チェック、状態マシンの妥当性検証など) は未実装です。
@@ -29,10 +36,11 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
 
 ## 今後のステップ (ロードマップ案)
 
-1.  **(最優先) State Machine の AST 構築完了と Visitor 修正:**
-    *   `AstBuilderVisitor.java` と `InvokeStateNode.java` でトップレベルの `ValueNode` と `InvokeCompletionHandler` を正しく使用するように修正する。
-    *   `AstBuilderVisitor` 内の `visitStateDefinition` を完成させ、`invoke` の `input` マッピングや `history` 状態など、全ての状態要素を文法に基づいて正確に処理するようにする。
-    *   状態マシン関連の AST 構築に関するユニットテストを追加する。
+1.  **(最優先) `AstBuilderVisitor.visitStateDefinition` の完成と `StateNode` への対応:**
+    *   `AstBuilderVisitor.visitStateDefinition` をリファクタリングし、`StateNode.java` の現在の定義 (例: `List<InvokeStateNode> invokeInvocations`, `List<HistoryStateNode> historyStates`, `StateType type`, `List<EventHandlerNode> eventHandlers`, `List<ConditionalTransitionNode> ifTransitions`, `List<StateNode> nestedStates`, `initialStateName` など) に基づいて `StateNode` インスタンスを正確に構築するようにします。
+    *   これには、合成状態 (子の状態と履歴状態の処理、初期状態の指定)、並列状態 (リージョンの処理)、複数の `invoke` 定義、各種遷移タイプの分類と収集が含まれます。
+    *   `AstBuilderVisitor.visitMachineDefinition` を更新し、`StateNode` と `HistoryStateNode` の両方を含む状態リストを処理できるようにします。
+    *   状態マシン関連の AST 構築に関するユニットテストを拡充する (特に新しい `StateNode` 構造と `visitStateDefinition` のロジックに対して)。
 2.  **(次点) AST 検証の強化 (State Machine 中心):**
     *   状態マシン内の状態遷移の妥当性、参照されている Action/Guard/Context/Invoke/State の存在確認、初期状態の検証など、意味論的な検証を `AstValidator` に追加する。
 3.  **アノテーション処理の拡充:** `@id` や各種 `$annotation` をパースし、対応する AST ノードに情報を付加するロジックを確認・拡充する。検証ロジックでも利用する。
