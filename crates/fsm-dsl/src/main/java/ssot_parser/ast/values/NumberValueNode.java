@@ -49,4 +49,9 @@ public class NumberValueNode implements ValueNode {
     public Map<String, Object> getAnnotations() {
         return Collections.emptyMap();
     }
+
+    @Override
+    public Object getActualValue() {
+        return this.value;
+    }
 } 

@@ -1101,7 +1101,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         if (ctx.AT() != null) { // @id(integer)
             String name = ctx.ID().getText();
             Long value = Long.parseLong(ctx.INT().getText());
-            return new AnnotationNode(name, value);
+            return new AnnotationNode(name, value, true); // Added true for isIdAnnotation
         } else if (ctx.DOLLAR() != null) {
             String name = ctx.annotationName().getText();
             Object value = true; // Default for flag-style like $final;
@@ -1127,7 +1127,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                 }
             }
             // For $flag;, value remains true.
-            return new AnnotationNode(name, value);
+            return new AnnotationNode(name, value, false); // Added false for isIdAnnotation
         }
         return null; // Should not happen
     }

@@ -29,6 +29,8 @@ public interface ValueNode extends AstNode {
     Optional<Long> getId();
 
     Map<String, Object> getAnnotations();
+
+    public Object getActualValue();
 }
 
 // --- Implementation Classes ---
@@ -70,6 +72,11 @@ class IntValueNode implements ValueNode {
     public ValueNodeType getType() {
         return ValueNodeType.INTEGER;
     }
+
+    @Override
+    public Object getActualValue() {
+        return value;
+    }
 }
 
 class FloatValueNode implements ValueNode {
@@ -108,6 +115,11 @@ class FloatValueNode implements ValueNode {
     @Override
     public ValueNodeType getType() {
         return ValueNodeType.FLOAT;
+    }
+
+    @Override
+    public Object getActualValue() {
+        return value;
     }
 }
 
@@ -148,5 +160,10 @@ class RefValueNode implements ValueNode {
     @Override
     public ValueNodeType getType() {
         return ValueNodeType.REFERENCE;
+    }
+
+    @Override
+    public Object getActualValue() {
+        return identifier;
     }
 } 

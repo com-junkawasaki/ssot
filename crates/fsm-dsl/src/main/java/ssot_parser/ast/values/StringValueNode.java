@@ -53,4 +53,9 @@ public class StringValueNode implements ValueNode {
     public Map<String, Object> getAnnotations() {
         return Collections.emptyMap(); // Value nodes typically don't have annotations
     }
+
+    @Override
+    public Object getActualValue() {
+        return this.value;
+    }
 } 
