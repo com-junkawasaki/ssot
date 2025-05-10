@@ -39,6 +39,8 @@ import ssot_parser.ast.nodes.TargetStateNode;
 import ssot_parser.ast.nodes.DurationNode;
 // +++ End missing AST Node imports +++
 
+import ssot_parser.ast.nodes.state.HistoryStateType; // Added import
+
 /**
  * Visits the ANTLR Parse Tree and builds the Abstract Syntax Tree (AST).
  */
@@ -569,30 +571,53 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     @Override
     public AstNode visitGuardDefinition(GuardDefinitionContext ctx) {
-        String name = ctx.ID(0).getText(); 
-        List<AnnotationNode> allAnnotations = extractAnnotations(ctx.annotation());
-        Optional<Long> id = extractIdFromList(allAnnotations);
-        
-        List<AnnotationNode> nonIdAnnotations = allAnnotations.stream()
-                                                .filter(a -> !(a.name.equals("id") && a.value instanceof Number))
-                                                .collect(Collectors.toList());
+        // System.out.println("Visiting GuardDefinition: " + ctx.getText());
+        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
+        Optional<Long> id = extractIdFromList(annotations);
+        Map<String, Object> annotationMap = mapAnnotations(annotations);
 
-        Optional<String> eventParamName = Optional.empty();
-        if (ctx.LPAREN() != null && ctx.ID().size() > 1) { 
-            eventParamName = Optional.of(ctx.ID(1).getText()); 
+        String guardName = ctx.ID().getText();
+        // Assuming guard parameters are simple IDs if present.
+        // List<String> parameters = new ArrayList<>();
+        // if (ctx.paramList() != null) { // If guards can take parameters, e.g. guardName(param1, param2)
+        //     for (TerminalNode paramId : ctx.paramList().ID()) {
+        //         parameters.add(paramId.getText());
+        //     }
+        // }
+        // Type for a guard is always boolean.
+        PrimitiveTypeNode returnType = new PrimitiveTypeNode(PrimitiveTypeNode.PrimitiveType.BOOL); // Corrected from BOOLEAN
+
+        // For now, we don't have a complex parameter structure for guards, just the name.
+        // If parameters are needed, the GuardNode constructor and this visitor will need updating.
+        // The grammar rule `(LPAREN ID? RPAREN)?` seems to allow one optional parameter
+        Optional<String> parameter = Optional.empty();
+        if (ctx.LPAREN() != null && ctx.RPAREN() != null && ctx.getChildCount() > 5) { // LPAREN, ID, RPAREN, ARROW, T_BOOL, SEMI are children
+            // Check if there is an ID token between LPAREN and RPAREN
+            // A more robust way would be to check the specific token index or type if ANTLR provides it
+            // Example: ctx.ID().size() > 1 for a second ID, or specific rule for parameter
+            // For `(LPAREN ID? RPAREN)?`, the ID would be the second ID if one for guard name and one for param
+            // Let's assume the rule's ID refers to the guard name and the optional ID inside LPAREN/RPAREN needs specific handling.
+            // The current rule: guardDefinition: ID annotation* (LPAREN ID? RPAREN)? ARROW T_BOOL SEMI;
+            // The first ID is guardName. If (LPAREN ID? RPAREN) exists, that ID is the parameter.
+            // A simple ctx.ID(1) might not work if annotations have IDs. Need careful parsing of children.
+            // For now, let's assume if LPAREN is present, and there's an ID inside, it's a param.
+            // This is a bit fragile. A dedicated rule for the parameter part would be better.
+            // For now, let's assume the grammar `(LPAREN ID? RPAREN)?` means the optional ID is for a single parameter.
+            // The parser tree for `myGuard(param) -> bool;` would have `myGuard` as ID(0), `param` as ID(1) if no annotations
+            // If annotation like `@foo ID`, then it's more complex.
+            // Given the simple `(LPAREN ID? RPAREN)?` it likely means an optional single identifier.
+            // Let's simplify: the rule `actionDefinition : ID annotation* (LPAREN ID? (COMMA ID)? RPAREN)? (COLON typeExpr)? SEMI ;` handles this.
+            // The rule `guardDefinition: ID annotation* (LPAREN ID? RPAREN)? ARROW T_BOOL SEMI;` implies the ID inside parens is a parameter.
+            // SSoT.g4 uses `ID` for the guard name. If `LPAREN ID? RPAREN` is present, the `ID` inside is the parameter.
+            if (ctx.children.size() > 4 && ctx.getChild(ctx.children.indexOf(ctx.LPAREN()) + 1) instanceof TerminalNode) {
+                 if (!ctx.getChild(ctx.children.indexOf(ctx.LPAREN()) + 1).getText().equals(")")) { // ensure it's not empty parens
+                    parameter = Optional.of(ctx.getChild(ctx.children.indexOf(ctx.LPAREN()) + 1).getText());
+                 }
+            }
+
         }
 
-        // GuardDefinitionNode(Optional<Long> id, String guardName, List<AnnotationNode> annotations, TypeExprNode returnType, String expression, Map<String, TypeExprNode> parameters)
-        TypeExprNode returnType = new PrimitiveTypeNode(PrimitiveTypeNode.PrimitiveType.BOOLEAN);
-        String expression = name + "_expression_placeholder"; // Placeholder
-        Map<String, TypeExprNode> parameters = new HashMap<>();
-        if(eventParamName.isPresent()) {
-            // Type of event param is unknown from grammar, using a placeholder TypeExprNode (e.g. any/object or a specific event type if known)
-            parameters.put(eventParamName.get(), new RefTypeNode("Event")); // Placeholder for event type
-        }
-
-        System.out.println("Creating GuardDefinitionNode for: " + name + ". Expression/params are simplified.");
-        return new GuardDefinitionNode(id, name, nonIdAnnotations, returnType, expression, parameters);
+        return new GuardNode(id, guardName, parameter, returnType, annotationMap);
     }
 
      @Override
@@ -858,21 +883,23 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             syntheticEventName += "(not)";
         }
         
-        // New TransitionNode constructor:
-        // Optional<Long> id, String event, TargetStateNode targetState, Optional<GuardReferenceNode> condition,
-        // List<ActionReferenceNode> actions, List<GuardReferenceNode> guards, List<String> allowedActors,
-        // Optional<DurationNode> delay, TransitionType type, Map<String, Object> annotationsMap
+        // Corrected TransitionNode constructor call to match the 15-argument version
         return new TransitionNode(
-            transitionId, 
-            syntheticEventName,         // event
-            specNode.getTargetState(),  // targetState
-            Optional.of(condition),     // condition (the main one for IF)
-            specNode.getActions(),      // actions from spec
-            specNode.getGuards(),       // guards from spec
-            specNode.getAllowedActors(),// allowedActors from spec
-            Optional.<DurationNode>empty(), // delay (none for IF transitions), explicitly typed
-            TransitionNode.TransitionType.CONDITIONAL, // type
-            annotationMap               // annotations from the IF line
+            transitionId,                                                               // id
+            this.currentStateName,                                                      // sourceStateName
+            syntheticEventName,                                                         // event
+            specNode.getTargetState().getStateName().orElseThrow(() -> new IllegalStateException("Target name missing for IF transition")), // targetStateName (String)
+            Optional.of(condition.getGuardName()),                                      // conditionRef (Optional<String>)
+            specNode.getActions().stream().map(ActionReferenceNode::getActionName).collect(Collectors.toList()), // actionRefs (List<String>)
+            transitionLineAnnotations,                                                  // annotations (List<AnnotationNode> for the transition line)
+            specNode.getTargetState(),                                                  // targetState (TargetStateNode)
+            Optional.of(condition),                                                     // condition (Optional<GuardReferenceNode> - the main one for IF)
+            specNode.getActions(),                                                      // actions (List<ActionReferenceNode> from spec)
+            specNode.getGuards(),                                                       // guards (List<GuardReferenceNode> from spec)
+            specNode.getAllowedActors(),                                                // allowedActors (List<String> from spec)
+            Optional.<DurationNode>empty(),                                             // delay (Optional<DurationNode>)
+            TransitionNode.TransitionType.CONDITIONAL,                                  // type
+            annotationMap                                                               // annotationsMap (Map<String, Object> from IF line)
         );
     }
 
@@ -959,18 +986,17 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
         // Constructor: InvokeStateNode(Optional<Long> id, String invokeDefinitionRefName,
         //                              Map<String, ValueNode> inputMappingOverrides,
-        //                              Map<String, ValueNode> outputMappingOverrides, // Added
         //                              Optional<InvokeCompletionHandler> onDoneOverride,
         //                              Optional<InvokeCompletionHandler> onErrorOverride,
-        //                              Map<String, Object> instanceAnnotations)
+        //                              List<AnnotationNode> instanceAnnotations)
+        // Corrected to match the actual 6-argument constructor of InvokeStateNode
         return new InvokeStateNode(
                 instanceId,
                 invokeIdToRef,
                 inputMappingOverride,
-                outputMappingOverride, // Pass the new map
                 onDoneOverride,
                 onErrorOverride,
-                instanceAnnotationMap
+                allInvokeInstanceAnnotations // Pass the List<AnnotationNode>
         );
     }
 
@@ -978,10 +1004,10 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         // Grammar: HISTORY historyType=(SHALLOW | DEEP)? annotation* (TARGET targetRef=ID)? transitionSpec? SEMI
         System.out.println("Visiting History State Definition");
         String historyId = "history"; // Default name, or could be from an annotation like $name
-        HistoryStateNode.HistoryType type = HistoryStateNode.HistoryType.SHALLOW; // Default
+        HistoryStateType type = HistoryStateType.SHALLOW; // Default - Corrected
         if (ctx.historyType != null) {
             if (ctx.historyType.getText().equals("deep")) { // Safer check
-                type = HistoryStateNode.HistoryType.DEEP;
+                type = HistoryStateType.DEEP; // Corrected
             }
         }
 
@@ -1023,8 +1049,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
         if (!defaultTransition.isPresent() && targetStateRef.isPresent()) {
             // Create a simple TransitionSpecNode if only TARGET targetRef is given
-            StateTargetNode simpleTarget = new StateTargetNode(targetStateRef.get());
-            defaultTransition = Optional.of(new TransitionSpecNode(simpleTarget, Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyMap()));
+            TargetStateNode simpleTarget = new TargetStateNode(targetStateRef.get()); // Corrected from StateTargetNode
+            defaultTransition = Optional.<TransitionSpecNode>of(new TransitionSpecNode(simpleTarget, Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyMap()));
         }
 
 
@@ -1212,5 +1238,4 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             return Optional.empty();
         }
     }
-}
 }
