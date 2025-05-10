@@ -26,6 +26,7 @@ import java.time.Duration;
 import ssot_parser.ast.nodes.StateNode; // Corrected import
 import ssot_parser.ast.nodes.HistoryStateNode; // Corrected import
 import ssot_parser.ast.type.StateType; // Corrected import
+import ssot_parser.ast.type.RefTypeNode; // Added import
 // import ssot_parser.ast.nodes.EventHandlerNode; // If this is a specific type
 // import ssot_parser.ast.nodes.ConditionalTransitionNode; // If this is a specific type
 
@@ -80,6 +81,27 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             }
         }
         return Optional.empty();
+    }
+
+    private List<ActionReferenceNode> extractActionReferenceNodes(SSoTParser.ActionReferenceListContext ctx) {
+        List<ActionReferenceNode> actionRefs = new ArrayList<>();
+        if (ctx == null) return actionRefs;
+
+        // Grammar: actionReferenceList: LBRACK actionReference (COMMA actionReference)* RBRACK | actionReference;
+        // actionReference: referenceValue;
+        // referenceValue: ID (DOT ID)* ;
+
+        if (ctx.actionReference() != null && !ctx.actionReference().isEmpty()) {
+            for (SSoTParser.ActionReferenceContext arCtx : ctx.actionReference()) {
+                if (arCtx.referenceValue() != null) {
+                    String actionName = arCtx.referenceValue().getText();
+                    // Assuming ActionReferenceNode constructor: (String actionName, Map<String, Object> annotations)
+                    // No direct annotations on actionReference in actionReferenceList grammar, so pass empty map.
+                    actionRefs.add(new ActionReferenceNode(actionName, Collections.emptyMap()));
+                }
+            }
+        }
+        return actionRefs;
     }
 
     private InvokeCompletionHandler parseInvokeCompletionHandler(InvokeCompletionContext ctx) {
@@ -483,13 +505,12 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     public AstNode visitContextField(ContextFieldContext ctx) { 
         String varName = ctx.ID().getText();
         ssot_parser.ast.type.TypeExprNode type = (ssot_parser.ast.type.TypeExprNode) visitTypeExpr(ctx.typeExpr());
-        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
-        Optional<Long> id = extractIdFromList(annotations);
-        Map<String, Object> annotationMap = mapAnnotations(annotations);
+        List<AnnotationNode> annotationsList = extractAnnotations(ctx.annotation());
+        Optional<Long> id = extractIdFromList(annotationsList);
         Optional<ValueNode> defaultValue = Optional.empty();
         // TODO: Parse default value if grammar allows, e.g. from an annotation like $default(...)
         // For now, ContextVariableNode constructor takes Optional<ValueNode> defaultValue
-        return new ContextVariableNode(id, varName, type, annotationMap, defaultValue);
+        return new ContextVariableNode(id, varName, type, annotationsList, defaultValue);
     }
 
     @Override

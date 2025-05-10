@@ -5,38 +5,63 @@ import ssot_parser.ast.nodes.AnnotationNode; // Required for AstNode base if it 
 import java.util.List;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.Map; // For AstNode getAnnotations
 
 /**
  * Represents a primitive type in the DSL (e.g., string, bool, u32, i64, f64, timestamp).
  */
 public class PrimitiveTypeNode implements TypeExprNode {
 
-    // Consider using an enum for strictness, but String allows flexibility for unknown/future primitives.
-    private final String typeName;
+    public enum PrimitiveType {
+        U8("u8"), U16("u16"), U32("u32"), U64("u64"),
+        I8("i8"), I16("i16"), I32("i32"), I64("i64"),
+        F32("f32"), F64("f64"),
+        BOOL("bool"), STRING("string"), TIMESTAMP("timestamp");
 
-    public PrimitiveTypeNode(String typeName) {
-        // Basic validation or normalization could happen here
-        this.typeName = typeName;
+        private final String dslName;
+
+        PrimitiveType(String dslName) {
+            this.dslName = dslName;
+        }
+
+        public String getDslName() {
+            return dslName;
+        }
+
+        public static PrimitiveType fromString(String text) {
+            for (PrimitiveType b : PrimitiveType.values()) {
+                if (b.dslName.equalsIgnoreCase(text)) {
+                    return b;
+                }
+            }
+            throw new IllegalArgumentException("No constant with text " + text + " found");
+        }
     }
 
-    public String getTypeName() {
-        return typeName;
+    private final PrimitiveType primitiveType;
+
+    public PrimitiveTypeNode(PrimitiveType primitiveType) {
+        this.primitiveType = primitiveType;
+    }
+
+    public PrimitiveType getPrimitiveType() {
+        return primitiveType;
+    }
+
+    public String getTypeName() { // Keep for compatibility or direct DSL name access
+        return primitiveType.getDslName();
     }
 
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
-        // TODO: Add visitPrimitiveTypeNode to NodeVisitor
-        // return visitor.visitPrimitiveTypeNode(this);
-         System.err.println("Warning: NodeVisitor.visitPrimitiveTypeNode not implemented yet.");
-         return null;
+        return visitor.visitPrimitiveTypeNode(this);
     }
 
-    // AstNode requires getAnnotations() if defined in the interface
-    // If AstNode doesn't require it, these can be removed.
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return Collections.emptyList(); // Primitive types typically don't have annotations
+    public Map<String, Object> getAnnotations() { // Changed from List<AnnotationNode>
+        return Collections.emptyMap(); // Primitive types typically don't have annotations
     }
+
     @Override
      public Optional<Long> getId() {
          return Optional.empty(); // Primitive types typically don't have IDs
@@ -44,7 +69,7 @@ public class PrimitiveTypeNode implements TypeExprNode {
 
     @Override
     public String toString() {
-        return typeName;
+        return primitiveType.getDslName();
     }
 
      @Override
@@ -52,11 +77,11 @@ public class PrimitiveTypeNode implements TypeExprNode {
          if (this == o) return true;
          if (o == null || getClass() != o.getClass()) return false;
          PrimitiveTypeNode that = (PrimitiveTypeNode) o;
-         return java.util.Objects.equals(typeName, that.typeName);
+         return primitiveType == that.primitiveType;
      }
 
      @Override
      public int hashCode() {
-         return java.util.Objects.hash(typeName);
+         return java.util.Objects.hash(primitiveType);
      }
 } 
