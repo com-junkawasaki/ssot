@@ -34,6 +34,25 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
     *   **課題:** 詳細な意味論的検証 (参照解決、型チェック、状態マシンの妥当性検証など) は未実装です。
 *   **コード生成:** 未実装です。
 
+## Project Status & Recent Developments
+
+The AST construction logic within `AstBuilderVisitor.java` has undergone a significant refactoring, primarily focused on the `visitStateDefinition` method. This change enables the creation of more detailed and feature-rich `StateNode` objects, supporting various state types (atomic, compound, parallel, final), nested states, history states, multiple invocations, and comprehensive transition handling.
+
+**Key Changes:**
+
+*   **`AstBuilderVisitor.visitStateDefinition`:** Rewritten to correctly parse and pass all necessary information to the `StateNode` constructor, including:
+    *   State identifiers (`id`, `name`, `displayName`).
+    *   Direct `List<AnnotationNode>`.
+    *   Resolved `StateType`.
+    *   `entryActions`, `exitActions`.
+    *   Lists for `invokeInvocations`, `eventHandlers` (transitions), `ifTransitions`.
+    *   `nestedStates` and `historyStates` for composite states.
+    *   `initialStateName` for composite states.
+*   **`AstBuilderVisitor.visitMachineDefinition`:** Updated to handle a mixed list of `StateNode` and `HistoryStateNode` objects, reflecting a more flexible state machine structure.
+*   **`AstBuilderVisitor.visitStatesBlock`:** Modified to support the mixed list of state types.
+
+This refactoring is a crucial step towards a more expressive and capable FSM DSL. However, fully functional integration requires corresponding updates to `StateNode.java` and `MachineNode.java`, as well as the implementation of comprehensive unit tests.
+
 ## 今後のステップ (ロードマップ案)
 
 1.  **(最優先) `AstBuilderVisitor.visitStateDefinition` の完成と `StateNode` への対応:**
@@ -88,3 +107,7 @@ Maven が導入されたため、以下のコマンドでビルドと実行が�
 ## 貢献
 
 (貢献ガイドラインは未定です) 
+
+## IDEA
+
+ドクトリンという宣言形式概念を導入する
