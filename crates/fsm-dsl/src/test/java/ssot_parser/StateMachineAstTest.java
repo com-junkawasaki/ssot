@@ -23,6 +23,7 @@ import ssot_parser.ast.nodes.TransitionNode;
 import ssot_parser.ast.nodes.InvokeStateNode;
 import ssot_parser.ast.nodes.HistoryNode;
 import ssot_parser.ast.nodes.type.StateType;
+import ssot_parser.ast.nodes.state.HistoryStateNode;
 
 /**
  * Tests for parsing state machine definitions and building the corresponding AST.
@@ -472,53 +473,622 @@ public class StateMachineAstTest {
     void testNestedStatesParsing() throws Exception {
         String input = """
         machines {
-            TrafficLight {
-                 $initial("Red");
-                 states {
-                     Red { on Timer target Green; }
-                     Green { on Timer target Yellow; }
-                     Yellow { on Timer target Red; }
-                     Off {
-                         $initial("Solid"); // Initial state for nested
-                         history shallow; // History for Off state
-                         states {
-                             Solid { on PowerOn target Red; }
-                             Flashing { on PowerOn target Red; }
-                         }
-                         on PowerOff target Solid; // Transition within parent state
-                     }
-                 }
+            OuterMachine {
+                initial state OuterState1;
+                states {
+                    OuterState1 {
+                        initial state InnerStateA;
+                        on EventX target OuterState2;
+                        states {
+                            InnerStateA {
+                                on InnerEvent1 target InnerStateB;
+                            }
+                            InnerStateB {
+                                on InnerEvent2 target InnerStateA;
+                            }
+                        }
+                    }
+                    OuterState2 {}
+                }
             }
         }
         """;
         RootNode root = parse(input);
-        assertEquals(1, root.stateMachineNodes.size());
-        StateMachineNode machine = (StateMachineNode) root.stateMachineNodes.get(0);
-        assertEquals("TrafficLight", machine.stateMachineName);
-        assertEquals(Optional.of("Red"), machine.initialStateName);
-        assertEquals(4, machine.states.size()); // Red, Green, Yellow, Off
+        assertNotNull(root.getMachineNodes());
+        assertEquals(1, root.getMachineNodes().size());
+        StateMachineNode machine = root.getMachineNodes().get(0);
 
-        StateNode offState = machine.states.stream().filter(s -> s.stateName.equals("Off")).map(s->(StateNode)s).findFirst().orElse(null);
-        assertNotNull(offState);
-        assertEquals(1, offState.transitions.size()); // PowerOff transition
-        assertEquals("Solid", offState.transitions.get(0).targetStateName);
-        assertTrue(offState.history.isPresent());
-        assertEquals(HistoryNode.HistoryType.SHALLOW, offState.history.get().historyType);
+        assertEquals("OuterMachine", machine.getMachineName());
+        assertEquals("OuterState1", machine.getInitialStateName());
+        assertEquals(2, machine.getStates().size());
 
-        assertEquals(2, offState.nestedStates.size()); // Solid, Flashing
-        StateNode solidState = offState.nestedStates.stream().filter(s -> s.stateName.equals("Solid")).map(s->(StateNode)s).findFirst().orElse(null);
-        StateNode flashingState = offState.nestedStates.stream().filter(s -> s.stateName.equals("Flashing")).map(s->(StateNode)s).findFirst().orElse(null);
-        assertNotNull(solidState);
-        assertNotNull(flashingState);
+        StateNode outerS1 = (StateNode) machine.getStates().stream()
+                                .filter(s -> ((StateNode)s).getStateName().equals("OuterState1"))
+                                .findFirst().orElse(null);
+        assertNotNull(outerS1);
+        assertEquals(StateType.COMPOUND, outerS1.getType());
+        assertEquals(Optional.of("InnerStateA"), outerS1.getInitialStateName());
+        assertEquals(1, outerS1.getEventHandlers().size()); // EventX
+        assertEquals(2, outerS1.getNestedStates().size()); // InnerStateA, InnerStateB
 
-        assertEquals(1, solidState.transitions.size());
-        assertEquals("Red", solidState.transitions.get(0).targetStateName);
-        assertEquals("PowerOn", solidState.transitions.get(0).event);
+        StateNode innerSA = outerS1.getNestedStates().stream()
+                                .filter(s -> s.getStateName().equals("InnerStateA"))
+                                .findFirst().orElse(null);
+        assertNotNull(innerSA);
+        assertEquals(1, innerSA.getEventHandlers().size());
+        assertEquals("InnerEvent1", innerSA.getEventHandlers().get(0).getEventName());
+        assertEquals("InnerStateB", innerSA.getEventHandlers().get(0).getTargetStateName().get());
 
-        // Note: Nested states might have their own initial state marker within the grammar
-        // The validator might need to check this. Here we just check parsing.
+
+        StateNode outerS2 = (StateNode) machine.getStates().stream()
+                                .filter(s -> ((StateNode)s).getStateName().equals("OuterState2"))
+                                .findFirst().orElse(null);
+        assertNotNull(outerS2);
+        assertEquals(StateType.ATOMIC, outerS2.getType());
     }
 
-    // TODO: Add tests for context, actions, guards, initial state markers, etc.
-    // TODO: Add tests for nested states and history states
+    @Test
+    void testStateWithEntryExitActions() throws Exception {
+        String input = """
+        machines {
+            ActionMachine {
+                actions {
+                    entryAction1 {}
+                    exitAction1 {}
+                    anotherAction {}
+                }
+                states {
+                    StateWithActions {
+                        entry / entryAction1, anotherAction;
+                        exit / exitAction1;
+                        on EventGo target NextState;
+                    }
+                    NextState {}
+                }
+            }
+        }
+        """;
+        RootNode root = parse(input);
+        assertNotNull(root.getMachineNodes());
+        assertEquals(1, root.getMachineNodes().size());
+        StateMachineNode machine = root.getMachineNodes().get(0);
+        assertNotNull(machine);
+
+        StateNode stateWithActions = (StateNode) machine.getStates().stream()
+            .filter(s -> ((StateNode)s).getStateName().equals("StateWithActions"))
+            .findFirst().orElse(null);
+
+        assertNotNull(stateWithActions);
+        assertEquals(2, stateWithActions.getEntryActions().size());
+        assertTrue(stateWithActions.getEntryActions().contains("entryAction1"));
+        assertTrue(stateWithActions.getEntryActions().contains("anotherAction"));
+
+        assertEquals(1, stateWithActions.getExitActions().size());
+        assertTrue(stateWithActions.getExitActions().contains("exitAction1"));
+
+        assertEquals(1, stateWithActions.getEventHandlers().size());
+        assertEquals("EventGo", stateWithActions.getEventHandlers().get(0).getEventName());
+    }
+
+    @Test
+    void testFinalState() throws Exception {
+        String input = """
+        machines {
+            FinalStateTestMachine {
+                initial state Active;
+                states {
+                    Active {
+                        on FINISH target Done;
+                    }
+                    Done {
+                        type final;
+                    }
+                }
+            }
+        }
+        """;
+        RootNode root = parse(input);
+        assertNotNull(root.getMachineNodes());
+        assertEquals(1, root.getMachineNodes().size());
+        StateMachineNode machine = root.getMachineNodes().get(0);
+        assertNotNull(machine);
+
+        StateNode doneState = (StateNode) machine.getStates().stream()
+            .filter(s -> ((StateNode)s).getStateName().equals("Done"))
+            .findFirst().orElse(null);
+
+        assertNotNull(doneState);
+        assertEquals(StateType.FINAL, doneState.getType());
+        assertTrue(doneState.getEntryActions().isEmpty());
+        assertTrue(doneState.getExitActions().isEmpty());
+        assertTrue(doneState.getEventHandlers().isEmpty());
+        assertTrue(doneState.getNestedStates().isEmpty());
+    }
+
+    @Test
+    void testConditionalTransitions() throws Exception {
+        String input = """
+        machines {
+            ConditionalMachine {
+                guards {
+                    isReady { /* guard logic */ }
+                    isValid { /* guard logic */ }
+                }
+                actions {
+                    doSomething { /* action logic */ }
+                    doElse { /* action logic */ }
+                }
+                states {
+                    Checker {
+                        if (isReady) target ReadyState do / doSomething;
+                        else if (isValid) target ValidState;
+                        else target ErrorState do / doElse;
+                    }
+                    ReadyState {}
+                    ValidState {}
+                    ErrorState {}
+                }
+            }
+        }
+        """;
+        SsotRoot root = (SsotRoot) parse(input);
+        assertNotNull(root.getMachineNodes());
+        MachineNode machine = root.getMachineNodes().get(0);
+        assertNotNull(machine);
+
+        StateNode checkerState = (StateNode) machine.getStates().stream()
+            .filter(s -> ((StateNode)s).getStateName().equals("Checker"))
+            .findFirst().orElse(null);
+        assertNotNull(checkerState);
+
+        assertTrue(checkerState.getEventHandlers().isEmpty(), "Checker state should have no regular event handlers");
+        assertEquals(3, checkerState.getIfTransitions().size(), "Checker state should have 3 conditional transitions");
+
+        TransitionNode ifTran = checkerState.getIfTransitions().get(0);
+        assertEquals(Optional.of("isReady"), ifTran.getCondition(), "Condition for first if should be 'isReady'");
+        assertEquals("ReadyState", ifTran.getTargetStateName().orElse(null), "Target for first if should be 'ReadyState'");
+        assertEquals(1, ifTran.getActions().size(), "Action list size for first if");
+        assertEquals("doSomething", ifTran.getActions().get(0), "Action for first if should be 'doSomething'");
+
+        TransitionNode elseIfTran = checkerState.getIfTransitions().get(1);
+        assertEquals(Optional.of("isValid"), elseIfTran.getCondition(), "Condition for elseif should be 'isValid'");
+        assertEquals("ValidState", elseIfTran.getTargetStateName().orElse(null), "Target for elseif should be 'ValidState'");
+        assertTrue(elseIfTran.getActions().isEmpty(), "Elseif transition should have no actions");
+
+        TransitionNode elseTran = checkerState.getIfTransitions().get(2);
+        assertTrue(elseTran.getCondition().isEmpty(), "Condition for else should be empty (implicit true)");
+        assertEquals("ErrorState", elseTran.getTargetStateName().orElse(null), "Target for else should be 'ErrorState'");
+        assertEquals(1, elseTran.getActions().size(), "Action list size for else");
+        assertEquals("doElse", elseTran.getActions().get(0), "Action for else should be 'doElse'");
+    }
+
+    @Test
+    void testMultipleInvokesInState() throws Exception {
+        String input = """
+        machines {
+            MultiInvokeSM {
+                // Invokes must be defined in an 'invokes' block if they are to be referenced by name.
+                // For this test, we assume 'ServiceA' and 'ServiceB' are valid invoke definition names.
+                invokes {
+                    ServiceA { src "some.service.A"; }
+                    ServiceB { src "another.service.B"; }
+                }
+                states {
+                    BossState {
+                        invoke ServiceA {
+                            id "invokeA_001";
+                            onDone target NextFromA;
+                        }
+                        invoke ServiceB {
+                            id "invokeB_002";
+                            onDone target NextFromB;
+                            onError target ErrorHandlerB;
+                        }
+                    }
+                    NextFromA {}
+                    NextFromB {}
+                    ErrorHandlerB {}
+                }
+            }
+        }
+        """;
+        SsotRoot root = (SsotRoot) parse(input);
+        assertNotNull(root.getMachineNodes());
+        MachineNode machine = root.getMachineNodes().get(0);
+        assertNotNull(machine);
+
+        StateNode bossState = (StateNode) machine.getStates().stream()
+            .filter(s -> ((StateNode)s).getStateName().equals("BossState"))
+            .findFirst().orElse(null);
+        assertNotNull(bossState);
+
+        assertEquals(2, bossState.getInvokeInvocations().size(), "BossState should have 2 invoke invocations");
+
+        InvokeStateNode invokeA = bossState.getInvokeInvocations().get(0);
+        assertEquals("ServiceA", invokeA.getInvokeDefinitionRef());
+        assertEquals(Optional.of("invokeA_001"), invokeA.getStrId()); // Assuming getStrId for string id from @id("string")
+        assertEquals(1, invokeA.getCompletionHandlers().size());
+        assertEquals("onDone", invokeA.getCompletionHandlers().get(0).getTransitionMatcher());
+        assertEquals("NextFromA", invokeA.getCompletionHandlers().get(0).getTransition().getTargetStateName().orElse(null));
+
+        InvokeStateNode invokeB = bossState.getInvokeInvocations().get(1);
+        assertEquals("ServiceB", invokeB.getInvokeDefinitionRef());
+        assertEquals(Optional.of("invokeB_002"), invokeB.getStrId());
+        assertEquals(2, invokeB.getCompletionHandlers().size());
+
+        Optional<InvokeCompletionHandler> onDoneBHandler = invokeB.getCompletionHandlers().stream()
+            .filter(h -> "onDone".equals(h.getTransitionMatcher()))
+            .findFirst();
+        assertTrue(onDoneBHandler.isPresent());
+        assertEquals("NextFromB", onDoneBHandler.get().getTransition().getTargetStateName().orElse(null));
+
+        Optional<InvokeCompletionHandler> onErrorBHandler = invokeB.getCompletionHandlers().stream()
+            .filter(h -> "onError".equals(h.getTransitionMatcher()))
+            .findFirst();
+        assertTrue(onErrorBHandler.isPresent());
+        assertEquals("ErrorHandlerB", onErrorBHandler.get().getTransition().getTargetStateName().orElse(null));
+    }
+
+    @Test
+    void testParallelState() throws Exception {
+        String input = """
+        machines {
+            ParallelSM {
+                states {
+                    P1 {
+                        type parallel;
+                        // Region 1
+                        RegionA {
+                            initial state R1S1;
+                            states {
+                                R1S1 { on E_R1 target R1S2; }
+                                R1S2 { type final; }
+                            }
+                        }
+                        // Region 2
+                        RegionB {
+                            initial state R2S1;
+                            states {
+                                R2S1 { on E_R2 target R2S2; }
+                                R2S2 { type final; }
+                            }
+                        }
+                        on GLOBAL_EV target P2; // Event for the parallel state itself
+                    }
+                    P2 {}
+                }
+            }
+        }
+        """;
+        SsotRoot root = (SsotRoot) parse(input);
+        assertNotNull(root.getMachineNodes());
+        MachineNode machine = root.getMachineNodes().get(0);
+        assertNotNull(machine);
+
+        StateNode p1State = (StateNode) machine.getStates().stream()
+            .filter(s -> ((StateNode)s).getStateName().equals("P1"))
+            .findFirst().orElse(null);
+        assertNotNull(p1State);
+
+        assertEquals(StateType.PARALLEL, p1State.getType(), "P1 should be a parallel state");
+        assertEquals(1, p1State.getEventHandlers().size(), "P1 should have one event handler for GLOBAL_EV");
+        assertEquals("GLOBAL_EV", p1State.getEventHandlers().get(0).getEventName());
+        assertEquals("P2", p1State.getEventHandlers().get(0).getTargetStateName().orElse(null));
+
+        assertEquals(2, p1State.getNestedStates().size(), "P1 should have two nested states (regions)");
+
+        StateNode regionA = p1State.getNestedStates().stream()
+            .filter(s -> s.getStateName().equals("RegionA"))
+            .findFirst().orElse(null);
+        assertNotNull(regionA, "RegionA should exist");
+        assertEquals(StateType.COMPOUND, regionA.getType(), "RegionA should be a compound state");
+        assertEquals(Optional.of("R1S1"), regionA.getInitialStateName(), "RegionA initial state should be R1S1");
+        assertEquals(2, regionA.getNestedStates().size(), "RegionA should have 2 states");
+
+        StateNode regionB = p1State.getNestedStates().stream()
+            .filter(s -> s.getStateName().equals("RegionB"))
+            .findFirst().orElse(null);
+        assertNotNull(regionB, "RegionB should exist");
+        assertEquals(StateType.COMPOUND, regionB.getType(), "RegionB should be a compound state");
+        assertEquals(Optional.of("R2S1"), regionB.getInitialStateName(), "RegionB initial state should be R2S1");
+        assertEquals(2, regionB.getNestedStates().size(), "RegionB should have 2 states");
+    }
+
+    @Test
+    void testStateWithAnnotations() throws Exception {
+        String input = """
+        machines {
+            AnnotatedSM {
+                states {
+                    S1 {
+                        @id(12345);
+                        $name("My First State");
+                        @customTag("important_state");
+                        on EVENT target S2;
+                    }
+                    S2 {}
+                }
+            }
+        }
+        """;
+        SsotRoot root = (SsotRoot) parse(input);
+        assertNotNull(root.getMachineNodes());
+        MachineNode machine = root.getMachineNodes().get(0);
+        assertNotNull(machine);
+
+        StateNode s1 = (StateNode) machine.getStates().stream()
+            .filter(s -> ((StateNode)s).getStateName().equals("S1"))
+            .findFirst().orElse(null);
+        assertNotNull(s1);
+
+        assertEquals(Optional.of(12345L), s1.getId(), "S1 should have numeric ID 12345");
+        assertEquals("My First State", s1.getDisplayName(), "S1 display name should be 'My First State'");
+        assertEquals(3, s1.getAnnotationNodes().size(), "S1 should have 3 annotation nodes");
+
+        Optional<AnnotationNode> customTagAnnotation = s1.getAnnotationNodes().stream()
+            .filter(a -> "@customTag".equals(a.getName()))
+            .findFirst();
+        assertTrue(customTagAnnotation.isPresent(), "S1 should have @customTag annotation");
+        assertEquals(Optional.of("important_state"), customTagAnnotation.get().getValue(), "@customTag value should be 'important_state'");
+    }
+
+    @Test
+    void testTransitionWithGuardAndAction() throws Exception {
+        String input = """
+        machines {
+            TransitionDetailsSM {
+                guards {
+                    canProceed { /* guard logic */ }
+                }
+                actions {
+                    logTransition { /* action logic */ }
+                    anotherAction { /* action logic */ }
+                }
+                states {
+                    A {
+                        on EV1 [canProceed] target B do / logTransition, anotherAction;
+                    }
+                    B {}
+                }
+            }
+        }
+        """;
+        SsotRoot root = (SsotRoot) parse(input);
+        assertNotNull(root.getMachineNodes());
+        MachineNode machine = root.getMachineNodes().get(0);
+        assertNotNull(machine);
+
+        StateNode stateA = (StateNode) machine.getStates().stream()
+            .filter(s -> ((StateNode)s).getStateName().equals("A"))
+            .findFirst().orElse(null);
+        assertNotNull(stateA);
+        assertEquals(1, stateA.getEventHandlers().size());
+
+        TransitionNode transition = stateA.getEventHandlers().get(0);
+        assertEquals("EV1", transition.getEventName());
+        assertEquals(Optional.of("canProceed"), transition.getCondition(), "Transition guard should be 'canProceed'");
+        assertEquals("B", transition.getTargetStateName().orElse(null));
+        assertEquals(2, transition.getActions().size(), "Transition should have 2 actions");
+        assertTrue(transition.getActions().contains("logTransition"));
+        assertTrue(transition.getActions().contains("anotherAction"));
+    }
+
+    @Test
+    void testMachineWithMixedStatesAndHistory() throws Exception {
+        String input = """
+        machines {
+            MixedStatesSM {
+                initial state NormalState;
+                states {
+                    NormalState {
+                        on GOTO_HIST target TopHistory;
+                    }
+                    // Assuming HistoryStateNode can be a direct child in states block
+                    history TopHistory {
+                        $name("MainHistory");
+                        @id(789);
+                        default target NormalState;
+                    } 
+                    AnotherState {}
+                }
+            }
+        }
+        """;
+        SsotRoot root = (SsotRoot) parse(input);
+        assertNotNull(root.getMachineNodes());
+        MachineNode machine = root.getMachineNodes().get(0);
+        assertNotNull(machine);
+        assertEquals("MixedStatesSM", machine.getMachineName());
+        assertEquals(3, machine.getStates().size(), "Machine should have 3 top-level entries in states list (2 states, 1 history)");
+
+        StateNode normalState = null;
+        HistoryStateNode topHistory = null;
+        StateNode anotherState = null;
+
+        for (AstNode node : machine.getStates()) {
+            if (node instanceof StateNode) {
+                StateNode sn = (StateNode) node;
+                if ("NormalState".equals(sn.getStateName())) normalState = sn;
+                else if ("AnotherState".equals(sn.getStateName())) anotherState = sn;
+            } else if (node instanceof HistoryStateNode) {
+                HistoryStateNode hn = (HistoryStateNode) node;
+                if ("TopHistory".equals(hn.getStateName())) topHistory = hn;
+            }
+        }
+
+        assertNotNull(normalState, "NormalState should be found");
+        assertNotNull(topHistory, "TopHistory should be found");
+        assertNotNull(anotherState, "AnotherState should be found");
+
+        assertEquals("NormalState", normalState.getStateName());
+        assertEquals(1, normalState.getEventHandlers().size());
+
+        assertEquals("TopHistory", topHistory.getStateName());
+        assertEquals("MainHistory", topHistory.getDisplayName());
+        assertEquals(Optional.of(789L), topHistory.getId());
+        assertTrue(topHistory.getDefaultTransition().isPresent(), "TopHistory should have a default transition");
+        assertEquals("NormalState", topHistory.getDefaultTransition().get().getTargetStateName().orElse(null) );
+        assertFalse(topHistory.isDeep(), "TopHistory should be shallow by default");
+
+        assertEquals("AnotherState", anotherState.getStateName());
+    }
+
+    @Test
+    void testCompoundStateWithMultipleHistoryStates() throws Exception {
+        String input = """
+        machines {
+            MultiHistorySM {
+                states {
+                    ParentState {
+                        type compound;
+                        initial state Child1;
+                        history HShallow; // Shallow history
+                        history* HDeep {
+                           @id(1122);
+                           $name("DeepMainHistory");
+                           default target Child2; // Default transition for this history state
+                        } 
+
+                        states {
+                            Child1 { on EV_C1_C2 target Child2; }
+                            Child2 { on EV_C2_C1 target Child1; }
+                        }
+                        on EV_P_EXIT target AnotherTopState;
+                    }
+                    AnotherTopState {}
+                }
+            }
+        }
+        """;
+        SsotRoot root = (SsotRoot) parse(input);
+        assertNotNull(root.getMachineNodes());
+        MachineNode machine = root.getMachineNodes().get(0);
+        assertNotNull(machine);
+
+        StateNode parentState = (StateNode) machine.getStates().stream()
+            .filter(s -> ((StateNode)s).getStateName().equals("ParentState"))
+            .findFirst().orElse(null);
+        assertNotNull(parentState);
+
+        assertEquals(StateType.COMPOUND, parentState.getType());
+        assertEquals(2, parentState.getHistoryStates().size(), "ParentState should have 2 history states");
+
+        HistoryStateNode hShallow = parentState.getHistoryStates().stream()
+            .filter(h -> "HShallow".equals(h.getStateName()))
+            .findFirst().orElse(null);
+        assertNotNull(hShallow, "HShallow history state should exist");
+        assertFalse(hShallow.isDeep(), "HShallow should be a shallow history");
+        assertTrue(hShallow.getAnnotations().isEmpty(), "HShallow should have no annotations initially");
+        assertTrue(hShallow.getDefaultTransition().isEmpty(), "HShallow should have no default transition initially");
+
+        HistoryStateNode hDeep = parentState.getHistoryStates().stream()
+            .filter(h -> "HDeep".equals(h.getStateName()))
+            .findFirst().orElse(null);
+        assertNotNull(hDeep, "HDeep history state should exist");
+        assertTrue(hDeep.isDeep(), "HDeep should be a deep history");
+        assertEquals(Optional.of(1122L), hDeep.getId());
+        assertEquals("DeepMainHistory", hDeep.getDisplayName());
+        assertTrue(hDeep.getDefaultTransition().isPresent(), "HDeep should have a default transition");
+        assertEquals("Child2", hDeep.getDefaultTransition().get().getTargetStateName().orElse(null));
+
+        assertEquals(2, parentState.getNestedStates().size(), "ParentState should have 2 child states");
+        assertEquals(1, parentState.getEventHandlers().size(), "ParentState should have 1 event handler");
+    }
+
+    @Test
+    void testComplexNestingWithDeepHistoryAndCrossLevelTransition() throws Exception {
+        String input = """
+        machines {
+            ComplexSM {
+                initial state SuperParent;
+                states {
+                    SuperParent {
+                        type compound;
+                        initial state Parent1;
+                        history* HSuperDeep;
+
+                        states {
+                            Parent1 {
+                                type compound;
+                                initial state ChildA;
+                                history* HParent1Deep;
+                                states {
+                                    ChildA { on EV_A_B target ChildB; }
+                                    ChildB { on EV_B_A target ChildA; on EV_B_EXIT_ALL target ExitState; }
+                                }
+                                on EV_P1_P2 target Parent2;
+                            }
+                            Parent2 {
+                                type compound;
+                                initial state ChildC;
+                                states {
+                                    ChildC { on EV_C_D target ChildD; }
+                                    ChildD { on EV_D_C target ChildC; }
+                                }
+                                on EV_P2_P1_HDEEP target Parent1.HParent1Deep; // Transition to nested history
+                            }
+                        }
+                        on EV_SP_EXIT_ALL target ExitState;
+                        on EV_SP_REENTER_DEEP target SuperParent.HSuperDeep; // Transition to own deep history
+                    }
+                    ExitState { type final; }
+                }
+            }
+        }
+        """;
+        SsotRoot root = (SsotRoot) parse(input);
+        assertNotNull(root.getMachineNodes());
+        MachineNode machine = root.getMachineNodes().get(0);
+        assertNotNull(machine, "Machine node should not be null");
+
+        StateNode superParent = (StateNode) machine.getStates().stream()
+            .filter(s -> ((StateNode)s).getStateName().equals("SuperParent"))
+            .findFirst().orElse(null);
+        assertNotNull(superParent, "SuperParent state should exist");
+        assertEquals(StateType.COMPOUND, superParent.getType());
+        assertEquals(Optional.of("Parent1"), superParent.getInitialStateName());
+        assertEquals(1, superParent.getHistoryStates().size(), "SuperParent should have 1 history state (HSuperDeep)");
+        assertTrue(superParent.getHistoryStates().get(0).isDeep());
+        assertEquals(2, superParent.getNestedStates().size(), "SuperParent should have 2 nested states (Parent1, Parent2)");
+        assertEquals(2, superParent.getEventHandlers().size(), "SuperParent should have 2 event handlers");
+
+        StateNode parent1 = superParent.getNestedStates().stream()
+            .filter(s -> s.getStateName().equals("Parent1"))
+            .findFirst().orElse(null);
+        assertNotNull(parent1, "Parent1 state should exist");
+        assertEquals(StateType.COMPOUND, parent1.getType());
+        assertEquals(Optional.of("ChildA"), parent1.getInitialStateName());
+        assertEquals(1, parent1.getHistoryStates().size(), "Parent1 should have 1 history state (HParent1Deep)");
+        assertTrue(parent1.getHistoryStates().get(0).isDeep());
+        assertEquals(2, parent1.getNestedStates().size(), "Parent1 should have 2 nested states (ChildA, ChildB)");
+        assertEquals(1, parent1.getEventHandlers().size(), "Parent1 should have 1 event handler (EV_P1_P2)");
+
+        StateNode childB = parent1.getNestedStates().stream()
+            .filter(s -> s.getStateName().equals("ChildB"))
+            .findFirst().orElse(null);
+        assertNotNull(childB, "ChildB state should exist");
+        assertEquals(2, childB.getEventHandlers().size(), "ChildB should have 2 event handlers");
+        Optional<TransitionNode> crossLevelTransition = childB.getEventHandlers().stream()
+            .filter(t -> "EV_B_EXIT_ALL".equals(t.getEventName()) && "ExitState".equals(t.getTargetStateName().orElse(null)))
+            .findFirst();
+        assertTrue(crossLevelTransition.isPresent(), "ChildB should have a transition EV_B_EXIT_ALL to ExitState");
+
+        StateNode parent2 = superParent.getNestedStates().stream()
+            .filter(s -> s.getStateName().equals("Parent2"))
+            .findFirst().orElse(null);
+        assertNotNull(parent2, "Parent2 state should exist");
+        assertEquals(1, parent2.getEventHandlers().size(), "Parent2 should have 1 event handler (EV_P2_P1_HDEEP)");
+        TransitionNode transitionToNestedHistory = parent2.getEventHandlers().get(0);
+        assertEquals("EV_P2_P1_HDEEP", transitionToNestedHistory.getEventName());
+        assertEquals("Parent1.HParent1Deep", transitionToNestedHistory.getTargetStateName().orElse(null), "Transition should target Parent1.HParent1Deep");
+
+        StateNode exitState = (StateNode) machine.getStates().stream()
+            .filter(s -> ((StateNode)s).getStateName().equals("ExitState"))
+            .findFirst().orElse(null);
+        assertNotNull(exitState, "ExitState should exist");
+        assertEquals(StateType.FINAL, exitState.getType());
+    }
+
+    // TODO: Add test cases for:
+    // - More complex nested states with deep history and transitions crossing hierarchy levels. // Partially covered, can be expanded for more edge cases.
 } 
