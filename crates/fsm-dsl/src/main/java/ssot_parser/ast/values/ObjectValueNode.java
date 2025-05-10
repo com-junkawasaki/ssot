@@ -54,4 +54,14 @@ public class ObjectValueNode implements ValueNode {
     public Map<String, Object> getAnnotations() {
         return Collections.emptyMap();
     }
+
+    public Map<String, ValueNode> getFields() {
+        return this.properties;
+    }
+
+    @Override
+    public Object getActualValue() {
+        return this.properties.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getActualValue()));
+    }
 } 

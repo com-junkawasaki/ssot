@@ -65,4 +65,9 @@ public class RefValueNode implements ValueNode {
     public int hashCode() {
         return Objects.hash(qualifiedName);
     }
+
+    @Override
+    public Object getActualValue() {
+        return this.qualifiedName;
+    }
 } 

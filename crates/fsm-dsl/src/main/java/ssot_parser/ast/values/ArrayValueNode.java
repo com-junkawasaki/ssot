@@ -53,4 +53,9 @@ public class ArrayValueNode implements ValueNode {
     public Map<String, Object> getAnnotations() {
         return Collections.emptyMap();
     }
+
+    @Override
+    public Object getActualValue() {
+        return this.values.stream().map(ValueNode::getActualValue).collect(Collectors.toList());
+    }
 } 
