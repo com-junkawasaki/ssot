@@ -44,27 +44,30 @@ public interface NodeVisitor<T> {
 
     // Service Nodes
     T visitServiceDefinitionNode(ServiceDefinitionNode node);
-    T visitInterfaceDefinitionNode(InterfaceDefinitionNode node);
-    T visitMethodDefinitionNode(MethodDefinitionNode node);
-    T visitParameterDefinitionNode(ParameterDefinitionNode node);
+    T visitInterfaceNode(InterfaceNode node);
+    T visitMethodNode(MethodNode node);
+    T visitParameterNode(ParameterNode node);
 
     // Actor Node
     T visitActorNode(ActorNode node);
 
     // Communication Nodes
-    T visitCommunicationNode(CommunicationNode node);
+    // T visitCommunicationNode(CommunicationNode node); // Commented out for now
     T visitProtocolNode(ProtocolNode node);
     T visitChannelNode(ChannelNode node);
     T visitEventNode(EventNode node);
 
     // Deployment and Dependency Nodes
-    T visitDeploymentConfigNode(DeploymentConfigNode node);
-    T visitDependencyNode(DependencyNode node);
+    // T visitDeploymentConfigNode(DeploymentConfigNode node); // Commented out for now
+    // T visitDependencyNode(DependencyNode node); // Commented out for now
 
     // Annotation Node (might not be visited directly, but included for completeness)
     // T visitAnnotationNode(AnnotationNode node);
 
     // Add other node types as they are created
     // T visitBlockNode(BlockNode node); // If BlockNode becomes part of traversable AST
+
+    // Value Nodes
+    T visitValueNode(ssot_parser.ast.values.ValueNode node);
 
 }

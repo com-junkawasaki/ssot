@@ -5,9 +5,12 @@ package ssot_parser.ast.values;
  */
 public enum ValueNodeType {
     STRING,
-    NUMBER,
+    NUMBER, // General number, can be int or float
+    INTEGER, // Specific integer type
+    FLOAT,   // Specific float type
     BOOLEAN,
     NULL,
     ARRAY,
-    OBJECT
+    OBJECT,
+    REFERENCE // For identifiers that refer to other entities
 } 

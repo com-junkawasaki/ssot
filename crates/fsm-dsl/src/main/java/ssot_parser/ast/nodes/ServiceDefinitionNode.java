@@ -3,7 +3,8 @@ package ssot_parser.ast.nodes;
 import ssot_parser.ast.AstNode;
 import ssot_parser.NodeWithId;
 import ssot_parser.ast.NodeVisitor;
-import ssot_parser.ast.type.CustomType;
+import ssot_parser.ast.nodes.InterfaceNode;
+import ssot_parser.ast.nodes.MethodNode;
 import java.util.Map;
 import java.util.Optional;
 import java.util.List;
@@ -18,16 +19,16 @@ import java.util.HashMap;
 public class ServiceDefinitionNode implements AstNode, NodeWithId {
     private final Optional<Long> id;
     private final String name;
-    private final List<CustomType> implementedInterfaces; // Assuming interfaces are referred by CustomType
-    private final List<MethodDefinitionNode> methods;
+    private final List<InterfaceNode> implementedInterfaces;
+    private final List<MethodNode> methods;
     private final List<AnnotationNode> annotations;
     private final Map<String, Object> namedAnnotationsMap;
 
     public ServiceDefinitionNode(Optional<Long> id,
                                  String name,
                                  List<AnnotationNode> annotations,
-                                 List<CustomType> implementedInterfaces,
-                                 List<MethodDefinitionNode> methods) {
+                                 List<InterfaceNode> implementedInterfaces,
+                                 List<MethodNode> methods) {
         this.id = id != null ? id : Optional.empty();
         this.name = Objects.requireNonNull(name, "Service name cannot be null");
         this.annotations = annotations != null ? Collections.unmodifiableList(annotations) : Collections.emptyList();
@@ -40,11 +41,11 @@ public class ServiceDefinitionNode implements AstNode, NodeWithId {
         return name;
     }
 
-    public List<CustomType> getImplementedInterfaces() {
+    public List<InterfaceNode> getImplementedInterfaces() {
         return implementedInterfaces;
     }
 
-    public List<MethodDefinitionNode> getMethods() {
+    public List<MethodNode> getMethods() {
         return methods;
     }
 
@@ -67,7 +68,12 @@ public class ServiceDefinitionNode implements AstNode, NodeWithId {
         Map<String, Object> map = new HashMap<>();
         if (annotationNodes != null) {
             for (AnnotationNode annotation : annotationNodes) {
-                map.put(annotation.getName(), annotation.getValue().orElse(Boolean.TRUE));
+                Object val = annotation.value;
+                if (annotation.isIdAnnotation()) {
+                    map.put("id", val);
+                } else {
+                     map.put(annotation.name, Optional.ofNullable(val).orElse(Boolean.TRUE));
+                }
             }
         }
         return Collections.unmodifiableMap(map);

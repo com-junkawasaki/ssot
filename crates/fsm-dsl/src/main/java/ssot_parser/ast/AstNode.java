@@ -19,6 +19,9 @@ public interface AstNode {
     // Method to get the map of $name annotations associated with this node
     Map<String, Object> getAnnotations();
 
+    // Method to get the @id annotation if present
+    Optional<Long> getId();
+
     // Add accept method for Visitor pattern
     <T> T accept(NodeVisitor<T> visitor);
 } 

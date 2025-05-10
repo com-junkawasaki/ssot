@@ -54,7 +54,7 @@
                     <sourceDirectory>${basedir}/src/main/antlr4</sourceDirectory>
                     <!-- Specify the output directory for the generated sources -->
                     <!-- Note: This path needs adjustment for package structure -->
-                    <outputDirectory>${project.build.directory}/generated-sources/antlr4</outputDirectory>
+                    <outputDirectory>${project.build.directory}/generated-sources/antlr4/ssot_parser</outputDirectory>
                     <!-- Generate listener and visitor -->
                     <listener>true</listener>
                     <visitor>true</visitor>
