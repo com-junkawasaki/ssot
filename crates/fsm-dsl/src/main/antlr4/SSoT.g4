@@ -391,7 +391,7 @@ duration
 
 // History definition requires semicolon
 historyDefinition
-    : HISTORY historyType=(SHALLOW | DEEP)? annotation* (TARGET targetState=ID)? transitionSpec? SEMI // Made target optional, added transitionSpec
+    : HISTORY historyType=(SHALLOW | DEEP)? annotation* (TARGET targetRef=ID)? transitionSpec? SEMI // Made target optional, added transitionSpec
     ;
 
 // --- Deployment Configuration Block ---
@@ -510,6 +510,7 @@ NOT: 'not'; // Used in guard negation
 INVOKE: 'invoke'; // Used within state
 ON_ENTRY: 'onEntry';
 ON_EXIT: 'onExit';
+OUTPUT: 'output'; // Added for invokeOutputMapping
 FEATURES: 'features'; // Used in Rust dependencies
 
 // Primitive Types (used in parser rules via primitiveTypeName)
