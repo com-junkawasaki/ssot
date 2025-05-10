@@ -11,8 +11,7 @@ import ssot_parser.NodeWithId;
 import ssot_parser.ast.NodeVisitor;
 import ssot_parser.ast.nodes.AnnotationNode;
 import ssot_parser.ast.nodes.InvokeStateNode;
-import ssot_parser.ast.nodes.EventHandlerNode;
-import ssot_parser.ast.nodes.ConditionalTransitionNode;
+import ssot_parser.ast.nodes.TransitionNode;
 import ssot_parser.ast.type.StateType;
 
 /**
@@ -26,29 +25,31 @@ public class StateNode implements AstNode, NodeWithId {
     public final List<String> entryActions; // List of action names referenced in entry
     public final List<String> exitActions;  // List of action names referenced in exit
     public final List<InvokeStateNode> invokeInvocations;
-    public final List<EventHandlerNode> eventHandlers; // Handles 'on Event' and always transitions
-    public final List<ConditionalTransitionNode> ifTransitions; // Handles 'if guard ...'
+    public final List<TransitionNode> eventHandlers; // Changed from EventHandlerNode
+    public final List<TransitionNode> ifTransitions; // Changed from ConditionalTransitionNode
     public final List<StateNode> nestedStates; // List for nested states (children)
     public final StateType type; // Type of state (ATOMIC, COMPOUND, PARALLEL, FINAL)
-    public final String initialStateName; // Name of the initial child state (for compound/parallel)
+    public final Optional<String> initialStateName; // Changed from String, made Optional
     public final List<HistoryStateNode> historyStates;
     private final List<AnnotationNode> annotations;
 
     public StateNode(Optional<Long> id,
                      String stateName,
-                     String displayName,
+                     List<AnnotationNode> annotations, // Parameter order and type changed
+                     String displayNameValue, // Used to pass displayName from visitor
                      StateType type,
                      List<String> entryActions,
                      List<String> exitActions,
                      List<InvokeStateNode> invokeInvocations,
-                     List<EventHandlerNode> eventHandlers,
-                     List<ConditionalTransitionNode> ifTransitions,
+                     List<TransitionNode> eventHandlers, // Changed from EventHandlerNode
+                     List<TransitionNode> ifTransitions, // Changed from ConditionalTransitionNode
                      List<StateNode> nestedStates,
                      List<HistoryStateNode> historyStates,
-                     List<AnnotationNode> annotations) {
+                     Optional<String> initialStateNameValue) { // Parameter added
         this.id = id;
         this.stateName = stateName;
-        this.displayName = displayName != null ? displayName : stateName;
+        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
+        this.displayName = displayNameValue != null ? displayNameValue : stateName; // Initialize from passed value
         this.type = type;
         this.entryActions = Collections.unmodifiableList(entryActions != null ? new ArrayList<>(entryActions) : Collections.emptyList());
         this.exitActions = Collections.unmodifiableList(exitActions != null ? new ArrayList<>(exitActions) : Collections.emptyList());
@@ -57,8 +58,7 @@ public class StateNode implements AstNode, NodeWithId {
         this.ifTransitions = Collections.unmodifiableList(ifTransitions != null ? new ArrayList<>(ifTransitions) : Collections.emptyList());
         this.nestedStates = Collections.unmodifiableList(nestedStates != null ? new ArrayList<>(nestedStates) : Collections.emptyList());
         this.historyStates = Collections.unmodifiableList(historyStates != null ? new ArrayList<>(historyStates) : Collections.emptyList());
-        this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
-        this.initialStateName = null; // Assuming initialStateName is not provided in the constructor
+        this.initialStateName = initialStateNameValue; // Initialize from parameter
     }
 
     @Override
@@ -101,11 +101,11 @@ public class StateNode implements AstNode, NodeWithId {
         return invokeInvocations;
     }
 
-    public List<EventHandlerNode> getEventHandlers() {
+    public List<TransitionNode> getEventHandlers() {
         return eventHandlers;
     }
 
-    public List<ConditionalTransitionNode> getIfTransitions() {
+    public List<TransitionNode> getIfTransitions() {
         return ifTransitions;
     }
 
@@ -117,7 +117,7 @@ public class StateNode implements AstNode, NodeWithId {
         return type;
     }
 
-    public String getInitialStateName() {
+    public Optional<String> getInitialStateName() { // Return type changed to Optional<String>
         return initialStateName;
     }
 
@@ -146,6 +146,7 @@ public class StateNode implements AstNode, NodeWithId {
                ", eventHandlers=" + eventHandlers +
                ", ifTransitions=" + ifTransitions +
                ", nestedStates=" + nestedStates.size() +
+               ", initialStateName=" + initialStateName.orElse("none") +
                ", historyStates=" + historyStates.size() +
                ", annotations=" + annotations +
                "}";

@@ -21,13 +21,13 @@ public class MachineNode implements AstNode, NodeWithId {
     public final List<ActionDefinitionNode> actions; // List of action definitions
     public final List<GuardDefinitionNode> guards;   // List of guard definitions
     public final List<InvokeDefinitionNode> invokes; // List of invoke definitions
-    public final List<StateNode> states;        // List of top-level states
+    public final List<AstNode> states;        // Changed from List<StateNode> to List<AstNode>
     private final List<AnnotationNode> annotations;
 
     public MachineNode(Optional<Long> id, String machineName, String initialStateName,
                        Optional<ContextNode> context, List<ActionDefinitionNode> actions,
                        List<GuardDefinitionNode> guards, List<InvokeDefinitionNode> invokes,
-                       List<StateNode> states, List<AnnotationNode> annotations) {
+                       List<AstNode> states, List<AnnotationNode> annotations) { // Changed from List<StateNode>
         this.id = id;
         this.machineName = machineName;
         this.initialStateName = initialStateName;
@@ -68,7 +68,7 @@ public class MachineNode implements AstNode, NodeWithId {
         return invokes;
     }
 
-    public List<StateNode> getStates() {
+    public List<AstNode> getStates() { // Changed from List<StateNode>
         return states;
     }
 

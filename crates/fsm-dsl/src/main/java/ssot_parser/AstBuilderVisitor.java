@@ -428,554 +428,381 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
      @Override
      public AstNode visitStatesBlock(StatesBlockContext ctx) {
-         List<AstNode> stateNodes = new ArrayList<>(); // Changed to List<AstNode>
-         if (ctx.stateDefinitionOrHistoryState() != null) {
-             for (StateDefinitionOrHistoryStateContext stateOrHistCtx : ctx.stateDefinitionOrHistoryState()) {
-                 if (stateOrHistCtx.stateDefinition() != null) {
-                     AstNode visitedNode = visitStateDefinition(stateOrHistCtx.stateDefinition());
-                     if (visitedNode != null) stateNodes.add(visitedNode);
-                 } else if (stateOrHistCtx.historyStateDefinition() != null) {
-                     AstNode historyNode = visitHistoryStateDefinition(stateOrHistCtx.historyStateDefinition());
-                     if (historyNode != null) stateNodes.add(historyNode);
+         System.out.println("Visiting States Block (likely for machine's top-level states or direct nested states)");
+         List<AstNode> stateNodes = new ArrayList<>();
+         if (ctx.stateDefinition() != null) {
+             for (StateDefinitionContext stateCtx : ctx.stateDefinition()) {
+                 AstNode stateNode = visitStateDefinition(stateCtx); // This is recursive if stateDefinition calls statesBlock
+                 if (stateNode != null) {
+                     stateNodes.add(stateNode);
                  }
              }
          }
-         return new BlockContainerNode("states", stateNodes); // stateNodes is already List<AstNode>
+         // Annotations on the block itself, if any.
+         // List<AnnotationNode> blockAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
+         // Here, we are returning a container. The caller (e.g. visitMachineDefinition or visitStateDefinition for nested)
+         // will unpack this.
+         return new BlockContainerNode("states", stateNodes /*, blockAnnotations */); // Assuming BlockContainerNode can take annotations
      }
+
+    // New method based on grammar rule `statesDefinition`
+    // This is very similar to visitStatesBlock. The difference is the context type.
+    // If SSoT.g4 `statesDefinition` rule maps to `StatesDefinitionContext` by ANTLR
+    public AstNode visitStatesDefinition(StatesDefinitionContext ctx) {
+        System.out.println("Visiting StatesDefinition (likely for nested states via stateBodyElement)");
+        List<AstNode> definedStates = new ArrayList<>();
+        if (ctx.stateDefinition() != null) {
+            for (StateDefinitionContext stateCtx : ctx.stateDefinition()) {
+                AstNode stateNode = visitStateDefinition(stateCtx); // Recursive call
+                if (stateNode != null) {
+                    definedStates.add(stateNode);
+                }
+            }
+        }
+        // Annotations for the 'states { ... }' block itself
+        List<AnnotationNode> blockAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
+        // Return a container; the caller (visitStateDefinition's loop) will unpack this.
+        return new BlockContainerNode("states", definedStates, blockAnnotations);
+    }
 
     @Override
     public AstNode visitStateDefinition(StateDefinitionContext ctx) {
-        String stateName = ctx.ID().getText();
-        this.currentStateName = stateName; // Set current state name for context in deeper calls if needed
+        String stateName = ctx.ID().getText(); // Corrected: stateName is from ID token
+        this.currentStateName = stateName;
 
-        Optional<Long> id = extractId(ctx.annotation());
-        List<AnnotationNode> annotationsList = extractAnnotations(ctx.annotation());
+        List<AnnotationNode> annotationsList = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
+        Optional<Long> id = extractIdFromList(annotationsList); // Use helper that takes List<AnnotationNode>
         String displayName = findAnnotationValue(annotationsList, "$name").orElse(stateName);
-
-        StateType resolvedType;
-        // Determine StateType based on structure and $final annotation
-        // Order: PARALLEL -> COMPOUND -> FINAL -> ATOMIC as per user request
-        if (ctx.parallelStateBlock() != null) {
-            resolvedType = StateType.PARALLEL;
-        } else if (ctx.statesBlock() != null || (ctx.stateBodyItem() != null && ctx.stateBodyItem().stream().anyMatch(item -> item.statesBlock()!=null || item.historyStateDefinition()!=null ))) {
-            // Check for statesBlock or historyStateDefinition if stateBodyItem is used
-            // For now, assuming direct ctx.statesBlock() is the primary indicator for COMPOUND if not PARALLEL
-            resolvedType = StateType.COMPOUND;
-        } else if (annotationsList.stream().anyMatch(a -> "$final".equals(a.getName()))) {
-            resolvedType = StateType.FINAL;
-        } else {
-            resolvedType = StateType.ATOMIC;
-        }
-        // If grammar has specific initialStateSpec for compound/parallel states directly under stateDefinition:
-        // Optional<String> initialStateName = (resolvedType == StateType.COMPOUND || resolvedType == StateType.PARALLEL) && ctx.initialStateSpec() != null ?
-        //                                   Optional.of(ctx.initialStateSpec().ID().getText()) : Optional.empty();
-        // Assuming initialStateSpec might be within stateBodyItem or a specific field:
-        Optional<String> initialStateName = Optional.empty();
-        if ((resolvedType == StateType.COMPOUND || resolvedType == StateType.PARALLEL)) {
-            if (ctx.initialStateSpec() != null) { // Direct child
-                 initialStateName = Optional.of(ctx.initialStateSpec().ID().getText());
-            } else if (ctx.stateBodyItem() != null) { // Check within stateBodyItem if applicable
-                initialStateName = ctx.stateBodyItem().stream()
-                    .filter(item -> item.initialStateSpec() != null)
-                    .findFirst()
-                    .map(item -> item.initialStateSpec().ID().getText());
-            }
-        }
+        Optional<String> initialAnnotationValue = findAnnotationValue(annotationsList, "$initial");
+        boolean isExplicitlyParallel = findAnnotationValue(annotationsList, "$type").orElse("").equalsIgnoreCase("parallel");
+        boolean isExplicitlyFinal = annotationsList.stream().anyMatch(a -> "$final".equals(a.getName()) && "true".equalsIgnoreCase(String.valueOf(a.getValue().orElse("false"))));
 
 
+        // Initialize lists
         List<String> entryActions = new ArrayList<>();
-        if (ctx.entryActions() != null && ctx.entryActions().actionReferenceList() != null) {
-            entryActions = extractActionReferences(ctx.entryActions().actionReferenceList());
-        }
-        // Also check stateBodyItem if entryActions can be there
-         else if (ctx.stateBodyItem() != null) {
-            ctx.stateBodyItem().stream()
-                .filter(item -> item.entryActions() != null && item.entryActions().actionReferenceList() != null)
-                .findFirst().ifPresent(item -> entryActions.addAll(extractActionReferences(item.entryActions().actionReferenceList())));
-        }
-
-
         List<String> exitActions = new ArrayList<>();
-        if (ctx.exitActions() != null && ctx.exitActions().actionReferenceList() != null) {
-            exitActions = extractActionReferences(ctx.exitActions().actionReferenceList());
-        }
-        // Also check stateBodyItem
-        else if (ctx.stateBodyItem() != null) {
-             ctx.stateBodyItem().stream()
-                .filter(item -> item.exitActions() != null && item.exitActions().actionReferenceList() != null)
-                .findFirst().ifPresent(item -> exitActions.addAll(extractActionReferences(item.exitActions().actionReferenceList())));
-        }
-
-
         List<InvokeStateNode> invokeInvocations = new ArrayList<>();
-        List<TransitionNode> eventHandlers = new ArrayList<>(); // Assuming EventHandlerNode is TransitionNode
-        List<TransitionNode> ifTransitions = new ArrayList<>(); // Assuming ConditionalTransitionNode is TransitionNode
+        List<TransitionNode> eventHandlers = new ArrayList<>();
+        List<TransitionNode> ifTransitions = new ArrayList<>(); // Remains empty based on current grammar analysis for stateDefinition
         List<StateNode> nestedStates = new ArrayList<>();
         List<HistoryStateNode> historyStates = new ArrayList<>();
+        Optional<String> resolvedInitialStateName = initialAnnotationValue;
 
-        // Process single invokeState if present (current grammar structure)
-        if (ctx.invokeState() != null) {
-            AstNode invokeNode = visitInvokeState(ctx.invokeState());
-            if (invokeNode instanceof InvokeStateNode) {
-                invokeInvocations.add((InvokeStateNode) invokeNode);
-            }
-        }
+        boolean hasNestedStatesOrHistory = false;
 
-        // Process transitions
-        if (ctx.onTransition() != null) { // Singular in current structure
-            AstNode onTransNode = visitOnTransition(ctx.onTransition());
-            if (onTransNode instanceof TransitionNode) {
-                 eventHandlers.add((TransitionNode) onTransNode);
-            }
-        }
-        if (ctx.conditionalTransition() != null) { // Singular block in current structure
-            AstNode condTransBlockNode = visitConditionalTransition(ctx.conditionalTransition());
-            if (condTransBlockNode instanceof BlockContainerNode) {
-                ((BlockContainerNode) condTransBlockNode).getChildren().forEach(tNode -> {
-                    if (tNode instanceof TransitionNode) ifTransitions.add((TransitionNode) tNode);
-                });
-            }
-        }
-        if (ctx.afterTransition() != null) { // List in current structure
-            for (AfterTransitionContext afterCtx : ctx.afterTransition()) {
-                AstNode afterTransNode = visitAfterTransition(afterCtx);
-                if (afterTransNode instanceof TransitionNode) {
-                     eventHandlers.add((TransitionNode) afterTransNode);
-                }
-            }
-        }
-         if (ctx.alwaysTransition() != null) { // List in current structure
-             for (AlwaysTransitionContext alwaysCtx : ctx.alwaysTransition()) {
-                 AstNode alwaysTransNode = visitAlwaysTransition(alwaysCtx);
-                 if (alwaysTransNode instanceof TransitionNode) {
-                    eventHandlers.add((TransitionNode) alwaysTransNode);
-                 }
-             }
-         }
-
-        // If stateBodyItem list exists and contains invokes/transitions, iterate it:
-        // This part is speculative based on "ctx.stateBodyItem()" in prompt.
-        // If your grammar strictly uses the direct fields (e.g. ctx.invokeState(), ctx.onTransition()),
-        // then the above direct processing is sufficient.
-        // If stateBodyItem() IS the way these are structured:
-        if (ctx.stateBodyItem() != null) {
-            for (StateBodyItemContext itemCtx : ctx.stateBodyItem()) {
-                if (itemCtx.invokeState() != null) {
-                    // If multiple invokes were added here, ensure not to duplicate with single ctx.invokeState() above
-                    // This logic assumes either single ctx.invokeState() OR items in stateBodyItem list, not both for invokes.
-                    // For this refactor, let's assume the single ctx.invokeState() is the current definite source.
-                    // If stateBodyItem can also contain invokes, that needs clarification on precedence/combination.
+        // Process stateBodyElement*
+        if (ctx.stateBodyElement() != null) {
+            for (StateBodyElementContext itemCtx : ctx.stateBodyElement()) {
+                if (itemCtx.onEntryExit() != null) {
+                    OnEntryExitContext entryExitCtx = itemCtx.onEntryExit();
+                    String actionName = entryExitCtx.actionReference().getText(); // Assumes actionReference().getText() is safe
+                    if (entryExitCtx.ON_ENTRY() != null) {
+                        entryActions.add(actionName);
+                    } else if (entryExitCtx.ON_EXIT() != null) {
+                        exitActions.add(actionName);
+                    }
+                } else if (itemCtx.invokeState() != null) {
+                    AstNode invokeNode = visitInvokeState(itemCtx.invokeState());
+                    if (invokeNode instanceof InvokeStateNode) {
+                        invokeInvocations.add((InvokeStateNode) invokeNode);
+                    }
                 } else if (itemCtx.onTransition() != null) {
-                    AstNode itemOnTrans = visitOnTransition(itemCtx.onTransition());
-                    if (itemOnTrans instanceof TransitionNode) eventHandlers.add((TransitionNode)itemOnTrans);
-                } else if (itemCtx.afterTransition() != null) { // afterTransition in body item would be singular
-                    AstNode itemAfterTrans = visitAfterTransition(itemCtx.afterTransition());
-                     if (itemAfterTrans instanceof TransitionNode) eventHandlers.add((TransitionNode)itemAfterTrans);
-                } else if (itemCtx.alwaysTransition() != null) { // alwaysTransition in body item would be singular
-                     AstNode itemAlwaysTrans = visitAlwaysTransition(itemCtx.alwaysTransition());
-                     if (itemAlwaysTrans instanceof TransitionNode) eventHandlers.add((TransitionNode)itemAlwaysTrans);
-                } else if (itemCtx.conditionalTransition() != null) {
-                    AstNode itemCondTrans = visitConditionalTransition(itemCtx.conditionalTransition());
-                     if (itemCondTrans instanceof BlockContainerNode) {
-                        ((BlockContainerNode) itemCondTrans).getChildren().forEach(t -> {
-                            if (t instanceof TransitionNode) ifTransitions.add((TransitionNode)t);
-                        });
+                    AstNode onTransNode = visitOnTransition(itemCtx.onTransition());
+                    if (onTransNode instanceof TransitionNode) {
+                        eventHandlers.add((TransitionNode) onTransNode);
                     }
-                }
-                // nested states and history states might also be inside stateBodyItem if grammar allows
-                else if (itemCtx.statesBlock() != null && resolvedType == StateType.COMPOUND) {
-                     AstNode visitedStatesBlock = visitStatesBlock(itemCtx.statesBlock());
-                     if (visitedStatesBlock instanceof BlockContainerNode) {
+                } else if (itemCtx.afterTransition() != null) {
+                    AstNode afterTransNode = visitAfterTransition(itemCtx.afterTransition());
+                    if (afterTransNode instanceof TransitionNode) {
+                        eventHandlers.add((TransitionNode) afterTransNode);
+                    }
+                } else if (itemCtx.statesDefinition() != null) { // Grammar: statesDefinition
+                    hasNestedStatesOrHistory = true;
+                    AstNode visitedStatesBlock = visitStatesDefinition(itemCtx.statesDefinition());
+                    if (visitedStatesBlock instanceof BlockContainerNode) {
                         ((BlockContainerNode) visitedStatesBlock).getChildren().forEach(child -> {
-                            if (child instanceof StateNode) nestedStates.add((StateNode) child);
-                            else if (child instanceof HistoryStateNode) historyStates.add((HistoryStateNode) child);
+                            if (child instanceof StateNode) {
+                                nestedStates.add((StateNode) child);
+                            } else {
+                                System.err.println("Warning: Unexpected node type in statesDefinition block: " + child.getClass().getName());
+                            }
                         });
                     }
-                }
-                 else if (itemCtx.historyStateDefinition() != null && resolvedType == StateType.COMPOUND) {
-                    AstNode historyNode = visitHistoryStateDefinition(itemCtx.historyStateDefinition());
+                } else if (itemCtx.historyDefinition() != null) { // Grammar: historyDefinition
+                    hasNestedStatesOrHistory = true;
+                    AstNode historyNode = visitHistoryDefinition(itemCtx.historyDefinition());
                     if (historyNode instanceof HistoryStateNode) {
                         historyStates.add((HistoryStateNode) historyNode);
                     }
                 }
+                // itemCtx.annotation() is ignored here, as state-level annotations are already processed.
+                // Annotations for specific elements are handled by their respective visit methods.
+            }
+        }
+
+        StateType resolvedType;
+        if (isExplicitlyFinal) {
+            resolvedType = StateType.FINAL;
+        } else if (isExplicitlyParallel) {
+            resolvedType = StateType.PARALLEL;
+            if (nestedStates.isEmpty() && !resolvedInitialStateName.isPresent()) {
+                 System.err.println("Warning: State '" + stateName + "' is $type('parallel') but has no nested states (regions) and no $initial annotation.");
+            }
+        } else if (hasNestedStatesOrHistory || !nestedStates.isEmpty() || !historyStates.isEmpty() || resolvedInitialStateName.isPresent()) {
+            // If it has nested state definitions, history states, or an explicit initial state for children, it's compound.
+            resolvedType = StateType.COMPOUND;
+        } else {
+            resolvedType = StateType.ATOMIC;
+        }
+
+        // If compound/parallel and no $initial, default to first child state if any
+        if ((resolvedType == StateType.COMPOUND || resolvedType == StateType.PARALLEL) && !resolvedInitialStateName.isPresent() && !nestedStates.isEmpty()) {
+            resolvedInitialStateName = Optional.of(nestedStates.get(0).getStateName());
+            // System.out.println("Info: State '" + stateName + "' is " + resolvedType + ". Defaulting initial state to first child: '" + nestedStates.get(0).getStateName() + "' as no $initial annotation found.");
+        }
+         // If it's compound but has no nested states and no explicit initial, it might be an issue or an atomic state effectively.
+        if ((resolvedType == StateType.COMPOUND || resolvedType == StateType.PARALLEL) && nestedStates.isEmpty() && !resolvedInitialStateName.isPresent() && !isExplicitlyParallel) {
+            // If not explicitly parallel and ends up looking atomic, downgrade.
+            // However, if $initial was present, it implies children are expected elsewhere or it's a forward declaration.
+            // For now, if it has $initial, keep as COMPOUND. Otherwise, if no children, it's ATOMIC.
+            if (!initialAnnotationValue.isPresent()) { // Check original annotation, not potentially defaulted one
+                 // System.out.println("Info: State '" + stateName + "' determined as COMPOUND/PARALLEL but has no nested states and no $initial. Resolving to ATOMIC.");
+                 resolvedType = StateType.ATOMIC;
             }
         }
 
 
-        // Populate nestedStates and historyStates for COMPOUND and PARALLEL types
-        // This is primary handling if statesBlock/parallelStateBlock are direct children:
-        if (resolvedType == StateType.COMPOUND && ctx.statesBlock() != null) {
-            AstNode visitedStatesBlock = visitStatesBlock(ctx.statesBlock());
-            if (visitedStatesBlock instanceof BlockContainerNode) {
-                ((BlockContainerNode) visitedStatesBlock).getChildren().forEach(child -> {
-                    if (child instanceof StateNode) nestedStates.add((StateNode) child);
-                    else if (child instanceof HistoryStateNode) historyStates.add((HistoryStateNode) child);
-                });
-            }
-        } else if (resolvedType == StateType.PARALLEL && ctx.parallelStateBlock() != null) {
-            if (ctx.parallelStateBlock().regionDefinition() != null) {
-                for (RegionDefinitionContext regionCtx : ctx.parallelStateBlock().regionDefinition()) {
-                    // String regionName = regionCtx.ID() != null ? regionCtx.ID().getText() : null; // If needed
-                    if (regionCtx.statesBlock() != null) {
-                        AstNode visitedRegionStates = visitStatesBlock(regionCtx.statesBlock());
-                        if (visitedRegionStates instanceof BlockContainerNode) {
-                            ((BlockContainerNode) visitedRegionStates).getChildren().forEach(child -> {
-                                if (child instanceof StateNode) nestedStates.add((StateNode) child);
-                                // History states typically not per-region but per compound parent.
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Create the StateNode using assumed new constructor
-        // Ensure StateNode.java constructor matches these parameters and types
         StateNode stateNode = new StateNode(
             id,
-            stateName, // The actual name/identifier
-            annotationsList, // Pass the raw list of AnnotationNode
-            displayName, // User-friendly display name
+            stateName,
+            annotationsList,
+            displayName,
             resolvedType,
             entryActions,
             exitActions,
             invokeInvocations,
-            eventHandlers, // Assuming List<TransitionNode> is compatible with StateNode's eventHandlers field
-            ifTransitions,  // Assuming List<TransitionNode> is compatible with StateNode's ifTransitions field
+            eventHandlers,
+            ifTransitions, // Empty for now as per grammar analysis
             nestedStates,
             historyStates,
-            initialStateName
+            resolvedInitialStateName
         );
 
-        this.currentStateName = null; // Reset for next state
+        this.currentStateName = null;
         return stateNode;
     }
 
-    private List<String> extractActionReferences(ActionReferenceListContext ctx) {
-        List<String> refs = new ArrayList<>();
-        if (ctx != null && ctx.ID() != null) {
-            ctx.ID().forEach(idNode -> refs.add(idNode.getText()));
-        }
-        return refs;
-    }
-
-     @Override
-     public AstNode visitOnTransition(OnTransitionContext ctx) {
-         String event = ctx.ID().getText(); // The event name
-         TransitionTarget target = null;
-         List<String> actions = Collections.emptyList();
-         String guardName = null;
-         List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
-
-         if (ctx.transitionSpec() != null) {
-             TransitionSpecContext spec = ctx.transitionSpec();
-             if (spec.transitionTarget() != null) {
-                 target = (TransitionTarget) visitTransitionTarget(spec.transitionTarget());
-             }
-             if (spec.actionReferenceList() != null) {
-                 actions = extractActionReferences(spec.actionReferenceList());
-             }
-             if (spec.guardReference() != null) {
-                 guardName = spec.guardReference().ID().getText();
-             }
-             // Annotations on transitionSpec itself, if any (grammar might need adjustment)
-             // annotations.addAll(extractAnnotations(spec.annotation()));
-         }
-
-         return new TransitionNode(
-                 Optional.empty(), // id
-                 annotations,
-                 event,
-                 guardName,
-                 target,
-                 actions,
-                 TransitionNode.TransitionType.EVENT,
-                 null // delay
-         );
-     }
-
-    // visitConditionalTransition now delegates to visitConditionalTransitionSingle
-    @Override
-    public AstNode visitConditionalTransition(ConditionalTransitionContext ctx) {
-        // System.out.println("Visiting ConditionalTransition (delegating to singles)");
-        List<TransitionNode> allConditionalTransitions = new ArrayList<>();
-        if (ctx.conditionalTransitionSingle() != null) {
-            for (ConditionalTransitionSingleContext singleCtx : ctx.conditionalTransitionSingle()) {
-                AstNode node = visitConditionalTransitionSingle(singleCtx);
-                if (node instanceof TransitionNode) {
-                    allConditionalTransitions.add((TransitionNode) node);
-                } else if (node instanceof BlockContainerNode) { 
-                     System.err.println("BlockContainerNode from visitConditionalTransitionSingle, unexpected if it should return one TransitionNode.");
-                     // If visitConditionalTransitionSingle can return a list in a container, handle it:
-                     ((BlockContainerNode) node).getChildren().forEach(item -> {
-                         if (item instanceof TransitionNode) allConditionalTransitions.add((TransitionNode)item);
-                     });
-                } else if (node != null) {
-                    System.err.println("Unexpected node type from visitConditionalTransitionSingle: " + node.getClass().getName());
+    private Optional<Long> extractIdFromList(List<AnnotationNode> annotations) {
+        if (annotations == null) return Optional.empty();
+        for (AnnotationNode annotation : annotations) {
+            if ("@id".equals(annotation.getName()) && annotation.getValue().isPresent()) {
+                try {
+                    // Assuming ID value is stored directly as a Long or String convertible to Long
+                    Object rawValue = annotation.getValue().get();
+                    if (rawValue instanceof Long) {
+                        return Optional.of((Long) rawValue);
+                    } else if (rawValue instanceof Number) {
+                        return Optional.of(((Number) rawValue).longValue());
+                    } else if (rawValue instanceof String) {
+                        return Optional.of(Long.parseLong((String) rawValue));
+                    }
+                } catch (NumberFormatException e) {
+                    System.err.println("Warning: Could not parse @id value: " + annotation.getValue().get());
                 }
             }
         }
-        return new BlockContainerNode("conditionalTransitionsList", new ArrayList<>(allConditionalTransitions));
+        return Optional.empty();
     }
 
-
-    public AstNode visitConditionalTransitionSingle(ConditionalTransitionSingleContext ctx) {
-        if (ctx.ifTransition() != null) {
-            return visitIfTransition(ctx.ifTransition());
-        } else if (ctx.elseIfTransition() != null) {
-            return visitElseIfTransition(ctx.elseIfTransition());
-        } else if (ctx.elseTransition() != null) {
-            return visitElseTransition(ctx.elseTransition());
-        }
-        return null;
-    }
-
-
-     @Override
-     public AstNode visitAfterTransition(AfterTransitionContext ctx) {
-         Duration delay = Duration.parse("PT" + ctx.DURATION().getText()); // Example: PT10S for 10 seconds
-         TransitionTarget target = (TransitionTarget) visitTransitionTarget(ctx.transitionTarget());
-         List<String> actions = ctx.actionReferenceList() != null ? extractActionReferences(ctx.actionReferenceList()) : Collections.emptyList();
-         List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
-
-         return new TransitionNode(
-                 Optional.empty(),
-                 annotations,
-                 null, // event (implicit from 'after')
-                 null, // cond
-                 target,
-                 actions,
-                 TransitionNode.TransitionType.AFTER,
-                 delay
-         );
-     }
-
-     @Override
-     public AstNode visitAlwaysTransition(AlwaysTransitionContext ctx) {
-        TransitionTarget target = (TransitionTarget) visitTransitionTarget(ctx.transitionTarget());
-        List<String> actions = ctx.actionReferenceList() != null ? extractActionReferences(ctx.actionReferenceList()) : Collections.emptyList();
+    @Override
+    public AstNode visitOnTransition(OnTransitionContext ctx) {
+        String event = ctx.ID().getText(); // The event name
+        TransitionTarget target = null;
+        List<String> actions = Collections.emptyList();
+        String guardName = null;
         List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
+
+        if (ctx.transitionSpec() != null) {
+            TransitionSpecContext spec = ctx.transitionSpec();
+            if (spec.transitionTarget() != null) {
+                target = (TransitionTarget) visitTransitionTarget(spec.transitionTarget());
+            }
+            if (spec.actionReferenceList() != null) {
+                actions = extractActionReferences(spec.actionReferenceList());
+            }
+            if (spec.guardReference() != null) {
+                guardName = spec.guardReference().ID().getText();
+            }
+            // Annotations on transitionSpec itself, if any (grammar might need adjustment)
+            // annotations.addAll(extractAnnotations(spec.annotation()));
+        }
+
         return new TransitionNode(
-                Optional.empty(),
+                Optional.empty(), // id
                 annotations,
-                null, // event
-                null, // cond
+                event,
+                guardName,
                 target,
                 actions,
-                TransitionNode.TransitionType.ALWAYS,
+                TransitionNode.TransitionType.EVENT,
                 null // delay
         );
     }
 
-    public AstNode visitIfTransition(IfTransitionContext ctx) { // Made public for direct call if needed
-        String guardName = null;
-        if (ctx.guardReference() != null && ctx.guardReference().ID() != null) {
-            guardName = ctx.guardReference().ID().getText();
-        } else if (ctx.inlineGuardExpression() != null) {
-            guardName = "$inline_guard: " + ctx.inlineGuardExpression().getText();
-        }
+    // visitConditionalTransition now delegates to visitConditionalTransitionSingle
+    @Override
+    public AstNode visitConditionalTransition(ConditionalTransitionContext ctx) {
+        // This method seems to parse a block of if/else-if/else transitions.
+        // Based on SSoT.g4, this structure is not directly part of stateBodyElement.
+        // Individual transitions (on, after) can have guards via transitionSpec.
+        // If this method *is* used, it implies a grammar rule like:
+        // conditionalTransition: IF ifTransition (ELSEIF elseIfTransition)* (ELSE elseTransition)?;
+        // For now, this will likely not be hit if conditionalTransition is not in stateDefinition.
+        System.err.println("AstBuilderVisitor.visitConditionalTransition called - check grammar for 'conditionalTransition' rule under stateDefinition/stateBodyElement.");
 
-        TransitionTarget target = null;
-        List<String> actions = Collections.emptyList();
+        List<TransitionNode> transitions = new ArrayList<>();
+        // Logic for IF
+        if (ctx.ifTransition() != null) {
+            AstNode ifNode = visitIfTransition(ctx.ifTransition());
+            if (ifNode instanceof TransitionNode) { // Assuming visitIfTransition returns a TransitionNode
+                transitions.add((TransitionNode)ifNode);
+            }
+        }
+        // Logic for ELSE IF
+        if (ctx.elseIfTransition() != null) {
+            for (ElseIfTransitionContext elseIfCtx : ctx.elseIfTransition()) {
+                AstNode elseIfNode = visitElseIfTransition(elseIfCtx);
+                 if (elseIfNode instanceof TransitionNode) { // Assuming visitElseIfTransition returns a TransitionNode
+                    transitions.add((TransitionNode)elseIfNode);
+                }
+            }
+        }
+        // Logic for ELSE
+        if (ctx.elseTransition() != null) {
+            AstNode elseNode = visitElseTransition(ctx.elseTransition());
+            if (elseNode instanceof TransitionNode) { // Assuming visitElseTransition returns a TransitionNode
+                transitions.add((TransitionNode)elseNode);
+            }
+        }
+        // This method is declared to return AstNode. If it's a list of transitions,
+        // it should probably return a BlockContainerNode or similar if called from visitStateDefinition.
+        // However, StateNode.ifTransitions expects List<TransitionNode>.
+        // The original visitor added children of a BlockContainerNode to ifTransitions list.
+        return new BlockContainerNode("conditionalTransitions", transitions);
+    }
+
+    public AstNode visitIfTransition(IfTransitionContext ctx) { // Made public for direct call if needed
+        // Grammar: IF LPAREN condition RPAREN LBRACE transitionBody RBRACE
+        // This is a specific if construct, not the general guard on a transition.
+        // SSoT.g4 transitionSpec already handles guards. This rule is likely from a different grammar.
+        System.err.println("AstBuilderVisitor.visitIfTransition called - this rule might not be in the current SSoT.g4 state body.");
+        String guardName = ctx.condition().getText(); // Placeholder for condition parsing
+        List<String> actions = new ArrayList<>();
+        String targetStateName = null;
         List<AnnotationNode> annotations = Collections.emptyList();
 
-        if (ctx.transitionSpec() != null) {
-            TransitionSpecContext spec = ctx.transitionSpec();
-            if (spec.transitionTarget() != null) {
-                 target = (TransitionTarget) visitTransitionTarget(spec.transitionTarget());
-            }
-            if (spec.actionReferenceList() != null) {
-                actions = extractActionReferences(spec.actionReferenceList());
-            }
-            if (spec.annotation() != null && !spec.annotation().isEmpty()) { // Check if annotation() is available on spec
-                annotations = extractAnnotations(spec.annotation());
-            }
-        } else if (ctx.transitionActionOnly() != null) {
-             if (ctx.transitionActionOnly().actionReferenceList() != null) {
-                actions = extractActionReferences(ctx.transitionActionOnly().actionReferenceList());
-            }
-            // Check if annotation() is available on transitionActionOnly
-            // if (ctx.transitionActionOnly().annotation() != null && !ctx.transitionActionOnly().annotation().isEmpty()) {
-            // annotations = extractAnnotations(ctx.transitionActionOnly().annotation());
-            // }
-            // For now, target remains null.
+        if (ctx.transitionBody().transitionActionList() != null) {
+             actions = extractActionReferences(ctx.transitionBody().transitionActionList().actionReferenceList());
+        }
+        if (ctx.transitionBody().transitionTarget() != null) {
+            targetStateName = ctx.transitionBody().transitionTarget().getText();
+        } else {
+            // Implicit self-transition? Or error.
+            System.err.println("Warning: IF transition without explicit target.");
+            targetStateName = this.currentStateName; // Default to self-transition if no target
         }
 
-        if (guardName == null) {
-             System.err.println("Error: If transition without a guard at line " + ctx.start.getLine());
-             return new TransitionNode(Optional.empty(), annotations, null, null, target, actions, TransitionNode.TransitionType.CONDITIONAL, null);
-        }
-         if (target == null && actions.isEmpty()) {
-             System.err.println("Error: If transition without target or actions for guard '" + guardName + "' at line " + ctx.start.getLine());
-             return new TransitionNode(Optional.empty(), annotations, null, guardName, new TransitionTarget(this.currentStateName, TransitionTarget.Type.INTERNAL), Collections.emptyList(), TransitionNode.TransitionType.CONDITIONAL, null);
-         }
-
-        return new TransitionNode(
-                Optional.empty(), annotations, null, guardName, target, actions,
-                TransitionNode.TransitionType.CONDITIONAL, null
-        );
+        // id for such transitions? Usually not specified for sub-parts of a conditional block.
+        return new TransitionNode(Optional.empty(), this.currentStateName, "IF_" + guardName, targetStateName, Optional.of(guardName), actions, annotations);
     }
 
     public AstNode visitElseIfTransition(ElseIfTransitionContext ctx) { // Made public
-        String guardName = null;
-        if (ctx.guardReference() != null && ctx.guardReference().ID() != null) {
-            guardName = ctx.guardReference().ID().getText();
-        } else if (ctx.inlineGuardExpression() != null) {
-            guardName = "$inline_guard: " + ctx.inlineGuardExpression().getText();
+        System.err.println("AstBuilderVisitor.visitElseIfTransition called - this rule might not be in the current SSoT.g4 state body.");
+        String guardName = ctx.condition().getText();
+        List<String> actions = new ArrayList<>();
+        String targetStateName = null;
+        List<AnnotationNode> annotations = Collections.emptyList();
+
+        if (ctx.transitionBody().transitionActionList() != null) {
+             actions = extractActionReferences(ctx.transitionBody().transitionActionList().actionReferenceList());
         }
-
-        TransitionTarget target = null;
-        List<String> actions = Collections.emptyList();
-        List<AnnotationNode> annotations = Collections.emptyList(); // Assuming annotations can exist on else if
-
-        if (ctx.transitionSpec() != null) {
-            TransitionSpecContext spec = ctx.transitionSpec();
-            if (spec.transitionTarget() != null) {
-                 target = (TransitionTarget) visitTransitionTarget(spec.transitionTarget());
-            }
-            if (spec.actionReferenceList() != null) {
-                actions = extractActionReferences(spec.actionReferenceList());
-            }
-             if (spec.annotation() != null && !spec.annotation().isEmpty()) {
-                annotations = extractAnnotations(spec.annotation());
-            }
-        } else if (ctx.transitionActionOnly() != null) {
-            if (ctx.transitionActionOnly().actionReferenceList() != null) {
-                actions = extractActionReferences(ctx.transitionActionOnly().actionReferenceList());
-            }
+        if (ctx.transitionBody().transitionTarget() != null) {
+            targetStateName = ctx.transitionBody().transitionTarget().getText();
+        } else {
+            targetStateName = this.currentStateName;
         }
-
-
-        if (guardName == null) {
-            System.err.println("Error: Else If transition without a guard at line " + ctx.start.getLine());
-            return new TransitionNode(Optional.empty(), annotations, null, null, target, actions, TransitionNode.TransitionType.CONDITIONAL, null);
-        }
-        if (target == null && actions.isEmpty()) {
-            System.err.println("Error: Else If transition without target or actions for guard '" + guardName + "' at line " + ctx.start.getLine());
-            return new TransitionNode(Optional.empty(), annotations, null, guardName, new TransitionTarget(this.currentStateName, TransitionTarget.Type.INTERNAL), Collections.emptyList(), TransitionNode.TransitionType.CONDITIONAL, null);
-        }
-
-
-        return new TransitionNode(
-            Optional.empty(), annotations, null, guardName, target, actions,
-            TransitionNode.TransitionType.CONDITIONAL, null
-        );
+        return new TransitionNode(Optional.empty(), this.currentStateName, "ELSEIF_" + guardName, targetStateName, Optional.of(guardName), actions, annotations);
     }
 
     public AstNode visitElseTransition(ElseTransitionContext ctx) { // Made public
-        TransitionTarget target = null;
-        List<String> actions = Collections.emptyList();
-        List<AnnotationNode> annotations = Collections.emptyList(); // Assuming annotations can exist on else
+        System.err.println("AstBuilderVisitor.visitElseTransition called - this rule might not be in the current SSoT.g4 state body.");
+        List<String> actions = new ArrayList<>();
+        String targetStateName = null;
+         List<AnnotationNode> annotations = Collections.emptyList();
 
-        if (ctx.transitionSpec() != null) {
-            TransitionSpecContext spec = ctx.transitionSpec();
-            if (spec.transitionTarget() != null) {
-                 target = (TransitionTarget) visitTransitionTarget(spec.transitionTarget());
-            }
-            if (spec.actionReferenceList() != null) {
-                actions = extractActionReferences(spec.actionReferenceList());
-            }
-             if (spec.annotation() != null && !spec.annotation().isEmpty()) {
-                annotations = extractAnnotations(spec.annotation());
-            }
-        } else if (ctx.transitionActionOnly() != null) {
-             if (ctx.transitionActionOnly().actionReferenceList() != null) {
-                actions = extractActionReferences(ctx.transitionActionOnly().actionReferenceList());
-            }
+        if (ctx.transitionBody().transitionActionList() != null) {
+             actions = extractActionReferences(ctx.transitionBody().transitionActionList().actionReferenceList());
         }
-
-
-        if (target == null && actions.isEmpty()) {
-            System.err.println("Error: Else transition without target or actions at line " + ctx.start.getLine());
-            // Create a "do nothing" transition for else, or it should be a validation error
-            return new TransitionNode(Optional.empty(), annotations, null, null, new TransitionTarget(this.currentStateName, TransitionTarget.Type.INTERNAL), Collections.emptyList(), TransitionNode.TransitionType.CONDITIONAL, null);
+        if (ctx.transitionBody().transitionTarget() != null) {
+            targetStateName = ctx.transitionBody().transitionTarget().getText();
+        } else {
+            targetStateName = this.currentStateName;
         }
-
-        return new TransitionNode(
-            Optional.empty(), annotations, null, null, /* No guard for else */
-            target, actions, TransitionNode.TransitionType.CONDITIONAL, null
-        );
+        return new TransitionNode(Optional.empty(), this.currentStateName, "ELSE", targetStateName, Optional.empty(), actions, annotations);
     }
 
+    @Override
+    public AstNode visitInvokeState(InvokeStateContext ctx) {
+        Optional<Long> id = extractId(ctx.annotation());
+        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
 
-     @Override
-     public AstNode visitTransitionTarget(TransitionTargetContext ctx) {
-         String targetName = ctx.ID().getText();
-         TransitionTarget.Type type = TransitionTarget.Type.INTERNAL; // Default
-         if (ctx.EXTERNAL_TRANSITION() != null) {
-             type = TransitionTarget.Type.EXTERNAL;
-         }
-         // Annotations on target? Not in current grammar.
-         return new TransitionTarget(targetName, type);
-     }
+        ssot_parser.ast.values.ValueNode srcValueNode = (ssot_parser.ast.values.ValueNode) visitInvokeSource(ctx.invokeSource());
+        String invokeId = findAnnotationValue(annotations, "$id").orElse(null); // Optional invoke ID from annotation
 
-     @Override
-     public AstNode visitTransitionSpec(TransitionSpecContext ctx) {
-         // This method might not be directly called if its components are visited by parent rules.
-         // However, if called, it should aggregate parts into a TransitionNode like object
-         // For now, let specific transition visitors (on, if, after, always) handle this.
-         System.out.println("Visiting TransitionSpec (should be handled by specific transition type visitors)");
-         // If it needs to return a full TransitionNode, it would need context for event, guard, type, delay.
-         // This suggests that visitTransitionSpec itself might not be the right place to build a full TransitionNode
-         // without more context from the parent (e.g. OnTransitionContext provides the event).
-         // Let's assume it returns a "partial" transition spec or is handled by callers.
-         // For now, return null as it's likely handled by its callers.
-         return null;
-     }
+        Map<String, ssot_parser.ast.values.ValueNode> inputMapping = new HashMap<>();
+        if (ctx.invokeInputMapping() != null && ctx.invokeInputMapping().keyValuePairList() != null) {
+            for (KeyValuePairContext pairCtx : ctx.invokeInputMapping().keyValuePairList().keyValuePair()) {
+                String key = stripQuotes(pairCtx.STRING().getText());
+                inputMapping.put(key, (ssot_parser.ast.values.ValueNode) visitValue(pairCtx.value()));
+            }
+        }
+        Map<String, String> outputMapping = new HashMap<>(); // String to String for now
+         if (ctx.invokeOutputMapping() != null && ctx.invokeOutputMapping().keyValuePairList() != null) {
+            for (KeyValuePairContext pairCtx : ctx.invokeOutputMapping().keyValuePairList().keyValuePair()) {
+                String key = stripQuotes(pairCtx.STRING().getText());
+                outputMapping.put(key, pairCtx.value().getText()); // Assuming output maps to a string identifier
+            }
+        }
 
 
-     @Override
-     public AstNode visitInvokeState(InvokeStateContext ctx) {
-         Optional<Long> id = extractId(ctx.annotation());
-         List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
+        InvokeCompletionHandler onDone = null;
+        if (ctx.invokeOnDone() != null) {
+            onDone = parseInvokeCompletionHandler(ctx.invokeOnDone().invokeCompletion());
+        }
 
-         ssot_parser.ast.values.ValueNode srcValueNode = (ssot_parser.ast.values.ValueNode) visitInvokeSource(ctx.invokeSource());
-         String invokeId = findAnnotationValue(annotations, "$id").orElse(null); // Optional invoke ID from annotation
+        InvokeCompletionHandler onError = null;
+        if (ctx.invokeOnError() != null) {
+            onError = parseInvokeCompletionHandler(ctx.invokeOnError().invokeCompletion());
+        }
 
-         Map<String, ssot_parser.ast.values.ValueNode> inputMapping = new HashMap<>();
-         if (ctx.invokeInputMapping() != null && ctx.invokeInputMapping().keyValuePairList() != null) {
-             for (KeyValuePairContext pairCtx : ctx.invokeInputMapping().keyValuePairList().keyValuePair()) {
-                 String key = stripQuotes(pairCtx.STRING().getText());
-                 inputMapping.put(key, (ssot_parser.ast.values.ValueNode) visitValue(pairCtx.value()));
-             }
-         }
-         Map<String, String> outputMapping = new HashMap<>(); // String to String for now
-          if (ctx.invokeOutputMapping() != null && ctx.invokeOutputMapping().keyValuePairList() != null) {
-             for (KeyValuePairContext pairCtx : ctx.invokeOutputMapping().keyValuePairList().keyValuePair()) {
-                 String key = stripQuotes(pairCtx.STRING().getText());
-                 outputMapping.put(key, pairCtx.value().getText()); // Assuming output maps to a string identifier
-             }
-         }
+       // List<InvokeStateNode.InvokeTransition> autoForwardTransitions = new ArrayList<>(); // TODO if grammar supports $autoForward
+       // boolean autoForward = annotations.stream().anyMatch(a -> "$autoForward".equals(a.getName()) && "true".equalsIgnoreCase(a.getValue().orElse("false")));
 
 
-         InvokeCompletionHandler onDone = null;
-         if (ctx.invokeOnDone() != null) {
-             onDone = parseInvokeCompletionHandler(ctx.invokeOnDone().invokeCompletion());
-         }
+        // Assuming InvokeStateNode constructor
+        String invokeDefinitionRef = (srcValueNode != null) ? srcValueNode.getRawValue() : null; // Safely get ref
+        if (invokeDefinitionRef == null) {
+            // Handle error: invoke source could not be resolved to a string reference
+            // This might involve logging an error and returning a placeholder or throwing an exception
+            // For now, let's print an error and potentially return null or a special error node.
+            System.err.println("Error: Invoke source could not be resolved to a definition reference in state: " + currentStateName);
+            // Depending on error strategy, you might return null or an error node:
+            // return new ErrorNode("Missing invoke definition reference");
+        }
+        return new InvokeStateNode(id, invokeDefinitionRef, inputMapping, Optional.ofNullable(onDone), Optional.ofNullable(onError), annotations);
+    }
 
-         InvokeCompletionHandler onError = null;
-         if (ctx.invokeOnError() != null) {
-             onError = parseInvokeCompletionHandler(ctx.invokeOnError().invokeCompletion());
-         }
-
-        // List<InvokeStateNode.InvokeTransition> autoForwardTransitions = new ArrayList<>(); // TODO if grammar supports $autoForward
-        // boolean autoForward = annotations.stream().anyMatch(a -> "$autoForward".equals(a.getName()) && "true".equalsIgnoreCase(a.getValue().orElse("false")));
-
-
-         // Assuming InvokeStateNode constructor
-         String invokeDefinitionRef = (srcValueNode != null) ? srcValueNode.getRawValue() : null; // Safely get ref
-         if (invokeDefinitionRef == null) {
-             // Handle error: invoke source could not be resolved to a string reference
-             // This might involve logging an error and returning a placeholder or throwing an exception
-             // For now, let's print an error and potentially return null or a special error node.
-             System.err.println("Error: Invoke source could not be resolved to a definition reference in state: " + currentStateName);
-             // Depending on error strategy, you might return null or an error node:
-             // return new ErrorNode("Missing invoke definition reference");
-         }
-         return new InvokeStateNode(id, invokeDefinitionRef, inputMapping, Optional.ofNullable(onDone), Optional.ofNullable(onError), annotations);
-     }
-
-     private InvokeCompletionHandler parseInvokeCompletionHandler(InvokeCompletionContext ctx) {
+    private InvokeCompletionHandler parseInvokeCompletionHandler(InvokeCompletionContext ctx) {
         List<AnnotationNode> handlerAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
         List<String> handlerActionRefs = Collections.emptyList();
         Optional<TransitionNode> handlerTransition = Optional.empty();
@@ -1006,37 +833,34 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         return new InvokeCompletionHandler(handlerActionRefs, handlerTransition, handlerAnnotations);
     }
 
-     @Override
-     public AstNode visitHistoryStateDefinition(HistoryStateDefinitionContext ctx) {
-         String historyStateName = ctx.ID().getText();
-         Optional<Long> id = extractId(ctx.annotation());
-         List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
-         boolean isDeep = ctx.DEEP() != null;
-         
-         HistoryStateType historyType = isDeep ? HistoryStateType.DEEP : HistoryStateType.SHALLOW;
+    @Override
+    public AstNode visitHistoryStateDefinition(HistoryStateDefinitionContext ctx) {
+        // grammar: HISTORY (SHALLOW | DEEP)? annotation* TARGET ID SEMI
+        List<AnnotationNode> annotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
+        Optional<Long> id = extractIdFromList(annotations); // Use helper
+        String targetStateName = ctx.ID().getText();
+        HistoryStateNode.HistoryType type = HistoryStateNode.HistoryType.SHALLOW; // Default
+        if (ctx.DEEP() != null) {
+            type = HistoryStateNode.HistoryType.DEEP;
+        }
+        return new HistoryStateNode(id, type, targetStateName, annotations);
+    }
 
-         Optional<TransitionNode> defaultTransition = Optional.empty();
-         if (ctx.transitionSpec() != null) {
-             TransitionSpecContext spec = ctx.transitionSpec();
-             TransitionTarget target = spec.transitionTarget() != null ? (TransitionTarget) visitTransitionTarget(spec.transitionTarget()) : null;
-             List<String> actions = spec.actionReferenceList() != null ? extractActionReferences(spec.actionReferenceList()) : Collections.emptyList();
-             List<AnnotationNode> transitionAnnotations = spec.annotation() != null ? extractAnnotations(spec.annotation()) : Collections.emptyList();
-             
-             // Create the TransitionNode for the default transition
-             TransitionNode transition = new TransitionNode(
-                     Optional.empty(), // id for the transition itself
-                     transitionAnnotations, // annotations on the transition spec
-                     null, // event (none for default history transition)
-                     null, // guard (none for default history transition)
-                     target, // target state
-                     actions, // actions for this transition
-                     TransitionNode.TransitionType.INTERNAL, // Or other appropriate type
-                     null // delay
-             );
-             defaultTransition = Optional.of(transition);
-         }
-
-        return new HistoryStateNode(id, historyStateName, historyType, defaultTransition, annotations);
+    @Override
+    public AstNode visitOnEntryExit(OnEntryExitContext ctx) {
+        // This rule is: (ON_ENTRY | ON_EXIT) actionReference SEMI;
+        // This method should ideally not be called if logic is handled inline in visitStateDefinition.
+        // If it is called, it means it's defined as a separate visitable item by ANTLR in some contexts.
+        // However, for StateNode construction, we just need the action name and type (entry/exit).
+        System.err.println("Warning: AstBuilderVisitor.visitOnEntryExit was called. This logic is expected to be inline within visitStateDefinition's loop over stateBodyElement.");
+        // Returning a simple wrapper if it must return an AstNode, though it won't be directly used if handled inline.
+        // Could return a specific temp node if needed for some other processing.
+        String actionName = ctx.actionReference().getText();
+        boolean isEntry = ctx.ON_ENTRY() != null;
+        // This isn't a standard AST node typically, just data for the parent.
+        // For safety, if it must return an AstNode:
+        // return new ActionReferenceNode(actionName, isEntry ? ActionType.ENTRY : ActionType.EXIT);
+        return null; // Or throw an error: should be handled inline
     }
 
     @Override
@@ -1126,38 +950,15 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         return text;
     }
 
-    private Optional<Long> extractId(List<AnnotationContext> annotations) {
-        if (annotations == null) return Optional.empty();
-        for (AnnotationContext annoCtx : annotations) {
-            if ("@id".equals(annoCtx.annotationName().getText())) {
-                if (annoCtx.annotationValue() != null && annoCtx.annotationValue().NUMBER() != null) {
-                    try {
-                        return Optional.of(Long.parseLong(annoCtx.annotationValue().NUMBER().getText()));
-                    } catch (NumberFormatException e) {
-                        System.err.println("Error parsing @id value: " + annoCtx.annotationValue().NUMBER().getText());
-                        return Optional.empty();
-                    }
-                } else if (annoCtx.annotationValue() == null) { // For @id()
-                    // Generate or assign a unique ID if necessary, or treat as error/ignore
-                    // For now, returning empty, as this implies a semantic action beyond parsing.
-                    System.err.println("@id annotation found without a value. Auto-generation not implemented.");
-                    return Optional.empty();
-                }
-            }
+    private List<String> extractActionReferences(ActionReferenceListContext ctx) {
+        List<String> refs = new ArrayList<>();
+        if (ctx != null && ctx.ID() != null) {
+            ctx.ID().forEach(idNode -> refs.add(idNode.getText()));
         }
-        return Optional.empty();
+        return refs;
     }
 
-    private List<AnnotationNode> extractAnnotations(List<AnnotationContext> annotationContexts) {
-        if (annotationContexts == null || annotationContexts.isEmpty()) {
-            return Collections.emptyList();
-        }
-        return annotationContexts.stream()
-                                 .map(this::visitAnnotation) // 'this::visitAnnotation' already returns AnnotationNode
-                                 .map(astNode -> (AnnotationNode) astNode) // Cast needed if visitAnnotation returns AstNode
-                                 .collect(Collectors.toList());
-    }
-     private Map<String, Object> mapAnnotations(List<AnnotationNode> annotations) {
+    private Map<String, Object> mapAnnotations(List<AnnotationNode> annotations) {
         Map<String, Object> map = new HashMap<>();
         if (annotations != null) {
             for (AnnotationNode anno : annotations) {
@@ -1168,7 +969,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         return map;
     }
 
-     private List<AnnotationNode> allAnnotations(List<AnnotationNode> list1, List<AnnotationNode> list2) {
+    private List<AnnotationNode> allAnnotations(List<AnnotationNode> list1, List<AnnotationNode> list2) {
         List<AnnotationNode> combined = new ArrayList<>();
         if (list1 != null) combined.addAll(list1);
         if (list2 != null) combined.addAll(list2);
@@ -1185,14 +986,42 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     static class BlockContainerNode implements AstNode {
         final String blockType;
         final List<AstNode> children;
+        final List<AnnotationNode> annotations; // Added field
+
         BlockContainerNode(String type, List<AstNode> children) {
-            this.blockType = type;
-            this.children = children != null ? new ArrayList<>(children) : Collections.emptyList();
+            this(type, children, Collections.emptyList());
         }
+
+        BlockContainerNode(String type, List<AstNode> children, List<AnnotationNode> annotations) {
+            this.blockType = type;
+            this.children = children != null ? Collections.unmodifiableList(new ArrayList<>(children)) : Collections.emptyList();
+            this.annotations = annotations != null ? Collections.unmodifiableList(new ArrayList<>(annotations)) : Collections.emptyList();
+        }
+
         public List<AstNode> getChildren() { return children; }
-        @Override public <T> T accept(NodeVisitor<T> visitor) { return null; }
-        @Override public String toString() { return "BlockContainer[" + blockType + ", children=" + children.size() + "]"; }
-        @Override public Map<String, Object> getAnnotations() { return Collections.emptyMap(); }
-        @Override public Optional<Long> getId() { return Optional.empty(); }
+        public List<AnnotationNode> getBlockAnnotations() { return annotations; } // Getter for block's own annotations
+
+        @Override public <T> T accept(NodeVisitor<T> visitor) { return null; } // Or visitor.visitBlockContainerNode(this)
+        @Override public String toString() { return "BlockContainer[" + blockType + ", children=" + children.size() + ", annotations=" + annotations.size() + "]"; }
+        @Override public Map<String, Object> getAnnotations() { // These are annotations ON the block, not its children
+            Map<String, Object> annotationMap = new HashMap<>();
+            for (AnnotationNode annotation : this.annotations) {
+                annotationMap.put(annotation.getName(), annotation.getValue().orElse("true"));
+            }
+            return Collections.unmodifiableMap(annotationMap);
+        }
+        @Override public Optional<Long> getId() { // Blocks themselves typically don't have @id
+            for (AnnotationNode annotation : this.annotations) {
+                if ("@id".equals(annotation.getName()) && annotation.getValue().isPresent()) {
+                     try {
+                        Object rawValue = annotation.getValue().get();
+                        if (rawValue instanceof Long) return Optional.of((Long) rawValue);
+                        if (rawValue instanceof Number) return Optional.of(((Number) rawValue).longValue());
+                        return Optional.of(Long.parseLong(String.valueOf(rawValue)));
+                    } catch (NumberFormatException e) { /* ignore */ }
+                }
+            }
+            return Optional.empty();
+        }
     }
 }
