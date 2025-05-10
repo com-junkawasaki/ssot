@@ -8,7 +8,6 @@ import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
 import java.util.ArrayList;
-import ssot_parser.ast.nodes.AnnotationNode;
 import ssot_parser.NodeWithId;
 
 /**
@@ -16,26 +15,49 @@ import ssot_parser.NodeWithId;
  * Includes target state, optional guard, actions, and annotations.
  */
 public class TransitionNode implements AstNode, NodeWithId {
+
+    public enum TransitionType {
+        EVENT,      // Triggered by an event (e.g., ON event)
+        AFTER,      // Triggered after a delay (e.g., AFTER duration)
+        CONDITIONAL, // Triggered by a guard condition (e.g., IF guard)
+        ALWAYS      // An immediate, unconditional transition (not directly in grammar yet, but common in FSMs)
+    }
+
     private final Optional<Long> id;
     private String sourceStateName; // Added later during linking/validation?
-    private String event; // Event name, or synthetic like AFTER_duration, ALWAYS, IF_guard
+    private final String event; // Event name for EVENT type, synthetic for others (e.g., "@IF:guardName")
     public final String targetStateName;
     public final Optional<String> conditionRef; // Guard reference
     public final List<String> actionRefs; // Action references
     private final List<AnnotationNode> annotations;
+    private final TargetStateNode targetState;
+    private final Optional<GuardReferenceNode> condition; // Explicit condition for CONDITIONAL, or guard within TransitionSpec
+    private final List<ActionReferenceNode> actions;
+    private final List<GuardReferenceNode> guards; // Guards specified within a transition block
+    private final List<String> allowedActors; // Actors specified within a transition block
+    private final Optional<DurationNode> delay; // For AFTER transitions
+    private final TransitionType type;
+    private final Map<String, Object> annotationsMap; // From annotations on the transition line itself
 
     // Fields for specific transition types
-    private String delay; // For AFTER transitions (e.g., "100ms")
     private boolean always = false; // For ALWAYS transitions
 
     // Constructor - potentially needs updates based on usage
     public TransitionNode(Optional<Long> id,
                           String sourceStateName, // Can be null initially
-                          String event, // Can be null initially
+                          String event,
                           String targetStateName,
                           Optional<String> conditionRef,
                           List<String> actionRefs,
-                          List<AnnotationNode> annotations) {
+                          List<AnnotationNode> annotations,
+                          TargetStateNode targetState,
+                          Optional<GuardReferenceNode> condition, // Main condition for IF, or empty for ON/AFTER
+                          List<ActionReferenceNode> actions,      // Actions from transition block
+                          List<GuardReferenceNode> guards,        // Guards from transition block
+                          List<String> allowedActors,       // Allowed actors from transition block
+                          Optional<DurationNode> delay,         // Delay for AFTER transitions
+                          TransitionType type,
+                          Map<String, Object> annotationsMap) {
         this.id = id;
         this.sourceStateName = sourceStateName;
         this.event = event;
@@ -43,7 +65,14 @@ public class TransitionNode implements AstNode, NodeWithId {
         this.conditionRef = conditionRef;
         this.actionRefs = Collections.unmodifiableList(actionRefs != null ? new ArrayList<>(actionRefs) : Collections.emptyList());
         this.annotations = Collections.unmodifiableList(annotations != null ? new ArrayList<>(annotations) : Collections.emptyList());
-        this.delay = null;
+        this.targetState = targetState;
+        this.condition = condition;
+        this.actions = Collections.unmodifiableList(actions != null ? new ArrayList<>(actions) : Collections.emptyList());
+        this.guards = Collections.unmodifiableList(guards != null ? new ArrayList<>(guards) : Collections.emptyList());
+        this.allowedActors = Collections.unmodifiableList(allowedActors != null ? new ArrayList<>(allowedActors) : Collections.emptyList());
+        this.delay = delay;
+        this.type = type;
+        this.annotationsMap = Collections.unmodifiableMap(annotationsMap != null ? new HashMap<>(annotationsMap) : Collections.emptyMap());
         this.always = false;
     }
 
@@ -60,12 +89,8 @@ public class TransitionNode implements AstNode, NodeWithId {
         this.sourceStateName = sourceStateName;
     }
 
-    public Optional<String> getEvent() {
-        return Optional.ofNullable(event);
-    }
-
-    public void setEvent(String event) {
-        this.event = event;
+    public String getEvent() {
+        return event;
     }
 
     public String getTargetStateName() {
@@ -80,30 +105,44 @@ public class TransitionNode implements AstNode, NodeWithId {
         return actionRefs;
     }
 
-    @Override
-    public Map<String, Object> getAnnotations() {
-        Map<String, Object> annotationMap = new HashMap<>();
-        for (AnnotationNode annotation : this.annotations) {
-             if (!"@id".equals(annotation.name) || !id.isPresent()) { // Exclude @id if already exposed via getId()
-                annotationMap.put(annotation.name, annotation.value);
-            }
-        }
-        return Collections.unmodifiableMap(annotationMap);
+    public TargetStateNode getTargetState() {
+        return targetState;
     }
 
-     public List<AnnotationNode> getAnnotationNodes() {
+    public Optional<GuardReferenceNode> getCondition() {
+        return condition;
+    }
+
+    public List<ActionReferenceNode> getActions() {
+        return actions;
+    }
+
+    public List<GuardReferenceNode> getGuards() {
+        return guards;
+    }
+
+    public List<String> getAllowedActors() {
+        return allowedActors;
+    }
+
+    public Optional<DurationNode> getDelay() {
+        return delay;
+    }
+
+    public TransitionType getType() {
+        return type;
+    }
+
+    @Override
+    public Map<String, Object> getAnnotations() {
+        return annotationsMap;
+    }
+
+    public List<AnnotationNode> getAnnotationNodes() {
         return annotations;
     }
 
     // Getters and Setters for new fields
-    public Optional<String> getDelay() {
-        return Optional.ofNullable(delay);
-    }
-
-    public void setDelay(String delay) {
-        this.delay = delay;
-    }
-
     public boolean isAlways() {
         return always;
     }
@@ -121,14 +160,17 @@ public class TransitionNode implements AstNode, NodeWithId {
     public String toString() {
         StringBuilder sb = new StringBuilder("TransitionNode{");
         sb.append("id=").append(id.map(String::valueOf).orElse("none"));
-        getEvent().ifPresent(e -> sb.append(", event=").append(e));
+        sb.append(", type=").append(type);
+        if (event != null) sb.append(", event='").append(event).append("'");
         getSourceStateName().ifPresent(s -> sb.append(", source=").append(s));
         sb.append(", target=").append(targetStateName);
         conditionRef.ifPresent(c -> sb.append(", condition=").append(c));
         if (!actionRefs.isEmpty()) sb.append(", actions=").append(actionRefs);
-        getDelay().ifPresent(d -> sb.append(", delay=").append(d));
+        if (!guards.isEmpty()) sb.append(", guards=").append(guards);
+        if (!allowedActors.isEmpty()) sb.append(", allowedActors=").append(allowedActors);
+        delay.ifPresent(d -> sb.append(", delay=").append(d));
         if (always) sb.append(", always=true");
-        if (!annotations.isEmpty()) sb.append(", annotations=").append(annotations);
+        if (!annotationsMap.isEmpty()) sb.append(", annotations=").append(annotationsMap);
         sb.append("}");
         return sb.toString();
     }

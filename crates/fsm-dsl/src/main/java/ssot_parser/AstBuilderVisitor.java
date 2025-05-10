@@ -21,6 +21,7 @@ import ssot_parser.ast.values.NumberValueNode;
 import ssot_parser.ast.values.NullValueNode;
 import ssot_parser.ast.values.ArrayValueNode;
 import ssot_parser.ast.values.ObjectValueNode;
+import ssot_parser.ast.values.RefValueNode;
 import ssot_parser.ast.handlers.InvokeCompletionHandler;
 import java.time.Duration;
 import ssot_parser.ast.nodes.StateNode; // Corrected import
@@ -656,7 +657,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         if (srcOpt.isPresent()) {
             ValueNode srcValue = srcOpt.get();
             if (srcValue instanceof StringValueNode) {
-                srcAsString = ((StringValueNode) srcValue).getValue();
+                srcAsString = ((StringValueNode) srcValue).getRawValue();
             } else if (srcValue instanceof RefValueNode) {
                 srcAsString = ((RefValueNode) srcValue).getQualifiedName();
             } else {
@@ -715,22 +716,34 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
         List<AnnotationNode> directAnnotations = extractAnnotations(ctx.annotation());
         Optional<Long> id = extractIdFromList(directAnnotations);
-        Map<String, Object> annotationMap = mapAnnotations(directAnnotations);
+        // Map<String, Object> annotationMap = mapAnnotations(directAnnotations); // Will be constructed by StateNode or used differently
+
+        String displayNameValue = currentStateName; // Default display name
+        Optional<String> nameAnnotationOpt = findAnnotationValue(directAnnotations, "name");
+        if (nameAnnotationOpt.isPresent()) {
+            displayNameValue = nameAnnotationOpt.get();
+        } else {
+            Optional<String> displayNameAnnotationOpt = findAnnotationValue(directAnnotations, "displayName");
+            if (displayNameAnnotationOpt.isPresent()) {
+                displayNameValue = displayNameAnnotationOpt.get();
+            }
+        }
 
         StateType stateType = StateType.NORMAL; 
-        if (annotationMap.containsKey("initial") && "true".equals(String.valueOf(annotationMap.get("initial")))) {
-            stateType = StateType.INITIAL;
-        } else if (annotationMap.containsKey("final") && "true".equals(String.valueOf(annotationMap.get("final")))) {
-            stateType = StateType.FINAL;
-        }
+        boolean isInitial = findAnnotationValue(directAnnotations, "initial").map(Boolean::parseBoolean).orElse(false);
+        boolean isFinal = findAnnotationValue(directAnnotations, "final").map(Boolean::parseBoolean).orElse(false);
+
+        if (isInitial) stateType = StateType.INITIAL;
+        if (isFinal) stateType = StateType.FINAL; // 'final' takes precedence if both are true, or define rules
         
-        List<ActionReferenceNode> onEntryActions = new ArrayList<>();
-        List<ActionReferenceNode> onExitActions = new ArrayList<>();
-        List<TransitionNode> onTransitions = new ArrayList<>();
-        List<TransitionNode> afterTransitions = new ArrayList<>();
-        List<TransitionNode> ifTransitions = new ArrayList<>(); 
+        List<ActionReferenceNode> onEntryActionNodes = new ArrayList<>();
+        List<ActionReferenceNode> onExitActionNodes = new ArrayList<>();
+        List<TransitionNode> onEventTransitions = new ArrayList<>();
+        List<TransitionNode> afterEventTransitions = new ArrayList<>();
+        List<TransitionNode> ifConditionTransitions = new ArrayList<>(); 
         List<InvokeStateNode> invokeInvocations = new ArrayList<>();
-        List<AstNode> nestedStates = new ArrayList<>(); 
+        List<AstNode> nestedStateElements = new ArrayList<>(); 
+        Optional<String> nestedInitialStateName = Optional.empty();
 
         if (ctx.stateBodyElement() != null) {
             for (StateBodyElementContext bodyElementCtx : ctx.stateBodyElement()) {
@@ -738,79 +751,96 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                     OnEntryExitContext oeeCtx = bodyElementCtx.onEntryExit();
                     ActionReferenceNode actionRef = (ActionReferenceNode) visitActionReference(oeeCtx.actionReference());
                     if (oeeCtx.ON_ENTRY() != null) {
-                        onEntryActions.add(actionRef);
+                        onEntryActionNodes.add(actionRef);
                     } else if (oeeCtx.ON_EXIT() != null) {
-                        onExitActions.add(actionRef);
+                        onExitActionNodes.add(actionRef);
                     }
                 } else if (bodyElementCtx.invokeState() != null) {
                     invokeInvocations.add((InvokeStateNode) visitInvokeState(bodyElementCtx.invokeState()));
                 } else if (bodyElementCtx.onTransition() != null) {
-                    onTransitions.add((TransitionNode) visitOnTransition(bodyElementCtx.onTransition()));
+                    onEventTransitions.add((TransitionNode) visitOnTransition(bodyElementCtx.onTransition()));
                 } else if (bodyElementCtx.afterTransition() != null) {
-                    System.out.println("Processing afterTransition");
                     AstNode afterNode = visit(bodyElementCtx.afterTransition());
                      if (afterNode instanceof TransitionNode) {
-                        afterTransitions.add((TransitionNode) afterNode);
+                        afterEventTransitions.add((TransitionNode) afterNode);
                     } else {
                         System.err.println("Expected TransitionNode from afterTransition, got: " + (afterNode != null ? afterNode.getClass().getName() : "null"));
                     }
                 } else if (bodyElementCtx.ifTransitionStatement() != null) {
-                    System.out.println("Processing ifTransitionStatement");
                     AstNode ifNode = visitIfTransitionStatement(bodyElementCtx.ifTransitionStatement());
                     if (ifNode instanceof TransitionNode) {
-                        ifTransitions.add((TransitionNode) ifNode);
+                        ifConditionTransitions.add((TransitionNode) ifNode);
                     } else {
                          System.err.println("Expected TransitionNode from ifTransitionStatement, got: " + (ifNode != null ? ifNode.getClass().getName() : "null"));
                     }
                 } else if (bodyElementCtx.statesDefinition() != null) {
-                    System.out.println("Processing nested statesDefinition");
                     BlockContainerNode nestedStatesContainer = (BlockContainerNode) visitStatesDefinition(bodyElementCtx.statesDefinition());
                     if (nestedStatesContainer != null && nestedStatesContainer.getChildren() != null) {
-                        nestedStates.addAll(nestedStatesContainer.getChildren());
+                        nestedStateElements.addAll(nestedStatesContainer.getChildren());
+                        // Check for $initial on the nested states block itself
+                        nestedInitialStateName = findAnnotationValue(nestedStatesContainer.getBlockAnnotations(), "initial"); 
                     }
                 } else if (bodyElementCtx.historyDefinition() != null) {
-                    System.out.println("Processing nested historyDefinition");
                     HistoryStateNode historyNode = (HistoryStateNode) visitHistoryDefinition(bodyElementCtx.historyDefinition());
                     if (historyNode != null) {
-                        nestedStates.add(historyNode); 
+                        nestedStateElements.add(historyNode); 
                     }
                 } else if (bodyElementCtx.annotation() != null) {
+                    // Body annotations are part of directAnnotations if they are on the state line,
+                    // or part of specific elements like transitions. General free-floating annotations in state body
+                    // might need a separate collection in StateNode or be added to `directAnnotations` if appropriate.
+                    // For now, assuming `directAnnotations` captures the main ones for the state itself.
                     AnnotationNode bodyAnnotation = (AnnotationNode) visitAnnotation(bodyElementCtx.annotation());
-                    annotationMap.put("body_" + bodyAnnotation.name, Optional.ofNullable(bodyAnnotation.value).orElse(true));
-                     System.out.println("Found body annotation in state " + currentStateName + ": " + bodyAnnotation);
+                    directAnnotations.add(bodyAnnotation); // Add to the main list for the state
+                     System.out.println("Found body annotation in state " + currentStateName + ": " + bodyAnnotation + ". Added to state's direct annotations.");
                 }
             }
         }
         
-        if (stateType == StateType.NORMAL && !nestedStates.isEmpty()) {
-            stateType = StateType.COMPOUND; 
-        }
-
-        List<TransitionNode> allTransitions = new ArrayList<>();
-        allTransitions.addAll(onTransitions);
-        allTransitions.addAll(afterTransitions);
-        allTransitions.addAll(ifTransitions);
-
-        List<StateNode> childStateNodes = nestedStates.stream()
+        List<StateNode> childStateNodes = nestedStateElements.stream()
                                                .filter(n -> n instanceof StateNode)
                                                .map(n -> (StateNode)n)
                                                .collect(Collectors.toList());
-        List<HistoryStateNode> historyStateNodes = nestedStates.stream()
+        List<HistoryStateNode> historyStateNodes = nestedStateElements.stream()
                                                    .filter(n -> n instanceof HistoryStateNode)
                                                    .map(n -> (HistoryStateNode)n)
                                                    .collect(Collectors.toList());
 
+        if (!childStateNodes.isEmpty() && stateType == StateType.NORMAL) { // Only upgrade normal to compound
+            stateType = StateType.COMPOUND; 
+        }
+        if (stateType == StateType.COMPOUND && !nestedInitialStateName.isPresent() && !childStateNodes.isEmpty()) {
+            // If compound and no $initial on states block, take first child state's name as initial
+            nestedInitialStateName = Optional.of(childStateNodes.get(0).getStateName());
+        }
+
+        List<String> entryActionNames = onEntryActionNodes.stream().map(ActionReferenceNode::getActionName).collect(Collectors.toList());
+        List<String> exitActionNames = onExitActionNodes.stream().map(ActionReferenceNode::getActionName).collect(Collectors.toList());
+
+        List<TransitionNode> eventAndAfterTransitions = new ArrayList<>(onEventTransitions);
+        eventAndAfterTransitions.addAll(afterEventTransitions);
+
+        // Constructor: StateNode(Optional<Long> id, String stateName, List<AnnotationNode> annotations, 
+        //                        String displayNameValue, StateType type, 
+        //                        List<String> entryActions, List<String> exitActions, 
+        //                        List<InvokeStateNode> invokeInvocations, 
+        //                        List<TransitionNode> eventHandlers, List<TransitionNode> ifTransitions, 
+        //                        List<StateNode> nestedStates, List<HistoryStateNode> historyStates, 
+        //                        Optional<String> initialStateNameValue)
         StateNode resultNode = new StateNode(
                 id,
                 currentStateName,
+                directAnnotations, 
+                displayNameValue,
                 stateType,
-                onEntryActions, 
-                onExitActions,  
-                allTransitions,      
+                entryActionNames, 
+                exitActionNames,  
                 invokeInvocations,
+                eventAndAfterTransitions, // eventHandlers
+                ifConditionTransitions, // ifTransitions
                 childStateNodes,    
                 historyStateNodes,  
-                annotationMap
+                nestedInitialStateName // initialStateNameValue for compound states
         );
         currentStateName = null; 
         return resultNode;
@@ -818,8 +848,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
      public AstNode visitIfTransitionStatement(IfTransitionStatementContext ctx) {
         System.out.println("Visiting IfTransitionStatement");
         GuardReferenceNode condition = (GuardReferenceNode) visitGuardReference(ctx.condition);
-        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
-        Map<String, Object> annotationMap = mapAnnotations(annotations); 
+        List<AnnotationNode> transitionLineAnnotations = extractAnnotations(ctx.annotation());
+        Map<String, Object> annotationMap = mapAnnotations(transitionLineAnnotations); 
+        Optional<Long> transitionId = extractIdFromList(transitionLineAnnotations);
 
         TransitionSpecNode specNode = (TransitionSpecNode) visitTransitionSpec(ctx.transitionSpec());
         String syntheticEventName = "@IF:" + condition.getGuardName();
@@ -827,17 +858,21 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             syntheticEventName += "(not)";
         }
         
+        // New TransitionNode constructor:
+        // Optional<Long> id, String event, TargetStateNode targetState, Optional<GuardReferenceNode> condition,
+        // List<ActionReferenceNode> actions, List<GuardReferenceNode> guards, List<String> allowedActors,
+        // Optional<DurationNode> delay, TransitionType type, Map<String, Object> annotationsMap
         return new TransitionNode(
-            extractIdFromList(annotations), 
-            syntheticEventName,
-            Optional.of(condition), 
-            specNode.getTargetState(),
-            specNode.getActions(),
-            specNode.getGuards(),    
-            specNode.getAllowedActors(),
-            annotationMap, 
-            Optional.empty(), 
-            TransitionNode.TransitionType.CONDITIONAL 
+            transitionId, 
+            syntheticEventName,         // event
+            specNode.getTargetState(),  // targetState
+            Optional.of(condition),     // condition (the main one for IF)
+            specNode.getActions(),      // actions from spec
+            specNode.getGuards(),       // guards from spec
+            specNode.getAllowedActors(),// allowedActors from spec
+            Optional.<DurationNode>empty(), // delay (none for IF transitions), explicitly typed
+            TransitionNode.TransitionType.CONDITIONAL, // type
+            annotationMap               // annotations from the IF line
         );
     }
 
@@ -1177,4 +1212,5 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             return Optional.empty();
         }
     }
+}
 }

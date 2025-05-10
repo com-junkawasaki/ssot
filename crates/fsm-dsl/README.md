@@ -69,70 +69,89 @@ This refactoring is a crucial step towards a more expressive and capable FSM DSL
 
 ## Current Development Status and Next Steps
 
-**Summary of Progress:**
+**Project Summary:**
 
-*   **ANTLR Parser Generation:** Successfully configured `pom.xml` (both `antlr4-maven-plugin` and `build-helper-maven-plugin`) to ensure ANTLR generates parser files (`SSoTParser.java`, `SSoTLexer.java`, etc.) into the correct directory (`target/generated-sources/antlr4/ssot_parser/`) with the proper package structure. This previous major blocker is now resolved.
-*   **AST Node Creation & Refinements:**
-    *   Created new AST Node classes to support richer transition and state machine definitions: `ActionReferenceNode.java`, `TransitionSpecNode.java`, `GuardReferenceNode.java`, `TargetStateNode.java`.
-    *   Addressed numerous linter errors and compilation issues in several existing AST node classes by adding missing methods, defining enums, implementing inherited methods, and correcting constructors.
-*   **`AstBuilderVisitor` Updates:** Significant effort has been made to update `AstBuilderVisitor.java` to align with the ANTLR grammar and AST node definitions. This includes corrections to constructor calls, type usage, and visitor logic for various DSL blocks (file, services, types, machines, states, etc.). Helper methods like `stripQuotes`, `findAnnotationValue`, `extractIdFromList`, and `parseInvokeCompletionHandler` have been added or refined.
+The project is developing a Java/ANTLR-based parser for a custom Domain-Specific Language (`.ssot` files) used to define state machines, services, and types. The ANTLR grammar (`SSoT.g4`) and Maven build process (`pom.xml`) are largely in place, with ANTLR parser/lexer code generation functioning correctly.
 
-**Current Status & Challenge:**
+Significant progress has been made in defining and refactoring Abstract Syntax Tree (AST) node classes (primarily within `src/main/java/ssot_parser/ast/`) and the core `AstBuilderVisitor.java` (in `src/main/java/ssot_parser/`), which is responsible for constructing the AST from the ANTLR parse tree. Key achievements include:
 
-Despite these efforts, `mvn clean compile -e -X` still **fails with numerous compilation errors**. The vast majority of these errors are concentrated in `AstBuilderVisitor.java`. The primary categories of remaining errors are:
+*   **New AST Node Creation:** Introduced several new AST node classes to support richer DSL features, including `ActionReferenceNode`, `TransitionSpecNode`, `GuardReferenceNode`, `TargetStateNode`, `DurationNode`, `RefTypeNode` (for type references), and `RefValueNode` (for value references).
+*   **Enum Definitions:** Essential enums within AST nodes, such as `PrimitiveTypeNode.PrimitiveType`, `StateType`, `TransitionNode.TransitionType`, and `HistoryStateNode.HistoryType`, have been defined or corrected to accurately model DSL constructs.
+*   **`AstBuilderVisitor.java` Refactoring:** This central class has undergone extensive modifications:
+    *   Improved handling of ANTLR parse tree contexts for various DSL blocks (file, types, services, machines, context, actions, guards, invokes).
+    *   Systematic alignment of AST node constructor calls with their actual definitions. This was a major focus and resolved many previous errors.
+    *   Enhanced processing of state definitions (`visitStateDefinition`), including support for nested states, history states, and various transition types by adapting to a more detailed `StateNode` structure.
+    *   Refined parsing of transitions (`visitIfTransitionStatement`, and paving the way for `visitOnTransition`, `visitAfterTransition`) to use the refactored `TransitionNode`.
+    *   Improved annotation processing and the addition/refinement of helper methods (e.g., `extractIdFromList`, `extractActionReferenceNodes`, `parseInvokeCompletionHandler`).
 
-1.  **Missing AST Node Definitions/Imports:** Some required AST nodes (e.g., `DurationNode`) or their constituent parts (enums like `PrimitiveTypeNode.PrimitiveType`, `StateType.NORMAL`, `TransitionNode.TransitionType`, `HistoryStateNode.HistoryType`) are missing, not correctly defined, or not imported in `AstBuilderVisitor.java`.
-2.  **Undefined Helper Methods:** Methods expected by the visitor, such as `extractActionReferenceNodes`, are not yet defined.
-3.  **Incorrect AST Node Constructor Calls:** For several AST nodes (e.g., `InvokeCompletionHandler`, `ContextVariableNode`, `GuardDefinitionNode`, `StateNode`, `InvokeStateNode`, `AnnotationNode`), the constructor calls within `AstBuilderVisitor.java` do not match the actual signatures in the node classes.
-4.  **Unresolved Types/Fields in Visitor Logic:** References to types like `RefTypeNode`, `RefValueNode`, or fields within enums (e.g., `StateType.NORMAL`) are not resolving correctly.
-5.  **Missing Methods on Existing AST Nodes:** Some AST nodes (e.g., `ValueNode`, `ObjectValueNode`) are missing expected methods like `getActualValue()` or `getFields()`.
-6.  **Mismatches with ANTLR-Generated Contexts:** While many have been fixed, some calls in `AstBuilderVisitor` to methods on ANTLR context objects might still not align with the generated `SSoTParser.java`.
+**Current Challenge & Next Steps to Achieve Successful Compilation:**
 
-**Next Steps to Achieve Successful Compilation:**
+Despite resolving many previous issues, `AstBuilderVisitor.java` still has Java compilation (linter) errors that prevent a clean build (`mvn clean compile`). The immediate goal is to eliminate these remaining errors. The primary categories are:
 
-The following steps should be undertaken to resolve the outstanding compilation errors in `AstBuilderVisitor.java`:
+1.  **Syntax Error:** A simple syntax error (an extraneous closing brace) in `AstBuilderVisitor.java`.
+2.  **AST Node Constructor Mismatches:** Calls to constructors for `TransitionNode`, `InvokeStateNode`, and `AnnotationNode` in `AstBuilderVisitor.java` do not perfectly align with their current definitions. This often involves ensuring the correct number, order, and type of arguments.
+3.  **Unresolved Types/Visibility:**
+    *   `RefValueNode` is reported as not visible, possibly due to a missing `public` modifier or an incorrect package statement (though it appears correct).
+    *   `PrimitiveTypeNode.PrimitiveType.BOOLEAN` is not resolving, though the enum and constant are defined. This might be a stale linter issue or a subtle import problem.
+    *   `HistoryStateNode.HistoryType` is not resolving.
+    *   `StateTargetNode` (an older name) is used instead of the correct `TargetStateNode`.
+4.  **Missing Methods on AST Nodes:**
+    *   `ValueNode` and its implementations need a consistent way to get the underlying Java value (e.g., an `getActualValue()` method).
+    *   `ObjectValueNode` needs a `getFields()` method.
+5.  **Potential `ValueNodeType` Issue:** `RefValueNode` attempts to return `ValueNodeType.REFERENCE`, which implies this enum and constant must be correctly defined.
 
-1.  **Create/Fix Missing AST Components & Imports:**
-    *   Create `DurationNode.java` (likely in `ssot_parser.ast.nodes`).
-    *   Define missing enums or static fields within their respective AST node classes (e.g., `PrimitiveTypeNode.PrimitiveType` in `PrimitiveTypeNode.java`, `StateType.NORMAL` etc. in `StateType.java`, `TransitionType.CONDITIONAL` in `TransitionNode.java`, `HistoryStateNode.HistoryType` in `HistoryStateNode.java`).
-    *   Ensure `RefTypeNode.java` (in `ssot_parser.ast.type`) and `RefValueNode.java` (in `ssot_parser.ast.values`) exist and are correctly defined.
-    *   Ensure all necessary imports for these (and other) types are present in `AstBuilderVisitor.java`.
+The following refined steps should be undertaken to resolve these outstanding compilation errors:
 
-2.  **Define `extractActionReferenceNodes` Method:**
-    *   Implement the `extractActionReferenceNodes(SSoTParser.ActionReferenceListContext ctx)` method in `AstBuilderVisitor.java`. This method should parse the `ActionReferenceListContext` and return a `List<ActionReferenceNode>`.
+1.  **Fix Syntax Error in `AstBuilderVisitor.java`:**
+    *   Remove the extraneous `}` at the very end of `AstBuilderVisitor.java` (around line 1216).
 
-3.  **Fix AST Node Constructor Calls:**
-    *   For each "constructor ... is undefined" error in `AstBuilderVisitor.java` (for `InvokeCompletionHandler`, `ContextVariableNode`, `GuardDefinitionNode`, `StateNode`, `InvokeStateNode`, `AnnotationNode`):
-        *   Open the respective AST node's Java file.
-        *   Compare the declared constructor signature(s) with the arguments being passed in `AstBuilderVisitor.java`.
-        *   Adjust the constructor call in `AstBuilderVisitor.java` or update the AST node's constructor if it's incorrect for its intended use.
+2.  **Correct `TransitionNode` Constructor Call:**
+    *   In `AstBuilderVisitor.java` (around line 865, in `visitIfTransitionStatement`), ensure the `new TransitionNode(...)` call precisely matches the 10-argument constructor defined in `TransitionNode.java`:
+        `TransitionNode(Optional<Long> id, String event, TargetStateNode targetState, Optional<GuardReferenceNode> condition, List<ActionReferenceNode> actions, List<GuardReferenceNode> guards, List<String> allowedActors, Optional<DurationNode> delay, TransitionType type, Map<String, Object> annotationsMap)`
+    *   Verify argument order and types meticulously. The linter previously indicated a type mismatch for the `condition` argument, suggesting an order or type issue there.
+    *   Apply similar corrections to `visitOnTransition` and `visitAfterTransition` to use this new constructor.
 
-4.  **Implement Missing Methods on AST Nodes:**
-    *   Add `getActualValue()` to `ValueNode.java` (and its implementations) to return the underlying Java value.
-    *   Add `getFields()` to `ObjectValueNode.java` to return its `Map<String, ValueNode>`.
+3.  **Address `RefValueNode` and `PrimitiveTypeNode.PrimitiveType.BOOLEAN` Issues:**
+    *   Confirm `RefValueNode.java` is `public class RefValueNode...` and its package is `ssot_parser.ast.values`. Ensure the import in `AstBuilderVisitor.java` is correct.
+    *   Verify `PrimitiveTypeNode.java` correctly defines `public enum PrimitiveType { ..., BOOLEAN, ... }` and is properly imported in `AstBuilderVisitor.java`.
 
-5.  **Resolve ANTLR Context Method Mismatches (If Any Remain):**
-    *   Systematically review any remaining errors related to undefined methods on ANTLR context objects.
-    *   Consult `SSoT.g4` and the generated `target/generated-sources/antlr4/ssot_parser/SSoTParser.java` to ensure `AstBuilderVisitor.java` uses the correct context methods and access patterns.
+4.  **Correct `InvokeStateNode` and `AnnotationNode` Constructor Calls:**
+    *   Consult `InvokeStateNode.java` and `AnnotationNode.java` for their exact constructor signatures.
+    *   Modify the calls in `AstBuilderVisitor.java` (lines 966 for `InvokeStateNode`, lines 1078 and 1104 for `AnnotationNode`) to match.
 
-6.  **Iterative Compilation:**
-    *   After each targeted fix or set of fixes, run `mvn clean compile -e -X`. This will help track progress and identify new errors as they surface.
+5.  **Implement `ValueNode.getActualValue()` and `ObjectValueNode.getFields()`:**
+    *   Define `Object getActualValue();` in the `ValueNode` interface (or abstract class).
+    *   Implement this method in all concrete subclasses of `ValueNode` (e.g., `StringValueNode`, `NumberValueNode`, `RefValueNode`, `ObjectValueNode`, `ArrayValueNode`, `BooleanValueNode`, `NullValueNode`) to return their specific underlying Java value.
+    *   Add `public Map<String, ValueNode> getFields()` to `ObjectValueNode.java`.
+    *   Update `AstBuilderVisitor.java` (lines 1087, 1089) to use these methods.
+
+6.  **Fix `HistoryStateNode.HistoryType` and `StateTargetNode` Usage:**
+    *   Ensure `HistoryStateNode.java` defines `public enum HistoryType { SHALLOW, DEEP }` and it's imported/used correctly in `AstBuilderVisitor.java` (line 981).
+    *   In `AstBuilderVisitor.java` (line 1026), change `new StateTargetNode(...)` to `new TargetStateNode(...)`.
+
+7.  **Define `ValueNodeType.REFERENCE` (if needed):**
+    *   If `RefValueNode` uses `ValueNodeType.REFERENCE`, ensure the `ValueNodeType` enum (likely in `ssot_parser.ast.values`) defines this constant.
+
+8.  **Iterative Compilation:**
+    *   After each targeted fix, run `mvn clean compile -e -X`. This will help track progress and catch new errors as they surface.
 
 ## 今後のステップ (ロードマップ案)
 
-1.  **(最優先) `AstBuilderVisitor.java` のコンパイルエラー解消:**
+1.  **(最優先) `AstBuilderVisitor.java` のコンパイルエラー完全解消:**
     *   上記「Next Steps to Achieve Successful Compilation」に記載されているタスクを完了し、`mvn clean compile` がエラーなく成功するようにする。
-2.  **(継続中・重要) 状態マシン関連の AST 構築に関するユニットテストを拡充する:**
+2.  **(重要) `visitOnTransition` および `visitAfterTransition` の更新:**
+    *   `AstBuilderVisitor.java` 内の `visitOnTransition` および `visitAfterTransition` メソッドをリファクタリングし、新しい `TransitionNode` のコンストラクタを使用するようにする。これには、イベント名、遅延 (`DurationNode` のパース)、ターゲット状態、および `TransitionSpecNode` からアクション、ガードなどを適切に抽出する処理が含まれる。
+3.  **(継続中・重要) 状態マシン関連の AST 構築に関するユニットテストを拡充する:**
     *   `AstBuilderVisitor.java` のコンパイルが成功した後、特に `StateNode`, `MachineNode`, `TransitionNode` および関連するビジターメソッドのロジックに対して、包括的なユニットテストを作成・実行する。
-3.  **(次点) AST 検証の強化 (State Machine 中心):**
+4.  **(次点) AST 検証の強化 (State Machine 中心):**
     *   状態マシン内の状態遷移の妥当性、参照されている Action/Guard/Context/Invoke/State の存在確認、初期状態の検証など、意味論的な検証を `AstValidator` に追加する。
-4.  **アノテーション処理の拡充:** `@id` や各種 `$annotation` をパースし、対応する AST ノードに情報を付加するロジックを確認・拡充する。検証ロジックでも利用する。
-5.  **Service/Interface の Visitor/AST 実装:** `services` ブロック内の要素を処理する Visitor と AST ノードを実装する。
-6.  **テストの導入と拡充:** 特に Service/Interface の AST 構築と検証を中心に、ユニットテストを追加する。
-7.  **エラーハンドリングの強化:** パースエラーや AST 検証エラーをより分かりやすく報告するように改善する。
-8.  **その他のブロックの Visitor/AST 実装:** `actors`, `communication`, `deployment_config`, `dependencies` ブロックに対応する Visitor と AST ノードを実装する。
-9.  **Imports の処理:** `import` 文を解釈し、別ファイルの定義を解決できるようにする。
-10. **コード生成器の実装:** AST からターゲット言語 (例: Mermaid グラフ定義) を出力する機能を追加する (初期段階)。
+5.  **アノテーション処理の拡充:** `@id` や各種 `$annotation` をパースし、対応する AST ノードに情報を付加するロジックを確認・拡充する。検証ロジックでも利用する。
+6.  **Service/Interface の Visitor/AST 実装:** `services` ブロック内の要素を処理する Visitor と AST ノードを実装する。
+7.  **テストの導入と拡充:** 特に Service/Interface の AST 構築と検証を中心に、ユニットテストを追加する。
+8.  **エラーハンドリングの強化:** パースエラーや AST 検証エラーをより分かりやすく報告するように改善する。
+9.  **その他のブロックの Visitor/AST 実装:** `actors`, `communication`, `deployment_config`, `dependencies` ブロックに対応する Visitor と AST ノードを実装する。
+10. **Imports の処理:** `import` 文を解釈し、別ファイルの定義を解決できるようにする。
+11. **コード生成器の実装:** AST からターゲット言語 (例: Mermaid グラフ定義) を出力する機能を追加する (初期段階)。
 
 ## ビルドと実行
 
