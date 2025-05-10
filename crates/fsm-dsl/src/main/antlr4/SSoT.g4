@@ -513,6 +513,44 @@ ON_EXIT: 'onExit';
 OUTPUT: 'output'; // Added for invokeOutputMapping
 DESCRIPTION: 'description'; // Added for annotations
 FEATURES: 'features'; // Used in Rust dependencies
+IF: 'if'; // Used in if-transitions
+
+// START ADDED TOKENS (from annotationName for linter fix)
+ASYNCAPI_OUT: 'asyncapi_out';
+AVRO_OUT: 'avro_out';
+CAPNP_OUT: 'capnp_out';
+COMMUNICATESWITH: 'communicatesWith';
+COMPLEXITY: 'complexity';
+DB: 'db';
+DEFAULT: 'default';
+DOT_OUT: 'dot_out';
+DRIZZLE_OUT: 'drizzle_out';
+FINAL: 'final';
+GRAPHQL_OUT: 'graphql_out';
+GRPC_OUT: 'grpc_out';
+IMPLEMENTS: 'implements';
+INPUT: 'input'; // For annotations, also used in invokeInputMapping
+JSONSCHEMA_OUT: 'jsonschema_out';
+MERMAID_OUT: 'mermaid_out';
+META: 'meta';
+ONDONE: 'onDone';
+ONERROR: 'onError';
+OPENAPI_OUT: 'openapi_out';
+OPERATIONID: 'operationId';
+PRISMA_OUT: 'prisma_out';
+PROTO_OUT: 'proto_out';
+PUBLISHES: 'publishes';
+RESPONSIBLETEAM: 'responsibleTeam';
+ROUTE: 'route';
+SQL_OUT: 'sql_out';
+SRC: 'src'; // For annotations, also used in invokeSrc
+TAGS: 'tags';
+TS_OUT: 'ts_out';
+TYPE: 'type'; // For annotations
+VALIDATE: 'validate';
+VERSION: 'version'; // For annotations
+ZOD_OUT: 'zod_out';
+// END ADDED TOKENS
 
 // Primitive Types (used in parser rules via primitiveTypeName)
 T_U8: 'u8'; T_U16: 'u16'; T_U32: 'u32'; T_U64: 'u64';
