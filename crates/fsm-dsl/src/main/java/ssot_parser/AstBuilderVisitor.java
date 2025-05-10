@@ -236,93 +236,108 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     @Override
     public AstNode visitMachineDefinition(MachineDefinitionContext ctx) {
-        String machineName = ctx.machineHeader().ID().getText();
-        Optional<Long> id = extractId(ctx.machineHeader().annotation());
-        List<AnnotationNode> headerAnnotations = extractAnnotations(ctx.machineHeader().annotation());
-        String initialStateName = ctx.machineHeader().initialStateSpec().ID().getText();
+        String machineName = ctx.ID().getText(); // Assuming machineDefinition rule starts with MACHINE ID
+        List<AnnotationNode> allMachineAnnotations = new ArrayList<>();
+        Optional<Long> id = Optional.empty();
+        String initialStateName = null; // Must be found via $initial annotation or similar
+
+        // Process annotations on the MACHINE ID line itself, if any in grammar
+        // If machine rule is `MACHINE ID annotation* LBRACE ...`
+        if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
+            List<AnnotationNode> machineHeaderAnnos = extractAnnotations(ctx.annotation());
+            allMachineAnnotations.addAll(machineHeaderAnnos);
+            id = extractIdFromList(machineHeaderAnnos);
+            // Look for $initial state annotation, e.g., $initial("SomeState")
+            initialStateName = findAnnotationValue(machineHeaderAnnos, "$initial").orElse(null);
+        }
 
         ContextNode contextNode = null;
-        if (ctx.machineBody().contextBlock() != null) {
-            contextNode = (ContextNode) visitContextBlock(ctx.machineBody().contextBlock());
-        }
-
         List<ActionDefinitionNode> actions = new ArrayList<>();
-        if (ctx.machineBody().actionsBlock() != null && ctx.machineBody().actionsBlock().actionDefinition() != null) {
-            for (ActionDefinitionContext actionCtx : ctx.machineBody().actionsBlock().actionDefinition()) {
-                actions.add((ActionDefinitionNode) visitActionDefinition(actionCtx));
-            }
-        }
-
         List<GuardDefinitionNode> guards = new ArrayList<>();
-        if (ctx.machineBody().guardsBlock() != null && ctx.machineBody().guardsBlock().guardDefinition() != null) {
-            for (GuardDefinitionContext guardCtx : ctx.machineBody().guardsBlock().guardDefinition()) {
-                guards.add((GuardDefinitionNode) visitGuardDefinition(guardCtx));
-            }
-        }
-
         List<InvokeDefinitionNode> invokes = new ArrayList<>();
-        if (ctx.machineBody().invokesBlock() != null && ctx.machineBody().invokesBlock().invokeDefinition() != null) {
-            for (InvokeDefinitionContext invokeCtx : ctx.machineBody().invokesBlock().invokeDefinition()) {
-                invokes.add((InvokeDefinitionNode) visitInvokeDefinition(invokeCtx));
-            }
-        }
+        List<AstNode> topLevelStates = new ArrayList<>(); // For StateNode and HistoryStateNode
 
-        // Changed to List<AstNode> to hold both StateNode and HistoryStateNode
-        List<AstNode> topLevelStates = new ArrayList<>();
-        if (ctx.machineBody().statesBlock() != null && ctx.machineBody().statesBlock().stateDefinitionOrHistoryState() != null) {
-            for (StateDefinitionOrHistoryStateContext stateOrHistCtx : ctx.machineBody().statesBlock().stateDefinitionOrHistoryState()) {
-                if (stateOrHistCtx.stateDefinition() != null) {
-                    AstNode stateNode = visitStateDefinition(stateOrHistCtx.stateDefinition());
-                    if (stateNode != null) {
-                        topLevelStates.add(stateNode);
+        // Process machineBodyElement*
+        if (ctx.machineBodyElement() != null) {
+            for (MachineBodyElementContext bodyElCtx : ctx.machineBodyElement()) {
+                if (bodyElCtx.contextDefinition() != null) {
+                    contextNode = (ContextNode) visitContextDefinition(bodyElCtx.contextDefinition());
+                } else if (bodyElCtx.actionsDefinition() != null) {
+                    // visitActionsDefinition returns a BlockContainerNode
+                    BlockContainerNode actionsContainer = (BlockContainerNode) visitActionsDefinition(bodyElCtx.actionsDefinition());
+                    actionsContainer.getChildren().forEach(child -> actions.add((ActionDefinitionNode) child));
+                } else if (bodyElCtx.guardsDefinition() != null) {
+                    // visitGuardsDefinition returns a BlockContainerNode
+                    BlockContainerNode guardsContainer = (BlockContainerNode) visitGuardsDefinition(bodyElCtx.guardsDefinition());
+                    guardsContainer.getChildren().forEach(child -> guards.add((GuardDefinitionNode) child));
+                } else if (bodyElCtx.invokesDefinition() != null) {
+                    // visitInvokesDefinition returns a BlockContainerNode
+                    BlockContainerNode invokesContainer = (BlockContainerNode) visitInvokesDefinition(bodyElCtx.invokesDefinition());
+                    invokesContainer.getChildren().forEach(child -> invokes.add((InvokeDefinitionNode) child));
+                } else if (bodyElCtx.statesDefinition() != null) {
+                    // visitStatesDefinition is expected to return a BlockContainerNode containing StateNode/HistoryStateNode
+                    BlockContainerNode statesContainer = (BlockContainerNode) visitStatesDefinition(bodyElCtx.statesDefinition());
+                    if (statesContainer != null) {
+                        topLevelStates.addAll(statesContainer.getChildren()); // children are AstNode (StateNode or HistoryStateNode)
                     }
-                } else if (stateOrHistCtx.historyStateDefinition() != null) {
-                     AstNode historyNode = visitHistoryStateDefinition(stateOrHistCtx.historyStateDefinition());
-                     if (historyNode != null) {
-                        topLevelStates.add(historyNode);
-                     }
+                } else if (bodyElCtx.annotation() != null) {
+                    // Collect annotations defined directly inside the machine body
+                    allMachineAnnotations.add((AnnotationNode) visitAnnotation(bodyElCtx.annotation()));
                 }
             }
         }
-        Map<String, Object> machineAnnotationsMap = mapAnnotations(headerAnnotations);
-        // Assuming MachineNode constructor is updated to accept List<AstNode> for states
-        return new MachineNode(id, machineName, machineAnnotationsMap, contextNode, actions, guards, invokes, topLevelStates, initialStateName);
-    }
 
-    @Override
-    public AstNode visitContextBlock(ContextBlockContext ctx) {
-        List<ContextVariableNode> variables = new ArrayList<>();
-        if (ctx.contextVariableDefinition() != null) {
-            for (ContextVariableDefinitionContext varCtx : ctx.contextVariableDefinition()) {
-                variables.add((ContextVariableNode) visitContextVariableDefinition(varCtx));
+        if (initialStateName == null) {
+            System.err.println("Warning: Machine '" + machineName + "' does not have an $initial state specified.");
+            // Optionally, default to the first state if any, though explicit is better.
+            if (!topLevelStates.isEmpty() && topLevelStates.get(0) instanceof StateNode) {
+                initialStateName = ((StateNode)topLevelStates.get(0)).getStateName();
+                 System.err.println("Warning: Defaulting initial state for machine '" + machineName + "' to first state: " + initialStateName);
             }
         }
-        // Assuming ContextNode constructor (id, variables, annotations)
-        return new ContextNode(extractId(ctx.annotation()), variables, mapAnnotations(extractAnnotations(ctx.annotation())));
+
+        return new MachineNode(id, machineName, initialStateName, Optional.ofNullable(contextNode), actions, guards, invokes, topLevelStates, allMachineAnnotations);
     }
 
     @Override
-    public AstNode visitContextVariableDefinition(ContextVariableDefinitionContext ctx) {
-        String varName = ctx.ID().getText();
-        ssot_parser.ast.type.TypeNode type = (ssot_parser.ast.type.TypeNode) visitTypeName(ctx.typeName());
-        Optional<Long> id = extractId(ctx.annotation());
-        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
-        Optional<ssot_parser.ast.values.ValueNode> defaultValue = Optional.empty();
-        if (ctx.value() != null) {
-           defaultValue = Optional.ofNullable((ssot_parser.ast.values.ValueNode) visitValue(ctx.value()));
+    public AstNode visitContextDefinition(ContextDefinitionContext ctx) {
+        List<ContextVariableNode> variables = new ArrayList<>();
+        List<AnnotationNode> contextAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
+        Optional<Long> contextId = extractIdFromList(contextAnnotations);
+
+        if (ctx.contextField() != null) {
+            for (ContextFieldContext varCtx : ctx.contextField()) {
+                variables.add((ContextVariableNode) visitContextField(varCtx));
+            }
         }
+        return new ContextNode(contextId, variables, contextAnnotations);
+    }
+
+    @Override
+    public AstNode visitContextField(ContextFieldContext ctx) { // Renamed from visitContextVariableDefinition
+        String varName = ctx.ID().getText();
+        ssot_parser.ast.type.TypeNode type = (ssot_parser.ast.type.TypeNode) visitTypeExpr(ctx.typeExpr()); // Changed from typeName to typeExpr
+        List<AnnotationNode> annotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
+        Optional<Long> id = extractIdFromList(annotations);
+
+        Optional<ssot_parser.ast.values.ValueNode> defaultValue = Optional.empty();
+        // Grammar for contextField: ID COLON typeExpr annotation* (LBRACE annotation* RBRACE)? SEMI
+        // It does not seem to have a direct value assignment for default value here.
+        // Default values might be specified via an annotation if needed.
+
         return new ContextVariableNode(id, varName, type, annotations, defaultValue);
     }
 
     @Override
-    public AstNode visitActionsBlock(ActionsBlockContext ctx) {
-        List<ActionDefinitionNode> actionDefs = new ArrayList<>();
+    public AstNode visitActionsDefinition(ActionsDefinitionContext ctx) { // Renamed from visitActionsBlock
+        List<AstNode> actionDefs = new ArrayList<>();
         if (ctx.actionDefinition() != null) {
             for (ActionDefinitionContext actionDefCtx : ctx.actionDefinition()) {
-                actionDefs.add((ActionDefinitionNode) visitActionDefinition(actionDefCtx));
+                actionDefs.add(visitActionDefinition(actionDefCtx));
             }
         }
-        return new BlockContainerNode("actions", new ArrayList<>(actionDefs));
+        List<AnnotationNode> blockAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
+        return new BlockContainerNode("actions", actionDefs, blockAnnotations);
     }
 
     @Override
@@ -335,14 +350,15 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
     @Override
-    public AstNode visitGuardsBlock(GuardsBlockContext ctx) {
-        List<GuardDefinitionNode> guardDefs = new ArrayList<>();
+    public AstNode visitGuardsDefinition(GuardsDefinitionContext ctx) { // Renamed from visitGuardsBlock
+        List<AstNode> guardDefs = new ArrayList<>();
         if (ctx.guardDefinition() != null) {
             for (GuardDefinitionContext guardDefCtx : ctx.guardDefinition()) {
-                guardDefs.add((GuardDefinitionNode) visitGuardDefinition(guardDefCtx));
+                guardDefs.add(visitGuardDefinition(guardDefCtx));
             }
         }
-        return new BlockContainerNode("guards", new ArrayList<>(guardDefs));
+        List<AnnotationNode> blockAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
+        return new BlockContainerNode("guards", guardDefs, blockAnnotations);
     }
 
     @Override
@@ -360,14 +376,15 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
      @Override
-    public AstNode visitInvokesBlock(InvokesBlockContext ctx) {
-        List<InvokeDefinitionNode> invokeDefs = new ArrayList<>();
+    public AstNode visitInvokesDefinition(InvokesDefinitionContext ctx) { // Renamed from visitInvokesBlock
+        List<AstNode> invokeDefs = new ArrayList<>();
         if (ctx.invokeDefinition() != null) {
             for (InvokeDefinitionContext invokeDefCtx : ctx.invokeDefinition()) {
-                invokeDefs.add((InvokeDefinitionNode) visitInvokeDefinition(invokeDefCtx));
+                invokeDefs.add(visitInvokeDefinition(invokeDefCtx));
             }
         }
-        return new BlockContainerNode("invokes", new ArrayList<>(invokeDefs));
+        List<AnnotationNode> blockAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
+        return new BlockContainerNode("invokes", invokeDefs, blockAnnotations);
     }
 
      @Override
@@ -427,43 +444,27 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
      }
 
      @Override
-     public AstNode visitStatesBlock(StatesBlockContext ctx) {
-         System.out.println("Visiting States Block (likely for machine's top-level states or direct nested states)");
+     public AstNode visitStatesDefinition(StatesDefinitionContext ctx) {
+         System.out.println("Visiting StatesDefinition (for machine's top-level states or nested states)");
          List<AstNode> stateNodes = new ArrayList<>();
-         if (ctx.stateDefinition() != null) {
-             for (StateDefinitionContext stateCtx : ctx.stateDefinition()) {
-                 AstNode stateNode = visitStateDefinition(stateCtx); // This is recursive if stateDefinition calls statesBlock
-                 if (stateNode != null) {
-                     stateNodes.add(stateNode);
+         if (ctx.stateDefinitionOrHistoryState() != null) { // Changed from stateDefinition()
+             for (StateDefinitionOrHistoryStateContext stateOrHistCtx : ctx.stateDefinitionOrHistoryState()) { // Changed context type
+                 if (stateOrHistCtx.stateDefinition() != null) {
+                     AstNode stateNode = visitStateDefinition(stateOrHistCtx.stateDefinition());
+                     if (stateNode != null) {
+                         stateNodes.add(stateNode);
+                     }
+                 } else if (stateOrHistCtx.historyStateDefinition() != null) {
+                     AstNode historyNode = visitHistoryStateDefinition(stateOrHistCtx.historyStateDefinition());
+                     if (historyNode != null) {
+                         stateNodes.add(historyNode);
+                     }
                  }
              }
          }
-         // Annotations on the block itself, if any.
-         // List<AnnotationNode> blockAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
-         // Here, we are returning a container. The caller (e.g. visitMachineDefinition or visitStateDefinition for nested)
-         // will unpack this.
-         return new BlockContainerNode("states", stateNodes /*, blockAnnotations */); // Assuming BlockContainerNode can take annotations
+         List<AnnotationNode> blockAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
+         return new BlockContainerNode("states", stateNodes, blockAnnotations);
      }
-
-    // New method based on grammar rule `statesDefinition`
-    // This is very similar to visitStatesBlock. The difference is the context type.
-    // If SSoT.g4 `statesDefinition` rule maps to `StatesDefinitionContext` by ANTLR
-    public AstNode visitStatesDefinition(StatesDefinitionContext ctx) {
-        System.out.println("Visiting StatesDefinition (likely for nested states via stateBodyElement)");
-        List<AstNode> definedStates = new ArrayList<>();
-        if (ctx.stateDefinition() != null) {
-            for (StateDefinitionContext stateCtx : ctx.stateDefinition()) {
-                AstNode stateNode = visitStateDefinition(stateCtx); // Recursive call
-                if (stateNode != null) {
-                    definedStates.add(stateNode);
-                }
-            }
-        }
-        // Annotations for the 'states { ... }' block itself
-        List<AnnotationNode> blockAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
-        // Return a container; the caller (visitStateDefinition's loop) will unpack this.
-        return new BlockContainerNode("states", definedStates, blockAnnotations);
-    }
 
     @Override
     public AstNode visitStateDefinition(StateDefinitionContext ctx) {
@@ -515,6 +516,11 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                     AstNode afterTransNode = visitAfterTransition(itemCtx.afterTransition());
                     if (afterTransNode instanceof TransitionNode) {
                         eventHandlers.add((TransitionNode) afterTransNode);
+                    }
+                } else if (itemCtx.ifTransitionStatement() != null) {
+                    AstNode ifTransNode = visitIfTransitionStatement(itemCtx.ifTransitionStatement());
+                    if (ifTransNode instanceof TransitionNode) {
+                        ifTransitions.add((TransitionNode) ifTransNode);
                     }
                 } else if (itemCtx.statesDefinition() != null) { // Grammar: statesDefinition
                     hasNestedStatesOrHistory = true;
@@ -590,6 +596,49 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
         this.currentStateName = null;
         return stateNode;
+    }
+
+    // New visitor method for ifTransitionStatement
+    public AstNode visitIfTransitionStatement(IfTransitionStatementContext ctx) {
+        List<AnnotationNode> annotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
+        Optional<Long> id = extractIdFromList(annotations);
+
+        // condition=guardReference
+        String guardName = ctx.condition().getText(); // guardReference.getText() should give the full guard name e.g. myGuard or guards.myGuard
+
+        TransitionTarget target = null;
+        List<String> actions = Collections.emptyList();
+
+        if (ctx.transitionSpec() != null) {
+            TransitionSpecContext spec = ctx.transitionSpec();
+            if (spec.transitionTarget() != null) {
+                target = (TransitionTarget) visitTransitionTarget(spec.transitionTarget());
+            }
+            if (spec.actionReferenceList() != null) {
+                actions = extractActionReferences(spec.actionReferenceList());
+            }
+            // Annotations on transitionSpec itself can be merged if necessary, or TransitionNode can hold them separately.
+            // For now, using annotations from the ifTransitionStatement level.
+        }
+
+        String targetStateName = "";
+        if (target instanceof StateTarget) {
+            targetStateName = ((StateTarget) target).getStateName();
+        } else if (target instanceof HistoryTarget) {
+            targetStateName = ".history"; // Or however HistoryTarget resolves
+        }
+
+        // For if-transitions, the "event" is the condition itself, or we use a synthetic event name.
+        // The guardName from the IF clause is the primary condition.
+        return new TransitionNode(
+                id,
+                this.currentStateName, // sourceStateName
+                "@IF:" + guardName,      // synthetic event name indicating a conditional transition
+                targetStateName,        // targetStateName
+                Optional.of(guardName), // conditionRef
+                actions,
+                annotations
+        );
     }
 
     private Optional<Long> extractIdFromList(List<AnnotationNode> annotations) {

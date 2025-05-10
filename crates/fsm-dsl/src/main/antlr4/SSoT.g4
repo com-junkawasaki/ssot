@@ -260,25 +260,74 @@ invokesDefinition
 
 // Invoke definition details primarily via annotations
 invokeDefinition
-    : ID annotation* LBRACE annotation* RBRACE
+    : ID annotation* LBRACE annotation* invokeDefinitionBody? RBRACE // Added invokeDefinitionBody
     ;
 
+// Added rule for content of invokeDefinition
+invokeDefinitionBody
+    : invokeAttribute (SEMI? invokeAttribute)* // Allow attributes separated by optional semicolon
+    ;
+
+// Added rule for individual attributes within invokeDefinition
+invokeAttribute
+    : invokeSrc
+    | invokeInputMapping
+    | invokeOutputMapping
+    | invokeOnDone
+    | invokeOnError
+    | annotation // Allow annotations directly as attributes
+    ;
+
+invokeSrc : SRC COLON invokeSource ;
+invokeInputMapping : INPUT COLON LBRACE keyValuePairList? RBRACE ;
+invokeOutputMapping : OUTPUT COLON LBRACE keyValuePairList? RBRACE ; // Assuming similar structure for output
+invokeOnDone : ONDONE COLON invokeCompletion ;
+invokeOnError : ONERROR COLON invokeCompletion ;
+
+invokeCompletion
+    : annotation* (actionReferenceList | transitionSpec)
+    ;
+
+invokeSource
+    : STRING // e.g. "serviceName.methodName" or "actorName"
+    | expressionValue // For dynamic/reference based source
+    ;
+
+expressionValue // A placeholder for more complex expressions if needed later
+    : value
+    ;
+
+keyValuePairList
+    : keyValuePair (COMMA keyValuePair)*
+    ;
+
+keyValuePair
+    : STRING COLON value // Key is always a string
+    ;
+
+
 statesDefinition
-    : STATES annotation* LBRACE annotation* stateDefinition* RBRACE
+    : STATES annotation* LBRACE annotation* stateDefinitionOrHistoryState* RBRACE // Changed stateDefinition*
+    ;
+
+stateDefinitionOrHistoryState // New rule
+    : stateDefinition
+    | historyDefinition
     ;
 
 stateDefinition
     : stateName=ID annotation* LBRACE annotation* stateBodyElement* RBRACE
     ;
 
-stateBodyElement
+stateBodyElement // This rule might need to be explicitly defined if not already, or alternatives added where it's used.
     : onEntryExit
     | invokeState
     | onTransition
     | afterTransition
-    | statesDefinition // Nested states
+    | ifTransitionStatement // Added new alternative
+    | statesDefinition      // Nested states block
     | historyDefinition
-    | annotation
+    | annotation            // Annotations directly in the state body
     ;
 
 // onEntry/onExit require semicolon
@@ -286,7 +335,12 @@ onEntryExit : (ON_ENTRY | ON_EXIT) actionReference SEMI;
 actionReference : referenceValue; // e.g., actionName, actions.actionName
 
 // Invocation within a state requires semicolon
-invokeState : INVOKE ID annotation* LBRACE annotation* RBRACE SEMI;
+invokeState : INVOKE ID annotation* LBRACE annotation* invokeStateBody? RBRACE SEMI; // invokeStateBody added for consistency
+
+// Added rule for content of invokeState, if needed for more complex invoke bodies
+invokeStateBody
+    : invokeAttribute (SEMI? invokeAttribute)*
+    ;
 
 onTransition // Requires semicolon
     : ON event=ID annotation* transitionSpec SEMI
@@ -294,6 +348,11 @@ onTransition // Requires semicolon
 
 afterTransition // Requires semicolon
     : AFTER duration annotation* transitionSpec SEMI
+    ;
+
+// New rule for If-Transitions
+ifTransitionStatement // Requires semicolon
+    : IF condition=guardReference annotation* transitionSpec SEMI
     ;
 
 // Transition requires target state, options must be in a block {}
@@ -332,7 +391,7 @@ duration
 
 // History definition requires semicolon
 historyDefinition
-    : HISTORY (SHALLOW | DEEP)? annotation* TARGET ID SEMI
+    : HISTORY historyType=(SHALLOW | DEEP)? annotation* (TARGET targetState=ID)? transitionSpec? SEMI // Made target optional, added transitionSpec
     ;
 
 // --- Deployment Configuration Block ---

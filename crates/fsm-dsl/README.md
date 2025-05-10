@@ -16,6 +16,8 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
 *   **AST 構築 (部分的):**
     *   主要な AST ノードクラス (`SsotRoot`, `TypeDefNode`, `FieldNode`, `EnumVariantNode`, `AnnotationNode` など) が `src/main/java/ssot_parser/ast/nodes/` に定義されています。
     *   状態マシン (`machines` ブロック) に関する AST ノード (`MachineNode`, `ContextNode`, `ActionDefinitionNode`, `GuardDefinitionNode`, `InvokeDefinitionNode`, `StateNode`, `TransitionNode`, `EventHandlerNode`, `ConditionalTransitionNode`, `InvokeStateNode`, `ValueNode`, `InvokeCompletionHandler`) が設計・実装されました。
+        *   `MachineNode` は、マシン直下の `states` ブロック内に `StateNode` と `HistoryStateNode` の両方を含むことができるように更新されました。(`List<AstNode> states` を保持)
+    *   `StateNode` は、条件付き遷移 (`if guard transition ...`) を表現するための `ifTransitions` (List<TransitionNode>) フィールドを持つように更新されました。
     *   `HistoryStateNode.java` がDSL仕様 (`history ID (DEEP)? (transitionSpec)? annotation*;`) と整合するように修正され、ID、名前、型、オプショナルなデフォルト遷移、アノテーションを持つようになりました。
     *   ANTLR の Visitor パターンを用いた `AstBuilderVisitor.java` が実装されており、Parse Tree から AST を構築します。
         *   `visitInvokeState` メソッドにおける `InvokeStateNode` の生成処理が修正され、正しいコンストラクタ引数（`invokeDefinitionRef` の抽出、`inputMapping`、`annotations` リストの直接使用、`onDone`/`onError` ハンドラの `Optional` 化を含む）を使用するようになりました。
@@ -38,28 +40,35 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
 
 The AST construction logic within `AstBuilderVisitor.java` has undergone a significant refactoring, primarily focused on the `visitStateDefinition` method. This change enables the creation of more detailed and feature-rich `StateNode` objects, supporting various state types (atomic, compound, parallel, final), nested states, history states, multiple invocations, and comprehensive transition handling.
 
-**Key Changes:**
+**Key Changes (Recent Session):**
 
-*   **`AstBuilderVisitor.visitStateDefinition`:** Rewritten to correctly parse and pass all necessary information to the `StateNode` constructor, including:
-    *   State identifiers (`id`, `name`, `displayName`).
-    *   Direct `List<AnnotationNode>`.
-    *   Resolved `StateType`.
-    *   `entryActions`, `exitActions`.
-    *   Lists for `invokeInvocations`, `eventHandlers` (transitions), `ifTransitions`.
-    *   `nestedStates` and `historyStates` for composite states.
-    *   `initialStateName` for composite states.
-*   **`AstBuilderVisitor.visitMachineDefinition`:** Updated to handle a mixed list of `StateNode` and `HistoryStateNode` objects, reflecting a more flexible state machine structure.
-*   **`AstBuilderVisitor.visitStatesBlock`:** Modified to support the mixed list of state types.
+*   **Grammar (`SSoT.g4`) Enhancements:**
+    *   The `statesDefinition` rule within a `machine` now supports a mixed list of `stateDefinition` and `historyDefinition` elements. This allows top-level history states within a machine.
+    *   A new `ifTransitionStatement` rule (`IF condition=guardReference annotation* transitionSpec SEMI;`) has been added to `stateBodyElement`. This allows defining conditional transitions directly within a state's body.
+    *   The `invokeDefinition` and `historyDefinition` rules were also refined for more detailed specifications.
+*   **`AstBuilderVisitor.java` Updates:**
+    *   `visitMachineDefinition`:
+        *   Refactored to correctly iterate over `machineBodyElementContext` (using ANTLR's generated contexts for `contextDefinition`, `actionsDefinition`, `guardsDefinition`, `invokesDefinition`, `statesDefinition`).
+        *   Correctly populates `MachineNode.states` with a list of `AstNode` (which can be `StateNode` or `HistoryStateNode`) based on the updated grammar.
+        *   The `MachineNode` constructor call now uses the correct argument order.
+        *   Initial state for a machine is now primarily determined by an `$initial` annotation on the `machine` line.
+    *   `visitStateDefinition`:
+        *   Now processes `ifTransitionStatement` from `stateBodyElement`.
+        *   Calls the new `visitIfTransitionStatement` method to parse these conditional transitions.
+        *   Populates the `StateNode.ifTransitions` list with `TransitionNode` objects generated from these statements.
+    *   `visitIfTransitionStatement` (New Method): Parses `IfTransitionStatementContext` and creates a `TransitionNode` (using a synthetic event like `@IF:<guardName>` and the specified guard as `conditionRef`).
+    *   `visitStatesDefinition`: Updated to process `stateDefinitionOrHistoryStateContext` according to grammar changes.
+    *   Renamed several block-handling visitor methods for clarity and consistency (e.g., `visitActionsBlock` to `visitActionsDefinition`).
 
 This refactoring is a crucial step towards a more expressive and capable FSM DSL. However, fully functional integration requires corresponding updates to `StateNode.java` and `MachineNode.java`, as well as the implementation of comprehensive unit tests.
 
 ## 今後のステップ (ロードマップ案)
 
-1.  **(最優先) `AstBuilderVisitor.visitStateDefinition` の完成と `StateNode` への対応:**
-    *   `AstBuilderVisitor.visitStateDefinition` をリファクタリングし、`StateNode.java` の現在の定義 (例: `List<InvokeStateNode> invokeInvocations`, `List<HistoryStateNode> historyStates`, `StateType type`, `List<EventHandlerNode> eventHandlers`, `List<ConditionalTransitionNode> ifTransitions`, `List<StateNode> nestedStates`, `initialStateName` など) に基づいて `StateNode` インスタンスを正確に構築するようにします。
-    *   これには、合成状態 (子の状態と履歴状態の処理、初期状態の指定)、並列状態 (リージョンの処理)、複数の `invoke` 定義、各種遷移タイプの分類と収集が含まれます。
-    *   `AstBuilderVisitor.visitMachineDefinition` を更新し、`StateNode` と `HistoryStateNode` の両方を含む状態リストを処理できるようにします。
-    *   状態マシン関連の AST 構築に関するユニットテストを拡充する (特に新しい `StateNode` 構造と `visitStateDefinition` のロジックに対して)。
+1.  **(最優先) ~~`AstBuilderVisitor.visitStateDefinition` の完成と `StateNode` への対応:~~** (完了)
+    *   ~~`AstBuilderVisitor.visitStateDefinition` をリファクタリングし、`StateNode.java` の現在の定義 (例: `List<InvokeStateNode> invokeInvocations`, `List<HistoryStateNode> historyStates`, `StateType type`, `List<EventHandlerNode> eventHandlers`, `List<ConditionalTransitionNode> ifTransitions`, `List<StateNode> nestedStates`, `initialStateName` など) に基づいて `StateNode` インスタンスを正確に構築するようにします。~~ (完了。`ifTransitions` は `List<TransitionNode>` として対応済み)
+    *   ~~これには、合成状態 (子の状態と履歴状態の処理、初期状態の指定)、並列状態 (リージョンの処理)、複数の `invoke` 定義、各種遷移タイプの分類と収集が含まれます。~~ (完了)
+    *   ~~`AstBuilderVisitor.visitMachineDefinition` を更新し、`StateNode` と `HistoryStateNode` の両方を含む状態リストを処理できるようにします。~~ (完了。`SSoT.g4` の文法も対応。)
+    *   **(継続中・最優先) 状態マシン関連の AST 構築に関するユニットテストを拡充する (特に新しい `StateNode` 構造、`MachineNode` 構造、`visitStateDefinition` および `visitMachineDefinition` のロジック、条件付き遷移、トップレベル履歴状態に対して)。**
 2.  **(次点) AST 検証の強化 (State Machine 中心):**
     *   状態マシン内の状態遷移の妥当性、参照されている Action/Guard/Context/Invoke/State の存在確認、初期状態の検証など、意味論的な検証を `AstValidator` に追加する。
 3.  **アノテーション処理の拡充:** `@id` や各種 `$annotation` をパースし、対応する AST ノードに情報を付加するロジックを確認・拡充する。検証ロジックでも利用する。
