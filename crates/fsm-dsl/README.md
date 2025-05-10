@@ -42,10 +42,11 @@ The AST construction logic within `AstBuilderVisitor.java` has undergone a signi
 
 **Key Changes (Recent Session):**
 
-*   **Grammar (`SSoT.g4`) Enhancements:**
+*   **Grammar (`SSoT.g4`) Enhancements & Linting:**
     *   The `statesDefinition` rule within a `machine` now supports a mixed list of `stateDefinition` and `historyDefinition` elements. This allows top-level history states within a machine.
     *   A new `ifTransitionStatement` rule (`IF condition=guardReference annotation* transitionSpec SEMI;`) has been added to `stateBodyElement`. This allows defining conditional transitions directly within a state's body.
     *   The `invokeDefinition` and `historyDefinition` rules were also refined for more detailed specifications.
+    *   **Significant linter error correction:** Resolved multiple ANTLR linter errors including label conflicts, implicit token definitions (by adding necessary keywords to the lexer), and ambiguities in optional block definitions. This makes the grammar more robust and prepares it for reliable parser generation.
 *   **`AstBuilderVisitor.java` Updates:**
     *   `visitMachineDefinition`:
         *   Refactored to correctly iterate over `machineBodyElementContext` (using ANTLR's generated contexts for `contextDefinition`, `actionsDefinition`, `guardsDefinition`, `invokesDefinition`, `statesDefinition`).
@@ -64,20 +65,21 @@ This refactoring is a crucial step towards a more expressive and capable FSM DSL
 
 ## 今後のステップ (ロードマップ案)
 
-1.  **(最優先) ~~`AstBuilderVisitor.visitStateDefinition` の完成と `StateNode` への対応:~~** (完了)
-    *   ~~`AstBuilderVisitor.visitStateDefinition` をリファクタリングし、`StateNode.java` の現在の定義 (例: `List<InvokeStateNode> invokeInvocations`, `List<HistoryStateNode> historyStates`, `StateType type`, `List<EventHandlerNode> eventHandlers`, `List<ConditionalTransitionNode> ifTransitions`, `List<StateNode> nestedStates`, `initialStateName` など) に基づいて `StateNode` インスタンスを正確に構築するようにします。~~ (完了。`ifTransitions` は `List<TransitionNode>` として対応済み)
-    *   ~~これには、合成状態 (子の状態と履歴状態の処理、初期状態の指定)、並列状態 (リージョンの処理)、複数の `invoke` 定義、各種遷移タイプの分類と収集が含まれます。~~ (完了)
-    *   ~~`AstBuilderVisitor.visitMachineDefinition` を更新し、`StateNode` と `HistoryStateNode` の両方を含む状態リストを処理できるようにします。~~ (完了。`SSoT.g4` の文法も対応。)
-    *   **(継続中・最優先) 状態マシン関連の AST 構築に関するユニットテストを拡充する (特に新しい `StateNode` 構造、`MachineNode` 構造、`visitStateDefinition` および `visitMachineDefinition` のロジック、条件付き遷移、トップレベル履歴状態に対して)。**
-2.  **(次点) AST 検証の強化 (State Machine 中心):**
+1.  **(最優先) ANTLR 文法の検証とパーサー生成:**
+    *   `SSoT.g4` から ANTLR を用いてパーサーとレキサーを再生成する (`mvn clean compile`)。
+    *   生成プロセスで新たなエラーや警告が出ないことを確認する。
+    *   サンプル `.ssot` ファイル (例: `test.ssot`, `temp_comm.ssot`, `temp_types.ssot`) を用いて、生成されたパーサーが正しく動作するか基本的なテストを行う。
+2.  **(継続中・重要) 状態マシン関連の AST 構築に関するユニットテストを拡充する:**
+    *   特に新しい `StateNode` 構造、`MachineNode` 構造、`visitStateDefinition` および `visitMachineDefinition` のロジック、条件付き遷移、トップレベル履歴状態に対して、包括的なユニットテストを作成・実行する。
+3.  **(次点) AST 検証の強化 (State Machine 中心):**
     *   状態マシン内の状態遷移の妥当性、参照されている Action/Guard/Context/Invoke/State の存在確認、初期状態の検証など、意味論的な検証を `AstValidator` に追加する。
-3.  **アノテーション処理の拡充:** `@id` や各種 `$annotation` をパースし、対応する AST ノードに情報を付加するロジックを確認・拡充する。検証ロジックでも利用する。
-4.  **Service/Interface の Visitor/AST 実装:** `services` ブロック内の要素を処理する Visitor と AST ノードを実装する。
-5.  **テストの導入と拡充:** 特に Service/Interface の AST 構築と検証を中心に、ユニットテストを追加する。
-6.  **エラーハンドリングの強化:** パースエラーや AST 検証エラーをより分かりやすく報告するように改善する。
-7.  **その他のブロックの Visitor/AST 実装:** `actors`, `communication`, `deployment_config`, `dependencies` ブロックに対応する Visitor と AST ノードを実装する。
-8.  **Imports の処理:** `import` 文を解釈し、別ファイルの定義を解決できるようにする。
-9.  **コード生成器の実装:** AST からターゲット言語 (例: Mermaid グラフ定義) を出力する機能を追加する (初期段階)。
+4.  **アノテーション処理の拡充:** `@id` や各種 `$annotation` をパースし、対応する AST ノードに情報を付加するロジックを確認・拡充する。検証ロジックでも利用する。
+5.  **Service/Interface の Visitor/AST 実装:** `services` ブロック内の要素を処理する Visitor と AST ノードを実装する。
+6.  **テストの導入と拡充:** 特に Service/Interface の AST 構築と検証を中心に、ユニットテストを追加する。
+7.  **エラーハンドリングの強化:** パースエラーや AST 検証エラーをより分かりやすく報告するように改善する。
+8.  **その他のブロックの Visitor/AST 実装:** `actors`, `communication`, `deployment_config`, `dependencies` ブロックに対応する Visitor と AST ノードを実装する。
+9.  **Imports の処理:** `import` 文を解釈し、別ファイルの定義を解決できるようにする。
+10. **コード生成器の実装:** AST からターゲット言語 (例: Mermaid グラフ定義) を出力する機能を追加する (初期段階)。
 
 ## ビルドと実行
 
