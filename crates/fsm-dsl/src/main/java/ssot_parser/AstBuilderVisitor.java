@@ -39,14 +39,13 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     @Override
     public AstNode visitFile(FileContext ctx) {
         System.out.println("Visiting File (was SsotDefinition)");
-        // Corrected SsotRoot instantiation based on its likely constructor
         SsotRoot root = new SsotRoot(
                 new ArrayList<>(), // imports
-                new ArrayList<>(), // typeDefs
+                new ArrayList<>(), // typeDefinitions
                 new ArrayList<>(), // serviceDefinitions
-                new ArrayList<>(), // machineNodes
-                new ArrayList<>(), // actorNodes (assuming)
-                // TODO: Add other top-level block lists like communication, deployment, dependencies
+                new ArrayList<>(), // machineDefinitions
+                new ArrayList<>(), // actorDefinitions
+                new ArrayList<>(), // communicationDefinitions
                 Optional.empty(),  // id
                 new HashMap<>()    // annotations
         );
@@ -54,7 +53,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
              ctx.annotation().forEach(annoCtx -> {
                  AnnotationNode annotation = (AnnotationNode) visitAnnotation(annoCtx);
-                 root.getAnnotations().put(annotation.getName(), annotation.getValue().orElse("true")); // Example storage
+                 root.getAnnotations().put(annotation.name, Optional.ofNullable(annotation.value).orElse(true));
                  System.out.println("  Found Root Annotation: " + annotation);
              });
         }
@@ -72,36 +71,32 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                     BlockContainerNode container = (BlockContainerNode) blockNode;
                     switch (container.blockType) {
                         case "types":
-                            container.getChildren().forEach(child -> root.getTypeDefs().add((TypeDefNode) child));
+                            container.getChildren().forEach(child -> root.getTypeDefinitions().add((TypeDefNode) child));
                             break;
                         case "services":
                             container.getChildren().forEach(child -> {
                                 if (child instanceof ServiceDefinitionNode) {
                                     root.getServiceDefinitions().add((ServiceDefinitionNode) child);
-                                } else if (child instanceof InterfaceDefinitionNode) {
-                                    // Assuming ServiceDefinitions list can hold InterfaceDefinitionNode or SsotRoot needs separate list
-                                    // For now, adding to service definitions as a placeholder.
-                                     System.err.println("InterfaceDefinitionNode encountered in services block, needs proper handling in SsotRoot.");
-                                     // root.getInterfaceDefinitions().add((InterfaceDefinitionNode) child);
+                                } else if (child instanceof InterfaceNode) {
+                                     System.err.println("InterfaceNode encountered in services block, needs proper handling in SsotRoot.");
+                                     // root.getInterfaceDefinitions().add((InterfaceNode) child);
                                 }
                             });
                             break;
                         case "machines":
-                            container.getChildren().forEach(child -> root.getMachineNodes().add((MachineNode) child));
+                            container.getChildren().forEach(child -> root.getMachineDefinitions().add((MachineNode) child));
                             break;
-                        // Add cases for other block types: actors, communication, etc.
                         default:
                             System.err.println("Warning: Unhandled block container type: " + container.blockType);
                             break;
                     }
-                } else if (blockNode instanceof TypeDefNode) { // Direct handling if not in container
-                     root.getTypeDefs().add((TypeDefNode) blockNode);
+                } else if (blockNode instanceof TypeDefNode) {
+                     root.getTypeDefinitions().add((TypeDefNode) blockNode);
                 } else if (blockNode instanceof ServiceDefinitionNode) {
                      root.getServiceDefinitions().add((ServiceDefinitionNode) blockNode);
                 } else if (blockNode instanceof MachineNode) {
-                     root.getMachineNodes().add((MachineNode) child); // Corrected from blockNode to child
+                     root.getMachineDefinitions().add((MachineNode) blockNode);
                 }
-                // Add other direct node types if necessary
             }
         }
         System.out.println("Finished Visiting File (was SsotDefinition)");
@@ -136,7 +131,6 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         List<AstNode> serviceDefs = new ArrayList<>();
          if (ctx.serviceDefinition() != null) {
             for (ServiceDefinitionContext serviceCtx : ctx.serviceDefinition()) {
-                // Ensure ServiceDefinitionNode is imported and cast correctly
                 AstNode serviceDef = visit(serviceCtx);
                 if (serviceDef instanceof ServiceDefinitionNode) {
                      serviceDefs.add(serviceDef);
@@ -147,12 +141,11 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          }
          if (ctx.interfaceDefinition() != null) {
              for (InterfaceDefinitionContext interfaceCtx : ctx.interfaceDefinition()) {
-                 // Ensure InterfaceDefinitionNode is imported and cast correctly
                  AstNode interfaceDef = visit(interfaceCtx);
-                 if (interfaceDef instanceof InterfaceDefinitionNode) {
+                 if (interfaceDef instanceof InterfaceNode) {
                     serviceDefs.add(interfaceDef);
                  } else {
-                     System.err.println("Expected InterfaceDefinitionNode, got: " + (interfaceDef != null ? interfaceDef.getClass().getName() : "null"));
+                     System.err.println("Expected InterfaceNode, got: " + (interfaceDef != null ? interfaceDef.getClass().getName() : "null"));
                  }
              }
          }
@@ -187,11 +180,17 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     @Override
     public AstNode visitStructDefinition(StructDefinitionContext ctx) {
         String structName = ctx.ID().getText();
-        Optional<Long> id = extractId(ctx.annotation());
-        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
+        Optional<Long> id = extractId(ctx.annotation()); // Annotations directly on STRUCT ID line
+        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation()); // These are annotations after STRUCT ID
         List<FieldNode> fields = new ArrayList<>();
-        if (ctx.structBody() != null && ctx.structBody().fieldDefinition() != null) {
-            for (FieldDefinitionContext fieldCtx : ctx.structBody().fieldDefinition()) {
+        
+        // The grammar is: STRUCT ID annotation* LBRACE annotation* fieldDefinition* RBRACE
+        // ctx.annotation() would typically give the first list (after ID).
+        // If there are annotations inside LBRACE, these need to be accessed carefully, e.g. if the grammar labels them
+        // or by inspecting all annotations and filtering. For now, assuming primary annotations are those after ID.
+        // The field definitions are accessed directly from the context if they exist.
+        if (ctx.fieldDefinition() != null) { // fieldDefinition is directly part of StructDefinitionContext
+            for (FieldDefinitionContext fieldCtx : ctx.fieldDefinition()) {
                 fields.add((FieldNode) visitFieldDefinition(fieldCtx));
             }
         }
@@ -201,11 +200,14 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     @Override
     public AstNode visitEnumDefinition(EnumDefinitionContext ctx) {
         String enumName = ctx.ID().getText();
-        Optional<Long> id = extractId(ctx.annotation());
-        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
+        Optional<Long> id = extractId(ctx.annotation()); // Annotations directly on ENUM ID line
+        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation()); // These are annotations after ENUM ID
         List<EnumVariantNode> variants = new ArrayList<>();
-        if (ctx.enumBody() != null && ctx.enumBody().enumVariant() != null) {
-            for (EnumVariantContext variantCtx : ctx.enumBody().enumVariant()) {
+
+        // Grammar: ENUM ID annotation* LBRACE annotation* enumVariant* RBRACE
+        // Similar to struct, enumVariants are accessed directly from the context.
+        if (ctx.enumVariant() != null) { // enumVariant is directly part of EnumDefinitionContext
+            for (EnumVariantContext variantCtx : ctx.enumVariant()) {
                 variants.add((EnumVariantNode) visitEnumVariant(variantCtx));
             }
         }
@@ -215,14 +217,10 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     @Override
     public AstNode visitFieldDefinition(FieldDefinitionContext ctx) {
         String fieldName = ctx.ID().getText();
-        ssot_parser.ast.type.TypeNode type = (ssot_parser.ast.type.TypeNode) visitTypeExpr(ctx.typeExpr());
+        ssot_parser.ast.type.TypeExprNode type = (ssot_parser.ast.type.TypeExprNode) visitTypeExpr(ctx.typeExpr());
         Optional<Long> id = extractId(ctx.annotation());
         List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
-        Optional<ssot_parser.ast.values.ValueNode> defaultValue = Optional.empty();
-        if (ctx.defaultValueSpec() != null && ctx.defaultValueSpec().value() != null) {
-            defaultValue = Optional.ofNullable((ssot_parser.ast.values.ValueNode) visitValue(ctx.defaultValueSpec().value()));
-        }
-        return new FieldNode(id, fieldName, type, annotations, defaultValue);
+        return new FieldNode(id, fieldName, type, annotations);
     }
 
      @Override
@@ -231,7 +229,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          Optional<Long> id = extractId(ctx.annotation());
          // Corrected: ensure annotation list is extracted only if annotations exist
          List<AnnotationNode> annotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
-         return new EnumVariantNode(id, variantName, annotations);
+         return new EnumVariantNode(id, annotations, variantName);
      }
 
     @Override
@@ -301,24 +299,30 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     @Override
     public AstNode visitContextDefinition(ContextDefinitionContext ctx) {
-        List<ContextVariableNode> variables = new ArrayList<>();
-        List<AnnotationNode> contextAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
-        Optional<Long> contextId = extractIdFromList(contextAnnotations);
+        List<AnnotationNode> contextAnnotations = new ArrayList<>(); // Annotations directly on the CONTEXT keyword line
+        if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
+             contextAnnotations = extractAnnotations(ctx.annotation());
+        }
 
-        if (ctx.contextField() != null) {
+        List<ContextVariableNode> variables = new ArrayList<>();
+        if (ctx.contextField() != null) { // Check if contextField is present
             for (ContextFieldContext varCtx : ctx.contextField()) {
                 variables.add((ContextVariableNode) visitContextField(varCtx));
             }
         }
-        return new ContextNode(contextId, variables, contextAnnotations);
+        // The ContextNode itself might not have an ID or annotations at its root in the AST model.
+        // Annotations from 'context annotation* {' are stored in 'contextAnnotations'.
+        // These might need to be added to the MachineNode or handled differently.
+        // For now, creating ContextNode with only the variables as per its likely design.
+        return new ContextNode(variables); // Passing List<ContextVariableNode>
     }
 
     @Override
     public AstNode visitContextField(ContextFieldContext ctx) { // Renamed from visitContextVariableDefinition
         String varName = ctx.ID().getText();
-        ssot_parser.ast.type.TypeNode type = (ssot_parser.ast.type.TypeNode) visitTypeExpr(ctx.typeExpr()); // Changed from typeName to typeExpr
+        ssot_parser.ast.type.TypeExprNode type = (ssot_parser.ast.type.TypeExprNode) visitTypeExpr(ctx.typeExpr()); // Changed TypeNode to TypeExprNode
+        Optional<Long> id = extractId(ctx.annotation());
         List<AnnotationNode> annotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
-        Optional<Long> id = extractIdFromList(annotations);
 
         Optional<ssot_parser.ast.values.ValueNode> defaultValue = Optional.empty();
         // Grammar for contextField: ID COLON typeExpr annotation* (LBRACE annotation* RBRACE)? SEMI
@@ -468,134 +472,111 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     @Override
     public AstNode visitStateDefinition(StateDefinitionContext ctx) {
-        String stateName = ctx.ID().getText(); // Corrected: stateName is from ID token
-        this.currentStateName = stateName;
+        currentStateName = ctx.ID().getText();
+        System.out.println("Visiting State: " + currentStateName);
 
-        List<AnnotationNode> annotationsList = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
-        Optional<Long> id = extractIdFromList(annotationsList); // Use helper that takes List<AnnotationNode>
-        String displayName = findAnnotationValue(annotationsList, "$name").orElse(stateName);
-        Optional<String> initialAnnotationValue = findAnnotationValue(annotationsList, "$initial");
-        boolean isExplicitlyParallel = findAnnotationValue(annotationsList, "$type").orElse("").equalsIgnoreCase("parallel");
-        boolean isExplicitlyFinal = annotationsList.stream().anyMatch(a -> "$final".equals(a.getName()) && "true".equalsIgnoreCase(String.valueOf(a.getValue().orElse("false"))));
+        List<AnnotationNode> stateAnnotations = new ArrayList<>();
+        if (ctx.annotation() != null) {
+            for (AnnotationContext annoCtx : ctx.annotation()) {
+                stateAnnotations.add((AnnotationNode) visitAnnotation(annoCtx));
+            }
+        }
+        Optional<Long> id = extractIdFromList(stateAnnotations);
+        Map<String, Object> namedAnnotations = extractAnnotationsMap(stateAnnotations.stream().filter(a -> !a.isIdAnnotation()).collect(Collectors.toList()));
 
 
-        // Initialize lists
-        List<String> entryActions = new ArrayList<>();
-        List<String> exitActions = new ArrayList<>();
-        List<InvokeStateNode> invokeInvocations = new ArrayList<>();
-        List<TransitionNode> eventHandlers = new ArrayList<>();
-        List<TransitionNode> ifTransitions = new ArrayList<>(); // Remains empty based on current grammar analysis for stateDefinition
-        List<StateNode> nestedStates = new ArrayList<>();
-        List<HistoryStateNode> historyStates = new ArrayList<>();
-        Optional<String> resolvedInitialStateName = initialAnnotationValue;
+        boolean isInitial = false;
+        boolean isFinal = false;
+        String description = null;
 
-        boolean hasNestedStatesOrHistory = false;
+        for (AnnotationNode a : stateAnnotations) {
+            if ("initial".equals(a.name) && a.value instanceof Boolean && (Boolean)a.value) { // field access
+                isInitial = true;
+            }
+            if ("final".equals(a.name) && a.value instanceof Boolean && (Boolean)a.value) { // field access
+                isFinal = true;
+            }
+            if ("description".equals(a.name) && a.value instanceof String) { // field access
+                description = (String) a.value; // field access
+            }
+        }
+        // Additional check in map for safety, though direct iteration is better
+        if (namedAnnotations.containsKey("initial") && Boolean.TRUE.equals(namedAnnotations.get("initial"))) isInitial = true;
+        if (namedAnnotations.containsKey("final") && Boolean.TRUE.equals(namedAnnotations.get("final"))) isFinal = true;
+        if (namedAnnotations.containsKey("description") && namedAnnotations.get("description") instanceof String) {
+            description = (String) namedAnnotations.get("description");
+        }
 
-        // Process stateBodyElement*
-        if (ctx.stateBodyElement() != null) {
-            for (StateBodyElementContext itemCtx : ctx.stateBodyElement()) {
-                if (itemCtx.onEntryExit() != null) {
-                    OnEntryExitContext entryExitCtx = itemCtx.onEntryExit();
-                    String actionName = entryExitCtx.actionReference().getText(); // Assumes actionReference().getText() is safe
-                    if (entryExitCtx.ON_ENTRY() != null) {
-                        entryActions.add(actionName);
-                    } else if (entryExitCtx.ON_EXIT() != null) {
-                        exitActions.add(actionName);
+
+        StateType stateType = StateType.NORMAL; // Default
+        if (isInitial) stateType = StateType.INITIAL;
+        if (isFinal) stateType = StateType.FINAL;
+        // TODO: Add parallel, compound, history state type detection from annotations if defined
+
+        List<AstNode> onEntry = new ArrayList<>();
+        List<AstNode> onExit = new ArrayList<>();
+        List<TransitionNode> transitions = new ArrayList<>();
+        List<InvokeStateNode> invokes = new ArrayList<>();
+        List<EventHandlerNode> eventHandlers = new ArrayList<>(); // For event-driven transitions / internal events
+
+        // Process stateBody elements
+        if (ctx.stateBody() != null && ctx.stateBody().stateBodyElement() != null) {
+            for (StateBodyElementContext elementCtx : ctx.stateBody().stateBodyElement()) {
+                if (elementCtx.onEntryExit() != null) {
+                    OnEntryExitContext onCtx = elementCtx.onEntryExit();
+                    List<String> actionRefs = extractActionReferences(onCtx.actionReferenceList());
+                    if (onCtx.ON_ENTRY() != null) {
+                        onEntry.add(new ActionReferencesNode(actionRefs)); // Assuming ActionReferencesNode exists
+                    } else if (onCtx.ON_EXIT() != null) {
+                        onExit.add(new ActionReferencesNode(actionRefs));
                     }
-                } else if (itemCtx.invokeState() != null) {
-                    AstNode invokeNode = visitInvokeState(itemCtx.invokeState());
-                    if (invokeNode instanceof InvokeStateNode) {
-                        invokeInvocations.add((InvokeStateNode) invokeNode);
+                } else if (elementCtx.onTransition() != null) {
+                    AstNode transitionNode = visitOnTransition(elementCtx.onTransition());
+                    if (transitionNode instanceof TransitionNode) {
+                        transitions.add((TransitionNode) transitionNode);
+                    } else if (transitionNode instanceof ConditionalTransitionNode) {
+                        // If visitOnTransition can return ConditionalTransitionNode directly
+                        // transitions.add((ConditionalTransitionNode) transitionNode); // Or handle separately
+                         System.err.println("ConditionalTransitionNode returned from onTransition, needs specific handling in StateNode's list or separate list.");
+
                     }
-                } else if (itemCtx.onTransition() != null) {
-                    AstNode onTransNode = visitOnTransition(itemCtx.onTransition());
-                    if (onTransNode instanceof TransitionNode) {
-                        eventHandlers.add((TransitionNode) onTransNode);
-                    }
-                } else if (itemCtx.afterTransition() != null) {
-                    AstNode afterTransNode = visitAfterTransition(itemCtx.afterTransition());
-                    if (afterTransNode instanceof TransitionNode) {
-                        eventHandlers.add((TransitionNode) afterTransNode);
-                    }
-                } else if (itemCtx.ifTransitionStatement() != null) {
-                    AstNode ifTransNode = visitIfTransitionStatement(itemCtx.ifTransitionStatement());
-                    if (ifTransNode instanceof TransitionNode) {
-                        ifTransitions.add((TransitionNode) ifTransNode);
-                    }
-                } else if (itemCtx.statesDefinition() != null) { // Grammar: statesDefinition
-                    hasNestedStatesOrHistory = true;
-                    AstNode visitedStatesBlock = visitStatesDefinition(itemCtx.statesDefinition());
-                    if (visitedStatesBlock instanceof BlockContainerNode) {
-                        ((BlockContainerNode) visitedStatesBlock).getChildren().forEach(child -> {
-                            if (child instanceof StateNode) {
-                                nestedStates.add((StateNode) child);
-                            } else {
-                                System.err.println("Warning: Unexpected node type in statesDefinition block: " + child.getClass().getName());
-                            }
-                        });
-                    }
-                } else if (itemCtx.historyDefinition() != null) { // Grammar: historyDefinition
-                    hasNestedStatesOrHistory = true;
-                    AstNode historyNode = visitHistoryDefinition(itemCtx.historyDefinition());
-                    if (historyNode instanceof HistoryStateNode) {
-                        historyStates.add((HistoryStateNode) historyNode);
-                    }
+                } else if (elementCtx.invokeState() != null) {
+                    invokes.add((InvokeStateNode) visitInvokeState(elementCtx.invokeState()));
+                } else if (elementCtx.eventHandler() != null) { // Assuming eventHandler rule exists
+                     eventHandlers.add((EventHandlerNode) visitEventHandler(elementCtx.eventHandler()));
+                } else if (elementCtx.stateDefinition() != null || elementCtx.historyDefinition() != null) {
+                    // Nested states - this indicates a compound state.
+                    // The current StateNode would need a list of child StateNodes.
+                    // This requires StateNode to support children, and stateType to be COMPOUND.
+                    System.err.println("Nested state/history found - needs StateNode to support children and be COMPOUND.");
+                    // Example: childStates.add(visit(elementCtx.stateDefinition() != null ? elementCtx.stateDefinition() : elementCtx.historyDefinition()));
                 }
-                // itemCtx.annotation() is ignored here, as state-level annotations are already processed.
-                // Annotations for specific elements are handled by their respective visit methods.
             }
         }
-
-        StateType resolvedType;
-        if (isExplicitlyFinal) {
-            resolvedType = StateType.FINAL;
-        } else if (isExplicitlyParallel) {
-            resolvedType = StateType.PARALLEL;
-            if (nestedStates.isEmpty() && !resolvedInitialStateName.isPresent()) {
-                 System.err.println("Warning: State '" + stateName + "' is $type('parallel') but has no nested states (regions) and no $initial annotation.");
-            }
-        } else if (hasNestedStatesOrHistory || !nestedStates.isEmpty() || !historyStates.isEmpty() || resolvedInitialStateName.isPresent()) {
-            // If it has nested state definitions, history states, or an explicit initial state for children, it's compound.
-            resolvedType = StateType.COMPOUND;
-        } else {
-            resolvedType = StateType.ATOMIC;
-        }
-
-        // If compound/parallel and no $initial, default to first child state if any
-        if ((resolvedType == StateType.COMPOUND || resolvedType == StateType.PARALLEL) && !resolvedInitialStateName.isPresent() && !nestedStates.isEmpty()) {
-            resolvedInitialStateName = Optional.of(nestedStates.get(0).getStateName());
-            // System.out.println("Info: State '" + stateName + "' is " + resolvedType + ". Defaulting initial state to first child: '" + nestedStates.get(0).getStateName() + "' as no $initial annotation found.");
-        }
-         // If it's compound but has no nested states and no explicit initial, it might be an issue or an atomic state effectively.
-        if ((resolvedType == StateType.COMPOUND || resolvedType == StateType.PARALLEL) && nestedStates.isEmpty() && !resolvedInitialStateName.isPresent() && !isExplicitlyParallel) {
-            // If not explicitly parallel and ends up looking atomic, downgrade.
-            // However, if $initial was present, it implies children are expected elsewhere or it's a forward declaration.
-            // For now, if it has $initial, keep as COMPOUND. Otherwise, if no children, it's ATOMIC.
-            if (!initialAnnotationValue.isPresent()) { // Check original annotation, not potentially defaulted one
-                 // System.out.println("Info: State '" + stateName + "' determined as COMPOUND/PARALLEL but has no nested states and no $initial. Resolving to ATOMIC.");
-                 resolvedType = StateType.ATOMIC;
+         // Temporary fix for annotations map to avoid null pointer if annotation.value is null
+        Map<String, Object> finalNamedAnnotations = new HashMap<>();
+        if (stateAnnotations != null) {
+            for (AnnotationNode annotation : stateAnnotations) {
+                if (!annotation.isIdAnnotation()) { // exclude @id
+                    finalNamedAnnotations.put(annotation.name, Optional.ofNullable(annotation.value).orElse(Boolean.TRUE)); // field access
+                }
             }
         }
 
 
-        StateNode stateNode = new StateNode(
+        // Ensure StateNode constructor matches these parameters
+        return new StateNode(
             id,
-            stateName,
-            annotationsList,
-            displayName,
-            resolvedType,
-            entryActions,
-            exitActions,
-            invokeInvocations,
-            eventHandlers,
-            ifTransitions, // Empty for now as per grammar analysis
-            nestedStates,
-            historyStates,
-            resolvedInitialStateName
+            currentStateName,
+            finalNamedAnnotations, // Use the processed map
+            stateType,
+            onEntry,
+            onExit,
+            transitions,
+            invokes,
+            new ArrayList<>(), // childStates - placeholder for compound states
+            eventHandlers      // eventHandlers - placeholder
         );
-
-        this.currentStateName = null;
-        return stateNode;
     }
 
     // New visitor method for ifTransitionStatement
@@ -642,21 +623,17 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
     private Optional<Long> extractIdFromList(List<AnnotationNode> annotations) {
-        if (annotations == null) return Optional.empty();
+        if (annotations == null) {
+            return Optional.empty();
+        }
         for (AnnotationNode annotation : annotations) {
-            if ("@id".equals(annotation.getName()) && annotation.getValue().isPresent()) {
+            if (annotation.isIdAnnotation()) { // Checks if it's the @id annotation
                 try {
-                    // Assuming ID value is stored directly as a Long or String convertible to Long
-                    Object rawValue = annotation.getValue().get();
-                    if (rawValue instanceof Long) {
-                        return Optional.of((Long) rawValue);
-                    } else if (rawValue instanceof Number) {
-                        return Optional.of(((Number) rawValue).longValue());
-                    } else if (rawValue instanceof String) {
-                        return Optional.of(Long.parseLong((String) rawValue));
-                    }
+                    // Value of @id should be Long
+                    return Optional.of(Long.parseLong(String.valueOf(annotation.value)));
                 } catch (NumberFormatException e) {
-                    System.err.println("Warning: Could not parse @id value: " + annotation.getValue().get());
+                    System.err.println("Warning: @id annotation value is not a valid Long: " + annotation.value);
+                    return Optional.empty();
                 }
             }
         }
@@ -962,61 +939,76 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     @Override
     public AstNode visitAnnotation(AnnotationContext ctx) {
-        String name = ctx.annotationName().getText();
-        Optional<String> value = Optional.empty();
-        if (ctx.annotationValue() != null) {
-            if (ctx.annotationValue().STRING() != null) {
-                value = Optional.of(stripQuotes(ctx.annotationValue().STRING().getText()));
-            } else if (ctx.annotationValue().NUMBER() != null) {
-                value = Optional.of(ctx.annotationValue().NUMBER().getText());
-            } else if (ctx.annotationValue().BOOLEAN() != null) {
-                value = Optional.of(ctx.annotationValue().BOOLEAN().getText());
-            } else if (ctx.annotationValue().ID() != null) { // For references like @type(MyType)
-                value = Optional.of(ctx.annotationValue().ID().getText());
+        String name;
+        Object value = null; // Default to null, indicates a flag or valueless annotation if not set
+        boolean isIdAnnotation = false;
+
+        if (ctx.AT() != null) { // @id(value)
+            name = ctx.ID().getText(); // Should be "id"
+            isIdAnnotation = true;
+            try {
+                value = Long.parseLong(ctx.INT().getText());
+            } catch (NumberFormatException e) {
+                System.err.println("Warning: @id annotation has non-integer value: " + ctx.INT().getText());
+                value = ctx.INT().getText(); // Store as string if not parsable as long
             }
-            // TODO: Handle array and object values for annotations if grammar supports it
+        } else if (ctx.DOLLAR() != null) { // $name(value) or $name;
+            name = ctx.annotationName().getText();
+            if (ctx.annotationValue() != null) { // $name(value)
+                // visitAnnotationValue will return the actual Java object for the value
+                AstNode valNode = visitAnnotationValue(ctx.annotationValue());
+                if (valNode instanceof ValueNode) {
+                    value = ((ValueNode) valNode).getValue();
+                } else if (valNode != null) {
+                     System.err.println("Warning: Annotation value was not a ValueNode: " + valNode.getClass().getSimpleName() + " for annotation $" + name);
+                     value = valNode.toString(); // Fallback to string representation
+                } else {
+                    value = true; // If annotationValue is present but visit returns null, treat as flag.
+                }
+            } else { // $name; (a flag)
+                value = Boolean.TRUE;
+            }
+        } else {
+            throw new IllegalStateException("Unknown annotation format: " + ctx.getText());
         }
-        return new AnnotationNode(name, value);
+        return new AnnotationNode(name, value, isIdAnnotation);
     }
 
     @Override
     public AstNode visitValue(ValueContext ctx) {
-        if (ctx.STRING() != null) {
-            return new StringValueNode(stripQuotes(ctx.STRING().getText()));
-        } else if (ctx.NUMBER() != null) {
-            String numText = ctx.NUMBER().getText();
-            try {
-                if (numText.contains(".")) {
-                    return new NumberValueNode(Double.parseDouble(numText));
-                } else {
-                    return new NumberValueNode(Long.parseLong(numText));
-                }
-            } catch (NumberFormatException e) {
-                return new StringValueNode(numText); // Fallback
-            }
-        } else if (ctx.BOOLEAN() != null) {
-            return new BooleanValueNode(Boolean.parseBoolean(ctx.BOOLEAN().getText()));
-        } else if (ctx.NULL() != null) {
-            return new NullValueNode();
-        } else if (ctx.array() != null) {
-            List<ssot_parser.ast.values.ValueNode> elements = new ArrayList<>();
-            if (ctx.array().valueList() != null) {
-                for (ValueContext valCtx : ctx.array().valueList().value()) {
-                    elements.add((ssot_parser.ast.values.ValueNode) visitValue(valCtx));
-                }
-            }
-            return new ArrayValueNode(elements);
-        } else if (ctx.object() != null) {
-            Map<String, ssot_parser.ast.values.ValueNode> properties = new HashMap<>();
-            if (ctx.object().keyValuePairList() != null) {
-                for (KeyValuePairContext pairCtx : ctx.object().keyValuePairList().keyValuePair()) {
-                    String key = stripQuotes(pairCtx.STRING().getText());
-                    properties.put(key, (ssot_parser.ast.values.ValueNode) visitValue(pairCtx.value()));
-                }
-            }
-            return new ObjectValueNode(properties);
+        if (ctx.primitiveValue() != null) {
+            return visitPrimitiveValue(ctx.primitiveValue());
+        } else if (ctx.referenceValue() != null) {
+            // This part needs to create a RefValueNode if that's the intent
+            // For now, let's assume visitReferenceValue handles it.
+            return visitReferenceValue(ctx.referenceValue());
+        } else if (ctx.objectValue() != null) {
+            return visitObjectValue(ctx.objectValue());
+        } else if (ctx.arrayValue() != null) {
+            return visitArrayValue(ctx.arrayValue());
         }
-        return new StringValueNode(ctx.getText()); // Fallback
+        System.err.println("Unhandled value type: " + ctx.getText());
+        return new NullValueNode(); // Default or throw error
+    }
+
+    @Override
+    public AstNode visitAnnotationValue(AnnotationValueContext ctx) {
+        if (ctx.attributePairList() != null) {
+            // This means the annotation value is an object: $name(key1: val1, key2: val2)
+            Map<String, ValueNode> attributes = new HashMap<>();
+            for (AttributePairContext pairCtx : ctx.attributePairList().attributePair()) {
+                String key = pairCtx.ID().getText();
+                // Value can be any of the ValueNode types
+                ValueNode valueNode = (ValueNode) visit(pairCtx.getChild(2)); //getChild(0)=ID, getChild(1)=COLON
+                attributes.put(key, valueNode);
+            }
+            // Assuming ObjectValueNode stores Map<String, ValueNode>
+            return new ObjectValueNode(attributes, Optional.empty(), Collections.emptyMap());
+        } else if (ctx.value() != null) {
+            // This means the annotation value is a single primitive, reference, array
+            return visitValue(ctx.value());
+        }
+        return new NullValueNode(); // Should not happen if grammar is correct
     }
 
     private String stripQuotes(String text) {
@@ -1058,6 +1050,46 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                 .filter(a -> a.getName().equals(name))
                 .findFirst()
                 .flatMap(AnnotationNode::getValue);
+    }
+
+    // Utility method to extract a map of $name annotations from a list of AnnotationNode objects
+    private Map<String, Object> extractAnnotationsMap(List<AnnotationNode> annotations) {
+        Map<String, Object> annotationMap = new HashMap<>();
+        if (annotations != null) {
+            for (AnnotationNode annotation : annotations) {
+                if (!annotation.isIdAnnotation()) { // Exclude @id from general annotations map
+                    annotationMap.put(annotation.name, Optional.ofNullable(annotation.value).orElse(true)); // Use field access
+                }
+            }
+        }
+        return Collections.unmodifiableMap(annotationMap);
+    }
+
+    // Helper to extract @id and $annotations from a list of ANTLR AnnotationContexts
+    // This is used by many visit methods.
+    private Optional<Long> extractId(List<AnnotationContext> annotationCtxs) {
+        if (annotationCtxs == null) return Optional.empty();
+        for (AnnotationContext annoCtx : annotationCtxs) {
+            AnnotationNode annotationNode = (AnnotationNode) visitAnnotation(annoCtx);
+            if (annotationNode.isIdAnnotation()) {
+                try {
+                    return Optional.of(Long.parseLong(String.valueOf(annotationNode.value))); // Use field access
+                } catch (NumberFormatException e) {
+                     System.err.println("Warning: @id annotation has non-integer value: " + annotationNode.value);
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private List<AnnotationNode> extractAnnotations(List<AnnotationContext> annotationCtxs) {
+        if (annotationCtxs == null) return Collections.emptyList();
+        return annotationCtxs.stream()
+            .map(annoCtx -> (AnnotationNode) visitAnnotation(annoCtx))
+            .filter(Objects::nonNull)
+             // Filter out @id annotations from the general list, as it's handled separately by extractId
+            .filter(anno -> !anno.isIdAnnotation())
+            .collect(Collectors.toList());
     }
 
     static class BlockContainerNode implements AstNode {
