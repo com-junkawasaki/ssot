@@ -23,9 +23,9 @@ import ssot_parser.ast.values.ArrayValueNode;
 import ssot_parser.ast.values.ObjectValueNode;
 import ssot_parser.ast.handlers.InvokeCompletionHandler;
 import java.time.Duration;
-import ssot_parser.ast.nodes.state.StateNode; // Assuming StateNode is here
-import ssot_parser.ast.nodes.state.HistoryStateNode; // Assuming HistoryStateNode is here
-import ssot_parser.ast.nodes.state.StateType; // Assuming StateType enum is here
+import ssot_parser.ast.nodes.StateNode; // Corrected import
+import ssot_parser.ast.nodes.HistoryStateNode; // Corrected import
+import ssot_parser.ast.type.StateType; // Corrected import
 // import ssot_parser.ast.nodes.EventHandlerNode; // If this is a specific type
 // import ssot_parser.ast.nodes.ConditionalTransitionNode; // If this is a specific type
 
@@ -37,8 +37,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     private String currentStateName = null;
 
     @Override
-    public AstNode visitSsotDefinition(SsotDefinitionContext ctx) {
-        System.out.println("Visiting SsotDefinition");
+    public AstNode visitFile(FileContext ctx) {
+        System.out.println("Visiting File (was SsotDefinition)");
         // Corrected SsotRoot instantiation based on its likely constructor
         SsotRoot root = new SsotRoot(
                 new ArrayList<>(), // imports
@@ -65,8 +65,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             }
         }
 
-        if (ctx.topLevelBlock() != null) {
-            for (TopLevelBlockContext blockCtx : ctx.topLevelBlock()) {
+        if (ctx.definitionBlock() != null) {
+            for (DefinitionBlockContext blockCtx : ctx.definitionBlock()) {
                 AstNode blockNode = visit(blockCtx);
                 if (blockNode instanceof BlockContainerNode) {
                     BlockContainerNode container = (BlockContainerNode) blockNode;
@@ -104,7 +104,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                 // Add other direct node types if necessary
             }
         }
-        System.out.println("Finished Visiting SsotDefinition");
+        System.out.println("Finished Visiting File (was SsotDefinition)");
         return root;
     }
 
@@ -215,7 +215,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     @Override
     public AstNode visitFieldDefinition(FieldDefinitionContext ctx) {
         String fieldName = ctx.ID().getText();
-        ssot_parser.ast.type.TypeNode type = (ssot_parser.ast.type.TypeNode) visitTypeName(ctx.typeName());
+        ssot_parser.ast.type.TypeNode type = (ssot_parser.ast.type.TypeNode) visitTypeExpr(ctx.typeExpr());
         Optional<Long> id = extractId(ctx.annotation());
         List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
         Optional<ssot_parser.ast.values.ValueNode> defaultValue = Optional.empty();
@@ -455,7 +455,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                          stateNodes.add(stateNode);
                      }
                  } else if (stateOrHistCtx.historyStateDefinition() != null) {
-                     AstNode historyNode = visitHistoryStateDefinition(stateOrHistCtx.historyStateDefinition());
+                     AstNode historyNode = visitHistoryDefinition(stateOrHistCtx.historyStateDefinition());
                      if (historyNode != null) {
                          stateNodes.add(historyNode);
                      }
@@ -883,10 +883,11 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
     @Override
-    public AstNode visitHistoryStateDefinition(HistoryStateDefinitionContext ctx) {
-        // grammar: HISTORY (SHALLOW | DEEP)? annotation* TARGET ID SEMI
+    public AstNode visitHistoryDefinition(HistoryDefinitionContext ctx) {
+        System.out.println("Visiting History Definition (was HistoryStateDefinition)");
+        String historyIdName = ctx.ID().getText(); // ID of the history state
         List<AnnotationNode> annotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
-        Optional<Long> id = extractIdFromList(annotations); // Use helper
+        Optional<Long> id = extractIdFromList(annotations);
         String targetStateName = ctx.ID().getText();
         HistoryStateNode.HistoryType type = HistoryStateNode.HistoryType.SHALLOW; // Default
         if (ctx.DEEP() != null) {
@@ -913,23 +914,50 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
     @Override
-    public AstNode visitTypeName(TypeNameContext ctx) {
-        if (ctx.primitiveType() != null) {
-            return new BaseType(ctx.primitiveType().getText(), Optional.empty(), new HashMap<>());
-        } else if (ctx.customType() != null) {
-            return new CustomType(ctx.customType().getText(), Optional.empty(), Optional.empty(), new HashMap<>());
-        } else if (ctx.parametrizedType() != null) {
-            String baseTypeName = ctx.parametrizedType().ID().getText();
-            List<ssot_parser.ast.type.TypeNode> params = new ArrayList<>();
-            if (ctx.parametrizedType().typeNameList() != null) {
-                for (TypeNameContext paramCtx : ctx.parametrizedType().typeNameList().typeName()) {
-                    params.add((ssot_parser.ast.type.TypeNode) visitTypeName(paramCtx));
-                }
+    public AstNode visitTypeExpr(TypeExprContext ctx) {
+        System.out.println("Visiting TypeExpr: " + ctx.getText());
+
+        if (ctx.primitiveTypeName() != null) {
+            // Handle primitive types like string, bool, u32, etc.
+            // Assuming PrimitiveTypeNode or a similar class exists. Using BaseType for now as per original.
+            return new BaseType(ctx.primitiveTypeName().getText(), Optional.empty(), new HashMap<>());
+        } else if (ctx.referenceValue() != null) {
+            // Handle references to custom types (structs, enums)
+            // Assuming ReferenceTypeNode or a similar class exists. Using CustomType for now as per original.
+            return new CustomType(ctx.referenceValue().getText(), Optional.empty(), Optional.empty(), new HashMap<>());
+        } else if (ctx.OPTIONAL() != null) {
+            // Handle Optional<T>
+            if (ctx.typeExpr() != null && !ctx.typeExpr().isEmpty()) {
+                ssot_parser.ast.type.TypeNode innerType = (ssot_parser.ast.type.TypeNode) visitTypeExpr(ctx.typeExpr(0));
+                return new OptionalTypeNode(innerType, Optional.empty(), new HashMap<>());
+            } else {
+                System.err.println("Malformed Optional type: missing inner type in " + ctx.getText());
+                return new CustomType("ERROR_MALFORMED_OPTIONAL", Optional.empty(), Optional.empty(), new HashMap<>());
             }
-            return new ParametrizedType(baseTypeName, params, Optional.empty(), new HashMap<>());
+        } else if (ctx.LIST() != null) {
+            // Handle List<T>
+            if (ctx.typeExpr() != null && !ctx.typeExpr().isEmpty()) {
+                ssot_parser.ast.type.TypeNode elementType = (ssot_parser.ast.type.TypeNode) visitTypeExpr(ctx.typeExpr(0));
+                return new ListTypeNode(elementType, Optional.empty(), new HashMap<>());
+            } else {
+                System.err.println("Malformed List type: missing element type in " + ctx.getText());
+                return new CustomType("ERROR_MALFORMED_LIST", Optional.empty(), Optional.empty(), new HashMap<>());
+            }
+        } else if (ctx.MAP() != null) {
+            // Handle Map<K, V>
+            if (ctx.typeExpr() != null && ctx.typeExpr().size() == 2) {
+                ssot_parser.ast.type.TypeNode keyType = (ssot_parser.ast.type.TypeNode) visitTypeExpr(ctx.typeExpr(0));
+                ssot_parser.ast.type.TypeNode valueType = (ssot_parser.ast.type.TypeNode) visitTypeExpr(ctx.typeExpr(1));
+                return new MapTypeNode(keyType, valueType, Optional.empty(), new HashMap<>());
+            } else {
+                System.err.println("Malformed Map type: requires two type parameters in " + ctx.getText());
+                return new CustomType("ERROR_MALFORMED_MAP", Optional.empty(), Optional.empty(), new HashMap<>());
+            }
         }
-        System.err.println("Unknown typeName structure: " + ctx.getText());
-        return new BaseType("unknown", Optional.empty(), new HashMap<>()); // Fallback
+
+        System.err.println("Unhandled TypeExpr variant: " + ctx.getText());
+        // Return a placeholder or throw an error for unhandled cases
+        return new CustomType("ERROR_UNKNOWN_TYPE_EXPR", Optional.empty(), Optional.empty(), new HashMap<>());
     }
 
     @Override

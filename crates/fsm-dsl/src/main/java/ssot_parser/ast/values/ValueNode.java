@@ -27,39 +27,6 @@ public interface ValueNode extends AstNode {
 
 // --- Implementation Classes ---
 
-class StringValueNode implements ValueNode {
-    public final String value;
-
-    public StringValueNode(String value) {
-        this.value = value;
-    }
-
-    @Override
-    public <T> T accept(NodeVisitor<T> visitor) {
-        // Assuming visitor has visitStringValueNode method
-        // return visitor.visitStringValueNode(this);
-        return null; // Placeholder
-    }
-
-    @Override
-    public String toString() { return "\"" + value + "\""; }
-
-    @Override
-    public Object getValue() {
-        return value;
-    }
-
-    @Override
-    public String getRawValue() {
-        return value;
-    }
-
-    @Override
-    public ValueNodeType getType() {
-        return ValueNodeType.STRING;
-    }
-}
-
 class IntValueNode implements ValueNode {
     public final int value;
 
@@ -111,33 +78,6 @@ class FloatValueNode implements ValueNode {
     @Override
     public ValueNodeType getType() {
         return ValueNodeType.FLOAT;
-    }
-}
-
-class BooleanValueNode implements ValueNode {
-    public final boolean value;
-
-    public BooleanValueNode(boolean value) { this.value = value; }
-
-     @Override
-    public <T> T accept(NodeVisitor<T> visitor) { return null; /* Placeholder */ }
-
-    @Override
-    public String toString() { return String.valueOf(value); }
-
-    @Override
-    public Object getValue() {
-        return value;
-    }
-
-    @Override
-    public String getRawValue() {
-        return String.valueOf(value);
-    }
-
-    @Override
-    public ValueNodeType getType() {
-        return ValueNodeType.BOOLEAN;
     }
 }
 

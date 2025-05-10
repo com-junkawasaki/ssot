@@ -35,6 +35,9 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
     *   基本的な `AstValidator.java` が存在し、型名の一意性チェックなど、ごく一部の検証が行われます。
     *   **課題:** 詳細な意味論的検証 (参照解決、型チェック、状態マシンの妥当性検証など) は未実装です。
 *   **コード生成:** 未実装です。
+*   **コンパイル状況:**
+    *   **重大な問題:** `mvn clean compile` を実行しても、ANTLR パーサー/レキサーのソースコードが `target/generated-sources/antlr4/ssot_parser/` に生成されていません。これが原因で、`AstBuilderVisitor.java` をはじめとする多くのJavaファイルでコンパイルエラー (型解決エラーなど) が大量に発生しています (現状100エラー)。この問題の解決が最優先事項です。
+    *   `src/main/java/ssot_parser/ast/values/ValueNode.java` において、`AstNode` インターフェースの未実装メソッド (`getAnnotations`, `getId`) に関するリンターエラー、および `ValueNodeType` の定数 (例: `INTEGER`) が解決できないエラーが新たに発生しています。
 
 ## Project Status & Recent Developments
 
@@ -65,21 +68,25 @@ This refactoring is a crucial step towards a more expressive and capable FSM DSL
 
 ## 今後のステップ (ロードマップ案)
 
-1.  **(最優先) ANTLR 文法の検証とパーサー生成:**
-    *   `SSoT.g4` から ANTLR を用いてパーサーとレキサーを再生成する (`mvn clean compile`)。
-    *   生成プロセスで新たなエラーや警告が出ないことを確認する。
-    *   サンプル `.ssot` ファイル (例: `test.ssot`, `temp_comm.ssot`, `temp_types.ssot`) を用いて、生成されたパーサーが正しく動作するか基本的なテストを行う。
-2.  **(継続中・重要) 状態マシン関連の AST 構築に関するユニットテストを拡充する:**
-    *   特に新しい `StateNode` 構造、`MachineNode` 構造、`visitStateDefinition` および `visitMachineDefinition` のロジック、条件付き遷移、トップレベル履歴状態に対して、包括的なユニットテストを作成・実行する。
-3.  **(次点) AST 検証の強化 (State Machine 中心):**
+1.  **(最優先) ANTLR パーサー生成の修復:**
+    *   `mvn clean compile` を実行した際に、ANTLR パーサー (`SSoTParser.java`)、レキサー (`SSoTLexer.java`)、ベースビジター (`SSoTBaseVisitor.java`) 等が `target/generated-sources/antlr4/ssot_parser/` ディレクトリに正しく生成されない問題を診断し、修正する。
+        *   Maven の `antlr4-maven-plugin` の設定 (`pom.xml` 内) に誤りがないか確認する。
+        *   `SSoT.g4` ファイル自体に、コード生成を妨げるエラー (ANTLRツール側ではエラーとして検知されにくいアクションコード内の構文ミスなど) がないか確認する。
+    *   パーサーが正しく生成された後、再度コンパイルし、`AstBuilderVisitor.java` などで発生している型解決エラーが解消されることを確認する。
+2.  **(次優先) `ValueNode.java` のリンターエラー修正:**
+    *   `src/main/java/ssot_parser/ast/values/ValueNode.java` 内の `IntValueNode`, `FloatValueNode`, `RefValueNode` クラスに、`AstNode` インターフェースで定義されている `getAnnotations()` および `getId()` メソッドを実装する。
+    *   `ValueNodeType` enum が適切に定義され、その定数 (`INTEGER`, `FLOAT`, `REFERENCE` など) が正しく参照できるようにする (必要であれば `ValueNodeType.java` の作成または修正)。
+3.  **(継続中・重要) 状態マシン関連の AST 構築に関するユニットテストを拡充する:**
+    *   ANTLR生成と `ValueNode` の問題が解決し、主要部分がコンパイル可能になった後、特に新しい `StateNode` 構造、`MachineNode` 構造、`visitStateDefinition` および `visitMachineDefinition` のロジック、条件付き遷移、トップレベル履歴状態に対して、包括的なユニットテストを作成・実行する。
+4.  **(次点) AST 検証の強化 (State Machine 中心):**
     *   状態マシン内の状態遷移の妥当性、参照されている Action/Guard/Context/Invoke/State の存在確認、初期状態の検証など、意味論的な検証を `AstValidator` に追加する。
-4.  **アノテーション処理の拡充:** `@id` や各種 `$annotation` をパースし、対応する AST ノードに情報を付加するロジックを確認・拡充する。検証ロジックでも利用する。
-5.  **Service/Interface の Visitor/AST 実装:** `services` ブロック内の要素を処理する Visitor と AST ノードを実装する。
-6.  **テストの導入と拡充:** 特に Service/Interface の AST 構築と検証を中心に、ユニットテストを追加する。
-7.  **エラーハンドリングの強化:** パースエラーや AST 検証エラーをより分かりやすく報告するように改善する。
-8.  **その他のブロックの Visitor/AST 実装:** `actors`, `communication`, `deployment_config`, `dependencies` ブロックに対応する Visitor と AST ノードを実装する。
-9.  **Imports の処理:** `import` 文を解釈し、別ファイルの定義を解決できるようにする。
-10. **コード生成器の実装:** AST からターゲット言語 (例: Mermaid グラフ定義) を出力する機能を追加する (初期段階)。
+5.  **アノテーション処理の拡充:** `@id` や各種 `$annotation` をパースし、対応する AST ノードに情報を付加するロジックを確認・拡充する。検証ロジックでも利用する。
+6.  **Service/Interface の Visitor/AST 実装:** `services` ブロック内の要素を処理する Visitor と AST ノードを実装する。
+7.  **テストの導入と拡充:** 特に Service/Interface の AST 構築と検証を中心に、ユニットテストを追加する。
+8.  **エラーハンドリングの強化:** パースエラーや AST 検証エラーをより分かりやすく報告するように改善する。
+9.  **その他のブロックの Visitor/AST 実装:** `actors`, `communication`, `deployment_config`, `dependencies` ブロックに対応する Visitor と AST ノードを実装する。
+10. **Imports の処理:** `import` 文を解釈し、別ファイルの定義を解決できるようにする。
+11. **コード生成器の実装:** AST からターゲット言語 (例: Mermaid グラフ定義) を出力する機能を追加する (初期段階)。
 
 ## ビルドと実行
 
