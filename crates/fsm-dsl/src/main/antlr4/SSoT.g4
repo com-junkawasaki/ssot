@@ -357,7 +357,7 @@ ifTransitionStatement // Requires semicolon
 
 // Transition requires target state, options must be in a block {}
 transitionSpec
-    : TRANSITION targetState (LBRACE transitionOptions? RBRACE)? // No semicolon here, handled by caller
+    : TRANSITION targetState (LBRACE transitionOptions RBRACE)? // No semicolon here, handled by caller
     ;
 
 targetState
