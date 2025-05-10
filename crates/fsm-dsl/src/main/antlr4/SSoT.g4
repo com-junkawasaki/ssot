@@ -511,6 +511,7 @@ INVOKE: 'invoke'; // Used within state
 ON_ENTRY: 'onEntry';
 ON_EXIT: 'onExit';
 OUTPUT: 'output'; // Added for invokeOutputMapping
+DESCRIPTION: 'description'; // Added for annotations
 FEATURES: 'features'; // Used in Rust dependencies
 
 // Primitive Types (used in parser rules via primitiveTypeName)
