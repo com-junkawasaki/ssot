@@ -242,7 +242,7 @@ actionsDefinition
 
 // Action definition requires semicolon at the end
 actionDefinition
-    : ID annotation* (LPAREN ID? (COMMA ID)? RPAREN)? (COLON typeExpr)? SEMI
+    : ID annotation* LPAREN parameterList? RPAREN (COLON typeExpr)? SEMI
     ;
 
 guardsDefinition
