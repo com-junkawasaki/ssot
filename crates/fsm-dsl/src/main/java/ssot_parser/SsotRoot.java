@@ -12,6 +12,7 @@ import ssot_parser.ast.nodes.ImportNode;
 import ssot_parser.ast.nodes.TypeDefNode;
 import ssot_parser.ast.nodes.ServiceDefinitionNode;
 import ssot_parser.ast.nodes.MachineNode;
+import ssot_parser.ast.nodes.InterfaceNode;
 import java.util.stream.Collectors;
 
 /**
@@ -72,6 +73,13 @@ public class SsotRoot implements AstNode {
                                .filter(MachineNode.class::isInstance)
                                .map(MachineNode.class::cast)
                                .collect(Collectors.toList());
+    }
+
+    public List<InterfaceNode> getInterfaceNodes() {
+        return serviceDefinitions.stream()
+                                .filter(InterfaceNode.class::isInstance)
+                                .map(InterfaceNode.class::cast)
+                                .collect(Collectors.toList());
     }
 
     public List<AstNode> getActorDefinitions() {

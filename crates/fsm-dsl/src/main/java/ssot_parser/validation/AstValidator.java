@@ -26,6 +26,14 @@ import ssot_parser.ast.nodes.EventNode;
  */
 public class AstValidator {
 
+    private static final Set<String> KNOWN_PRIMITIVE_TYPES = Set.of(
+        "string", "bool", 
+        "u8", "u16", "u32", "u64", 
+        "i8", "i16", "i32", "i64", 
+        "f32", "f64", 
+        "timestamp", "void", "any", "error" // Added any, error as common primitives
+    );
+
     private final SsotRoot astRoot;
     private final List<ValidationError> errors;
     private final Set<String> definedTypeNames; // For type reference validation
@@ -33,6 +41,10 @@ public class AstValidator {
     private final Set<String> definedServiceNames; // For invoke source validation
     private final Set<String> definedMachineNames; // For invoke source validation
     private final Set<String> definedEventNames; // New field
+    private final Set<String> definedProtocolNames; // For protocol name uniqueness
+    private final Set<String> definedChannelNames;  // For channel name uniqueness
+    private final Set<String> definedActorNames;    // For actor name uniqueness
+    private final Map<Long, AstNode> globalSeenIds; // For global ID uniqueness
     // Add maps to store definitions for faster lookup if needed elsewhere
     // private final Map<String, TypeDefNode> typeDefinitionsMap;
     // private final Map<String, InterfaceNode> interfaceDefinitionsMap;
@@ -46,6 +58,10 @@ public class AstValidator {
         this.definedServiceNames = new HashSet<>(); // Initialize
         this.definedMachineNames = new HashSet<>(); // Initialize
         this.definedEventNames = new HashSet<>(); // Initialize
+        this.definedProtocolNames = new HashSet<>(); // Initialize
+        this.definedChannelNames = new HashSet<>(); // Initialize
+        this.definedActorNames = new HashSet<>();   // Initialize
+        this.globalSeenIds = new HashMap<>(); // Initialize global ID map
         // this.typeDefinitionsMap = new HashMap<>();
         // this.interfaceDefinitionsMap = new HashMap<>();
     }
@@ -62,6 +78,10 @@ public class AstValidator {
         definedServiceNames.clear(); // Clear
         definedMachineNames.clear(); // Clear
         definedEventNames.clear(); // Clear
+        definedProtocolNames.clear(); // Clear
+        definedChannelNames.clear(); // Clear
+        definedActorNames.clear();   // Clear
+        globalSeenIds.clear(); // Clear global ID map
 
         if (astRoot == null) {
             errors.add(new ValidationError("AST Root cannot be null.", ValidationError.Severity.ERROR));
@@ -73,6 +93,9 @@ public class AstValidator {
         collectInterfaceDefinitions(); // Collect interfaces
         collectServiceAndMachineNames(); // Collect invokable names
         collectDefinedEventNames(); // Call new collection method
+        collectDefinedProtocolNames();
+        collectDefinedChannelNames();
+        collectDefinedActorNames();
 
         // --- Run validation checks --- 
         validateMachines();
@@ -98,13 +121,10 @@ public class AstValidator {
     }
 
     private void collectInterfaceDefinitions() {
-        if (astRoot.getServiceDefinitions() != null) {
-            for (AstNode serviceElement : astRoot.getServiceDefinitions()) {
-                if (serviceElement instanceof InterfaceNode) {
-                    InterfaceNode iface = (InterfaceNode) serviceElement;
-                    if (interfaceDefinitionsMap.put(iface.getName(), iface) != null) {
-                        addError("Duplicate interface definition name '" + iface.getName() + "'.", iface);
-                    }
+        if (astRoot.getInterfaceNodes() != null) {
+            for (InterfaceNode iface : astRoot.getInterfaceNodes()) {
+                if (interfaceDefinitionsMap.put(iface.getName(), iface) != null) {
+                    addError("Duplicate interface definition name '" + iface.getName() + "'.", iface);
                 }
             }
         }
@@ -155,6 +175,51 @@ public class AstValidator {
         System.out.println("Collected defined event names: " + definedEventNames);
     }
 
+    private void collectDefinedProtocolNames() {
+        if (astRoot.getCommunicationDefinitions() != null) {
+            for (AstNode commNode : astRoot.getCommunicationDefinitions()) {
+                if (commNode instanceof ProtocolNode) {
+                    ProtocolNode protocolNode = (ProtocolNode) commNode;
+                    if (!definedProtocolNames.add(protocolNode.getName())) {
+                        addError("Duplicate protocol definition name '" + protocolNode.getName() + "'.", protocolNode);
+                    }
+                }
+            }
+        }
+        System.out.println("Collected defined protocol names: " + definedProtocolNames);
+    }
+
+    private void collectDefinedChannelNames() {
+        if (astRoot.getCommunicationDefinitions() != null) {
+            for (AstNode commNode : astRoot.getCommunicationDefinitions()) {
+                if (commNode instanceof ChannelNode) {
+                    ChannelNode channelNode = (ChannelNode) commNode;
+                    if (!definedChannelNames.add(channelNode.getName())) {
+                        addError("Duplicate channel definition name '" + channelNode.getName() + "'.", channelNode);
+                    }
+                }
+            }
+        }
+        System.out.println("Collected defined channel names: " + definedChannelNames);
+    }
+
+    private void collectDefinedActorNames() {
+        if (astRoot.getActorDefinitions() != null) {
+            for (AstNode actorAstNode : astRoot.getActorDefinitions()) {
+                if (actorAstNode instanceof ActorNode) {
+                    ActorNode actorNode = (ActorNode) actorAstNode;
+                    if (!definedActorNames.add(actorNode.getName())) {
+                        addError("Duplicate actor definition name '" + actorNode.getName() + "'.", actorNode);
+                    }
+                } else {
+                    // This case should ideally not happen if the parser ensures correct types in this list
+                    addError("Invalid node type found in actor definitions list: " + actorAstNode.getClass().getSimpleName(), actorAstNode);
+                }
+            }
+        }
+        System.out.println("Collected defined actor names: " + definedActorNames);
+    }
+
     // --- Placeholder validation methods for different blocks --- 
 
     private void validateMachines() {
@@ -196,10 +261,7 @@ public class AstValidator {
                                      .map(s -> (StateNode)s)
                                      .collect(Collectors.toList());
         } else {
-            currentLevelStates = parentState.getNestedStates().stream()
-                                         .filter(s -> s instanceof StateNode)
-                                         .map(s -> (StateNode)s)
-                                         .collect(Collectors.toList());
+            currentLevelStates = parentState.getNestedStates(); // Simplified: getNestedStates() returns List<StateNode>
         }
 
         Set<String> definedStateNamesInScope = new HashSet<>();
@@ -239,6 +301,27 @@ public class AstValidator {
          validateActionReferences(state.getEntryActions(), definedActionNames, "onEntry", state);
          validateActionReferences(state.getExitActions(), definedActionNames, "onExit", state);
 
+         // Validate Invokes
+         if (state.getInvokeInvocations() != null) {
+            for (InvokeStateNode invokeNode : state.getInvokeInvocations()) {
+                checkAndRegisterId(invokeNode, new HashMap<>()); // Check ID for invoke node itself, new scope for its internals if any
+                String invokeSourceName = invokeNode.getInvokeDefinitionRef();
+                if (invokeSourceName != null && !invokeSourceName.isEmpty()) {
+                    boolean sourceFound = this.definedServiceNames.contains(invokeSourceName) || 
+                                          this.definedMachineNames.contains(invokeSourceName);
+                    if (!sourceFound) {
+                        addError("Invoked source '" + invokeSourceName + "' is not a defined service or machine.", invokeNode);
+                    }
+                } else {
+                    addError("Invoke node is missing a source name (invokeDefinitionRef).", invokeNode);
+                }
+
+                // Validate onDone and onError handlers within the invoke node
+                validateInvokeCompletionHandler(invokeNode.getOnDoneHandler(), "onDone", allStateNames, definedActionNames, definedGuardNames, invokeNode);
+                validateInvokeCompletionHandler(invokeNode.getOnErrorHandler(), "onError", allStateNames, definedActionNames, definedGuardNames, invokeNode);
+            }
+        }
+
          // Validate Transitions
          if (state.getTransitions() != null) {
              for (TransitionNode transition : state.getTransitions()) {
@@ -275,7 +358,7 @@ public class AstValidator {
                  });
                  transition.getCondition().ifPresent(guardRefNode -> {
                      if (!definedGuardNames.contains(guardRefNode.getGuardName())) {
-                         addError("Transition guard '" + guardRefNode.getGuardName() + "' is not defined.", transition);
+                         addError("Transition guard '" + guardRefNode.getGuardName() + "' in state '" + state.getStateName() + "' is not defined in machine.", transition);
                      }
                  });
              }
@@ -316,19 +399,23 @@ public class AstValidator {
              }
          }
 
-         // Validate Invokes
-         if (state.getInvokeInvocations() != null) {
-             for (InvokeStateNode invoke : state.getInvokeInvocations()) {
-                 // Validate invoke source
-                 String srcName = invoke.getSrc();
-                 if (!definedServiceNames.contains(srcName) && !definedMachineNames.contains(srcName)) {
-                     addError("Invoke source '" + srcName + "' does not resolve to a defined service or machine.", invoke);
-                 }
-                 // Validate onDone/onError transitions (target state, action, guard)
-                 validateInvokeCompletionHandler(invoke.getOnDoneHandler(), "onDone", allStateNames, definedActionNames, definedGuardNames, invoke);
-                 validateInvokeCompletionHandler(invoke.getOnErrorHandler(), "onError", allStateNames, definedActionNames, definedGuardNames, invoke);
-             }
-         }
+        // New: Validations specific to FINAL states
+        if (state.getType() == StateType.FINAL) {
+            if (state.getTransitions() != null && !state.getTransitions().isEmpty()) {
+                addError("Final state '" + state.getStateName() + "' must not have any outgoing transitions.", state);
+            }
+            if (state.getInvokeInvocations() != null && !state.getInvokeInvocations().isEmpty()) {
+                addError("Final state '" + state.getStateName() + "' must not have invoke definitions.", state);
+            }
+            if (state.getInitialStateName().isPresent()) {
+                addError("Final state '" + state.getStateName() + "' cannot define an initial nested state.", state);
+            }
+            if (state.getNestedStates() != null && !state.getNestedStates().isEmpty()) {
+                addError("Final state '" + state.getStateName() + "' cannot have nested states.", state);
+            }
+            // Note: onEntry might be permissible for a final action. onExit is less likely to be useful.
+            // For now, not adding errors for onEntry/onExit on final states.
+        }
     }
 
      // Helper to collect all state names recursively
@@ -543,52 +630,49 @@ public class AstValidator {
     }
 
     private void validateInvokeCompletionHandler(Optional<InvokeCompletionHandlerNode> handlerOpt, String handlerType, Set<String> definedStateNames, Set<String> definedActionNames, Set<String> definedGuardNames, InvokeStateNode invokeNode) {
-        if (handlerOpt.isPresent()) {
-            InvokeCompletionHandlerNode handler = handlerOpt.get();
-
-            // Validate actions in the handler
-            if (handler.getActions() != null && !handler.getActions().isEmpty()) {
-                List<String> actionNames = handler.getActions().stream()
-                                                .map(ActionReferenceNode::getActionName)
-                                                .collect(Collectors.toList());
-                validateActionReferences(actionNames, definedActionNames, handlerType + " actions for invoke '" + invokeNode.getInvokeDefinitionRef() + "'", invokeNode);
-            }
-
-            // Validate transition spec in the handler
+        handlerOpt.ifPresent(handler -> {
+            checkAndRegisterId(handler, new HashMap<>()); // Check ID for handler node itself
+            
+            // Validate target state, actions, and guard from TransitionSpecNode
             handler.getTransitionSpec().ifPresent(spec -> {
-                // Validate target state
-                TargetStateNode targetNode = spec.getTargetState();
-                if (targetNode != null && targetNode.getStateName().isPresent()) {
-                    String targetStateName = targetNode.getStateName().get();
-                    if (!definedStateNames.contains(targetStateName)) {
-                        addError(handlerType + " transition target state '" + targetStateName + "' for invoke '" + invokeNode.getInvokeDefinitionRef() + "' is not defined.", spec /*invokeNode*/);
-                    }
-                } else if (targetNode == null || (!targetNode.getStateName().isPresent() && targetNode.getType() != TargetStateNode.TargetType.HISTORY_REFERENCE)) {
-                     addError(handlerType + " transition target state is missing or invalid for invoke '" + invokeNode.getInvokeDefinitionRef() + "'.", spec);
+                // Validate target state if present in spec
+                TargetStateNode targetNode = spec.getTargetState(); // Assuming TransitionSpecNode has getTargetState() -> TargetStateNode
+                if (targetNode != null && targetNode.getType() == TargetStateNode.TargetType.STATE_REFERENCE) {
+                    targetNode.getStateName().ifPresent(targetStateName -> {
+                        if (!definedStateNames.contains(targetStateName)) {
+                            addError(handlerType + " handler for invoke '" + invokeNode.getInvokeDefinitionRef() + "' targets non-existent state '" + targetStateName + "'.", handler);
+                        }
+                    });
+                } else if (targetNode == null && spec.getActions().isEmpty()) { // Only error if target is null AND no actions (it might be an action-only handler)
+                     addError(handlerType + " handler for invoke '" + invokeNode.getInvokeDefinitionRef() + "' has no target state and no actions.", handler);
                 }
 
 
                 // Validate guards in the transition spec
-                if (spec.getGuards() != null && !spec.getGuards().isEmpty()) {
-                    List<String> guardNames = spec.getGuards().stream()
-                                                .map(GuardReferenceNode::getGuardName)
-                                                .collect(Collectors.toList());
-                    for (String guardName : guardNames) {
+                List<GuardReferenceNode> guardNodes = spec.getGuards(); // Corrected: getGuards() returns List<GuardReferenceNode>
+                if (guardNodes != null) {
+                    for (GuardReferenceNode guardRefNode : guardNodes) {
+                        String guardName = guardRefNode.getGuardName(); // Assuming GuardReferenceNode has getGuardName()
                         if (!definedGuardNames.contains(guardName)) {
-                            addError(handlerType + " transition guard '" + guardName + "' for invoke '" + invokeNode.getInvokeDefinitionRef() + "' is not defined.", spec);
+                            addError(handlerType + " handler guard '" + guardName + "' for invoke '" + invokeNode.getInvokeDefinitionRef() + "' is not a defined guard.", handler);
                         }
                     }
                 }
 
-                // Validate actions in the transition spec (these are different from handler.getActions())
-                if (spec.getActions() != null && !spec.getActions().isEmpty()) {
-                    List<String> tsActionNames = spec.getActions().stream()
-                                                .map(ActionReferenceNode::getActionName)
-                                                .collect(Collectors.toList());
-                    validateActionReferences(tsActionNames, definedActionNames, handlerType + " transition actions for invoke '" + invokeNode.getInvokeDefinitionRef() + "'", spec);
-                }
+                // Validate actions specified in the transition spec itself
+                // These are different from handler.getActions() which are at the handler's top level.
+                List<String> specActionNames = spec.getActions().stream() // Assuming TransitionSpecNode has getActions() -> List<ActionReferenceNode>
+                                                   .map(ActionReferenceNode::getActionName)
+                                                   .collect(Collectors.toList());
+                validateActionReferences(specActionNames, definedActionNames, handlerType + " handler transition spec for invoke '" + invokeNode.getInvokeDefinitionRef() + "'", handler);
             });
-        }
+
+            // Validate top-level actions directly on the handler (these execute regardless of the transition spec's guard)
+            List<String> handlerActionNames = handler.getActions().stream()
+                                                     .map(ActionReferenceNode::getActionName)
+                                                     .collect(Collectors.toList());
+            validateActionReferences(handlerActionNames, definedActionNames, handlerType + " handler for invoke '" + invokeNode.getInvokeDefinitionRef() + "'", handler);
+        });
     }
 
     private void validateTypes() {
@@ -772,9 +856,80 @@ public class AstValidator {
      }
 
     private void validateCrossCuttingConcerns() {
-        // Example: Check for ID uniqueness across the entire file
-        // Map<Long, AstNode> allSeenIds = new HashMap<>();
-        // collectAndCheckAllIds(astRoot, allSeenIds);
+        // --- Global ID Uniqueness Check ---
+        // Types
+        if (astRoot.getTypeDefs() != null) {
+            for (TypeDefNode typeDef : astRoot.getTypeDefs()) {
+                checkAndRegisterGlobalId(typeDef);
+            }
+        }
+        // Services (Interfaces and ServiceDefinitions)
+        if (astRoot.getServiceDefinitions() != null) { // This getter returns List<ServiceDefinitionNode>
+            for (ServiceDefinitionNode serviceDefNode : astRoot.getServiceDefinitions()) { // Corrected from AstNode to ServiceDefinitionNode
+                checkAndRegisterGlobalId(serviceDefNode);
+            }
+            // TODO: Iterate over InterfaceNode as well for global ID check if they are not covered
+            // by the above, e.g. if they are separate from ServiceDefinitionNode in how they are stored/accessed.
+            // For now, assuming ServiceDefinitionNode covers the primary service elements with IDs.
+            // If InterfaceNodes are collected into interfaceDefinitionsMap, that could be a source:
+            for (InterfaceNode ifaceNode : this.interfaceDefinitionsMap.values()) {
+                 checkAndRegisterGlobalId(ifaceNode);
+            }
+        }
+        // Machines
+        if (astRoot.getMachineNodes() != null) {
+            for (MachineNode machine : astRoot.getMachineNodes()) {
+                checkAndRegisterGlobalId(machine);
+                // IDs within machines (states, transitions, etc.) are handled by checkAndRegisterId
+                // with a scoped map. We are primarily concerned with top-level @id annotations here.
+                // However, if @id can appear on nested elements and needs to be globally unique,
+                // those checks would also need to use or contribute to globalSeenIds.
+                // For now, assuming @id on MachineNode itself needs to be globally unique.
+            }
+        }
+        // Actors
+        if (astRoot.getActorDefinitions() != null) { // getActorDefinitions() returns List<AstNode>
+            for (AstNode actorNode : astRoot.getActorDefinitions()) { // Corrected loop variable to AstNode
+                checkAndRegisterGlobalId(actorNode);
+            }
+        }
+        // Communication (Protocols, Channels, Events)
+        if (astRoot.getCommunicationDefinitions() != null) { // getCommunicationDefinitions() returns List<AstNode>
+            for (AstNode commElement : astRoot.getCommunicationDefinitions()) { // Corrected loop variable to AstNode
+                checkAndRegisterGlobalId(commElement); // Covers ProtocolNode, ChannelNode, EventNode
+            }
+        }
+
+        // Add other cross-cutting concerns here, e.g.:
+        // - Name collision checks between different types of definitions if necessary
+        // - Overall complexity metrics, etc.
+    }
+
+    /**
+     * Checks if the node has an ID and if it's already registered in the global ID map.
+     * Adds an error if the ID is duplicated.
+     * This method is for global ID checks. For scoped ID checks (e.g., within a machine),
+     * use {@code checkAndRegisterId(AstNode node, Map<Long, AstNode> seenIds)}.
+     *
+     * @param node The AST node to check.
+     */
+    private void checkAndRegisterGlobalId(AstNode node) {
+        if (node instanceof NodeWithId) {
+            NodeWithId nodeWithId = (NodeWithId) node;
+            Optional<Long> idOpt = nodeWithId.getId();
+
+            if (idOpt.isPresent()) {
+                Long id = idOpt.get();
+                if (globalSeenIds.containsKey(id)) {
+                    AstNode existingNode = globalSeenIds.get(id);
+                    addError("Duplicate global ID #" + id + " used by " + getNodeName(node) +
+                             ". It was already defined by " + getNodeName(existingNode) +
+                             " at " + getNodeLocation(existingNode) + ".", node);
+                } else {
+                    globalSeenIds.put(id, node);
+                }
+            }
+        }
     }
 
     // Helper to check and register @id
@@ -829,10 +984,8 @@ public class AstValidator {
             String typeName = refNode.getReferencedTypeName();
             if (!definedTypeNames.contains(typeName)) {
                  // Check if it's a known primitive before declaring error
-                 // TODO: Define known primitive types centrally
-                 Set<String> primitives = Set.of("string", "bool", "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64", "f32", "f64", "timestamp", "void");
-                 if (!primitives.contains(typeName)) {
-                    addError("Referenced type '" + typeName + "' is not defined.", ownerNode != null ? ownerNode : typeNode);
+                 if (!KNOWN_PRIMITIVE_TYPES.contains(typeName.toLowerCase())) { // Use constant and toLowerCase for robustness
+                    addError("Referenced type '" + typeName + "' is not defined and not a known primitive type.", ownerNode != null ? ownerNode : typeNode);
                  }
             }
         } else if (typeNode instanceof OptionalTypeNode optNode) {
@@ -844,8 +997,7 @@ public class AstValidator {
             validateTypeReference(mapNode.getValueType(), ownerNode); // Validate value type
         } else if (typeNode instanceof PrimitiveTypeNode primNode) {
             // Optionally validate if primitive type name is known/allowed
-             Set<String> primitives = Set.of("string", "bool", "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64", "f32", "f64", "timestamp", "void");
-             if (!primitives.contains(primNode.getTypeName())) {
+             if (!KNOWN_PRIMITIVE_TYPES.contains(primNode.getTypeName().toLowerCase())) { // Use constant and toLowerCase
                   addWarning("Unknown primitive type name '" + primNode.getTypeName() + "'.", ownerNode != null ? ownerNode : typeNode);
              }
         }

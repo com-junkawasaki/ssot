@@ -19,13 +19,25 @@ A comprehensive set of Java classes in `src/main/java/ssot_parser/ast/nodes/` re
 *   Ongoing work includes ensuring all parsed DSL details (e.g., for invoke definition handlers and action/guard parameters) are fully represented in their respective AST nodes.
 
 **AST Validation:**
-A new `AstValidator.java` component has been introduced to perform semantic checks on the constructed AST.
-*   Currently, it implements basic validations, such as ensuring uniqueness of type definition names.
-*   Significant expansion is planned to cover:
-    *   ID uniqueness across relevant scopes.
-    *   Resolution and validation of references (e.g., to types, services, actions, guards).
-    *   Type checking for fields, parameters, and return types.
-    *   State machine logic validation (e.g., reachability, initial/final state correctness, transition consistency).
+The `AstValidator.java` component performs comprehensive semantic checks on the constructed AST. Its capabilities have been significantly expanded and now include:
+*   **ID Uniqueness:**
+    *   Global uniqueness checks for `@id` annotations across all major definable elements (types, services, interfaces, machines, actors, communication elements like events, protocols, channels).
+    *   Scoped uniqueness checks for IDs within specific contexts (e.g., within a machine definition for its states, transitions, etc.).
+*   **Name Uniqueness:**
+    *   Ensures uniqueness of definition names for all major DSL constructs: `types` (structs, enums), `services`, `interfaces`, `machines`, `events`, `protocols`, `channels`, and `actors`.
+*   **Reference Resolution and Validation:**
+    *   Validates references to `types` in field definitions, parameters, and return types, checking against defined types and a known set of primitive types.
+    *   Validates that `invoke` targets in state machines refer to defined `services` or `machines`.
+    *   Ensures that `action` and `guard` names used in state machine transitions, entry/exit actions, and invoke handlers correspond to definitions within the machine's scope.
+    *   Checks that `event` names referenced in transitions are defined.
+*   **State Machine Logic Validation:**
+    *   **Initial State:** Validates the correct definition and existence of initial states for machines and compound/parallel nested states.
+    *   **Final State Semantics:** Ensures `final` states do not have outgoing transitions, invoke definitions, nested states, or initial state declarations.
+    *   **State Reachability:** Performs an analysis to identify and report any unreachable states within a machine.
+    *   **Transition Consistency:** Detects and reports ambiguous transitions, such as multiple transitions for the same event from a state without distinct guard conditions.
+    *   Validates target states of transitions.
+*   **Basic Type Checking:** Verifies that types referenced in struct fields, event fields, context variables, and method parameters/return types are either defined user types or known primitives.
+*   **Structural Integrity:** Includes checks for duplicated fields/variants within structs/enums/events, and validates service method implementations against their interfaces (name, parameters, return type).
 
 **Future Goals:**
 The primary long-term goal remains the development of code generators that leverage the AST to produce various artifacts (code, schemas, documentation). The "ドクトリン" (doctrine) concept noted in the IDEA section is also a potential future DSL enhancement.
