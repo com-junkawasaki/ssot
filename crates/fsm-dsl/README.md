@@ -8,11 +8,27 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
 
 ## Project Status & Recent Developments
 
-**Core Functionality:**
-The project is developing a Java/ANTLR-based parser for a custom Domain-Specific Language (`.ssot` files). This DSL is designed to define comprehensive system specifications. The ANTLR grammar (`SSoT.g4`) and Maven build process (`pom.xml`) are established, forming the foundational parsing layer.
+**Core Parsing Functionality:**
+The project features a robust Java/ANTLR-based parser for a custom Domain-Specific Language (`.ssot` files). This DSL is designed to define comprehensive system specifications, including types, services, actors, state machines, and communication protocols. The ANTLR grammar (`SSoT.g4`) is well-established, and the Maven build process (`pom.xml`) is stable, recently verified by successful compilation runs.
 
-**Abstract Syntax Tree (AST):**
-A rich set of Java classes (`src/main/java/ssot_parser/ast/`) represents the DSL elements in an Abstract Syntax Tree. The core `AstBuilderVisitor.java` class is responsible for constructing this AST from the ANTLR parse tree.
+**Abstract Syntax Tree (AST) Construction:**
+A comprehensive set of Java classes in `src/main/java/ssot_parser/ast/nodes/` represents the DSL elements within an Abstract Syntax Tree. The `AstBuilderVisitor.java` class is responsible for constructing this AST from the ANTLR parse tree. It currently handles:
+*   Top-level file structure, imports, and annotation processing (including `@id`, `$name`).
+*   Definition blocks for `types` (structs, enums), `services` (interfaces, service definitions with methods), `machines` (context, actions, guards, invokes, states), `actors`, and `communication` (protocols, channels, events).
+*   Detailed state machine constructs including nested states, history states, entry/exit actions, event/conditional/after transitions, and invoke state elements.
+*   Ongoing work includes ensuring all parsed DSL details (e.g., for invoke definition handlers and action/guard parameters) are fully represented in their respective AST nodes.
+
+**AST Validation:**
+A new `AstValidator.java` component has been introduced to perform semantic checks on the constructed AST.
+*   Currently, it implements basic validations, such as ensuring uniqueness of type definition names.
+*   Significant expansion is planned to cover:
+    *   ID uniqueness across relevant scopes.
+    *   Resolution and validation of references (e.g., to types, services, actions, guards).
+    *   Type checking for fields, parameters, and return types.
+    *   State machine logic validation (e.g., reachability, initial/final state correctness, transition consistency).
+
+**Future Goals:**
+The primary long-term goal remains the development of code generators that leverage the AST to produce various artifacts (code, schemas, documentation). The "ドクトリン" (doctrine) concept noted in the IDEA section is also a potential future DSL enhancement.
 
 ## ビルドと実行
 
