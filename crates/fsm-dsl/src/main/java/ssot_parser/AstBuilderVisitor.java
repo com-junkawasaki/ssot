@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.antlr.v4.runtime.tree.ParseTree; // Import needed for context checks
+import org.antlr.v4.runtime.tree.TerminalNode; // Added import
 import java.util.Map;
 import java.util.HashMap;
 // import ssot_parser.SSoTParser.AnnotationContext; // Removed
@@ -574,50 +575,65 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         // System.out.println("Visiting GuardDefinition: " + ctx.getText());
         List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
         Optional<Long> id = extractIdFromList(annotations);
-        Map<String, Object> annotationMap = mapAnnotations(annotations);
+        // Map<String, Object> annotationMap = mapAnnotations(annotations); // GuardNode takes List<AnnotationNode>
 
-        String guardName = ctx.ID().getText();
-        // Assuming guard parameters are simple IDs if present.
-        // List<String> parameters = new ArrayList<>();
-        // if (ctx.paramList() != null) { // If guards can take parameters, e.g. guardName(param1, param2)
-        //     for (TerminalNode paramId : ctx.paramList().ID()) {
-        //         parameters.add(paramId.getText());
-        //     }
-        // }
-        // Type for a guard is always boolean.
-        PrimitiveTypeNode returnType = new PrimitiveTypeNode(PrimitiveTypeNode.PrimitiveType.BOOL); // Corrected from BOOLEAN
-
-        // For now, we don't have a complex parameter structure for guards, just the name.
-        // If parameters are needed, the GuardNode constructor and this visitor will need updating.
-        // The grammar rule `(LPAREN ID? RPAREN)?` seems to allow one optional parameter
-        Optional<String> parameter = Optional.empty();
-        if (ctx.LPAREN() != null && ctx.RPAREN() != null && ctx.getChildCount() > 5) { // LPAREN, ID, RPAREN, ARROW, T_BOOL, SEMI are children
-            // Check if there is an ID token between LPAREN and RPAREN
-            // A more robust way would be to check the specific token index or type if ANTLR provides it
-            // Example: ctx.ID().size() > 1 for a second ID, or specific rule for parameter
-            // For `(LPAREN ID? RPAREN)?`, the ID would be the second ID if one for guard name and one for param
-            // Let's assume the rule's ID refers to the guard name and the optional ID inside LPAREN/RPAREN needs specific handling.
-            // The current rule: guardDefinition: ID annotation* (LPAREN ID? RPAREN)? ARROW T_BOOL SEMI;
-            // The first ID is guardName. If (LPAREN ID? RPAREN) exists, that ID is the parameter.
-            // A simple ctx.ID(1) might not work if annotations have IDs. Need careful parsing of children.
-            // For now, let's assume if LPAREN is present, and there's an ID inside, it's a param.
-            // This is a bit fragile. A dedicated rule for the parameter part would be better.
-            // For now, let's assume the grammar `(LPAREN ID? RPAREN)?` means the optional ID is for a single parameter.
-            // The parser tree for `myGuard(param) -> bool;` would have `myGuard` as ID(0), `param` as ID(1) if no annotations
-            // If annotation like `@foo ID`, then it's more complex.
-            // Given the simple `(LPAREN ID? RPAREN)?` it likely means an optional single identifier.
-            // Let's simplify: the rule `actionDefinition : ID annotation* (LPAREN ID? (COMMA ID)? RPAREN)? (COLON typeExpr)? SEMI ;` handles this.
-            // The rule `guardDefinition: ID annotation* (LPAREN ID? RPAREN)? ARROW T_BOOL SEMI;` implies the ID inside parens is a parameter.
-            // SSoT.g4 uses `ID` for the guard name. If `LPAREN ID? RPAREN` is present, the `ID` inside is the parameter.
-            if (ctx.children.size() > 4 && ctx.getChild(ctx.children.indexOf(ctx.LPAREN()) + 1) instanceof TerminalNode) {
-                 if (!ctx.getChild(ctx.children.indexOf(ctx.LPAREN()) + 1).getText().equals(")")) { // ensure it's not empty parens
-                    parameter = Optional.of(ctx.getChild(ctx.children.indexOf(ctx.LPAREN()) + 1).getText());
-                 }
-            }
-
+        String guardName = "UnknownGuard"; // Default value
+        if (ctx.ID() != null && !ctx.ID().isEmpty()) {
+            guardName = ctx.ID(0).getText(); // First ID is the guard name
+        } else {
+            System.err.println("Error: Guard definition is missing a name. Context: " + ctx.getText());
         }
 
-        return new GuardNode(id, guardName, parameter, returnType, annotationMap);
+        // Parameter and returnType are not currently stored in GuardNode.
+        // The logic below is for future reference if GuardNode is extended.
+        /*
+        Optional<String> parameter = Optional.empty();
+        // Grammar: guardDefinition: ID annotation* (LPAREN ID? RPAREN)? ARROW T_BOOL SEMI;
+        // The ID for the parameter is the second ID token if present and if LPAREN exists.
+        if (ctx.LPAREN() != null && ctx.ID().size() > 1) {
+            // This assumes the parameter ID is the next ID token after the guard name ID.
+            // This might be fragile if annotations can contain ID tokens.
+            // A more robust approach would be to label the parameter ID in the grammar
+            // or inspect children tokens between LPAREN and RPAREN.
+            // Example: If rule was `guardName=ID ... (LPAREN paramName=ID? RPAREN)? ...`
+            // then ctx.paramName would be directly accessible.
+            // For now, if LPAREN exists, check if there's a second ID token overall.
+            // This is a simplification and might need refinement.
+            // Check if the second ID is actually within the parentheses.
+            // A simple way: check if the text of the token after LPAREN is not RPAREN.
+            ParseTree tokenAfterLparen = null;
+            ParseTree tokenBeforeRparen = null;
+            boolean foundLparen = false;
+            for (int i = 0; i < ctx.getChildCount(); i++) {
+                ParseTree child = ctx.getChild(i);
+                if (child instanceof TerminalNode) {
+                    TerminalNode tn = (TerminalNode) child;
+                    if (tn.getSymbol().getType() == SSoTParser.LPAREN) {
+                        foundLparen = true;
+                        if (i + 1 < ctx.getChildCount()) {
+                            tokenAfterLparen = ctx.getChild(i + 1);
+                        }
+                        continue;
+                    }
+                    if (foundLparen && tn.getSymbol().getType() == SSoTParser.ID) {
+                         // This ID is a candidate for parameter
+                         if ( (i + 1 < ctx.getChildCount() && ctx.getChild(i+1) instanceof TerminalNode && ((TerminalNode)ctx.getChild(i+1)).getSymbol().getType() == SSoTParser.RPAREN) ) {
+                            parameter = Optional.of(tn.getText());
+                            break; // found parameter
+                         }
+                    }
+                    if (tn.getSymbol().getType() == SSoTParser.RPAREN) {
+                        break; // Past potential parameter
+                    }
+                }
+            }
+        }
+        // Type for a guard is always boolean by grammar definition (ARROW T_BOOL SEMI).
+        PrimitiveTypeNode returnType = new PrimitiveTypeNode(PrimitiveTypeNode.PrimitiveType.BOOL);
+        */
+
+        // Constructor: GuardNode(Optional<Long> id, String name, List<AnnotationNode> annotations)
+        return new GuardNode(id, guardName, annotations);
     }
 
      @Override
@@ -1054,7 +1070,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         }
 
 
-        return new HistoryStateNode(id, historyId, type, defaultTransition, annotationMap);
+        return new HistoryStateNode(id, historyId, type, defaultTransition, annotations);
     }
 
     @Override

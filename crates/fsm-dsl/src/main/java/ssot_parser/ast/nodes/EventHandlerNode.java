@@ -40,8 +40,22 @@ public class EventHandlerNode implements AstNode {
         return conditionalTransitions;
     }
 
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    @Override
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new java.util.HashMap<>();
+        if (this.annotations != null) {
+            for (AnnotationNode annotation : this.annotations) {
+                annotationMap.put(annotation.name, annotation.value);
+            }
+        }
+        return java.util.Collections.unmodifiableMap(annotationMap);
+    }
+
+    @Override
+    public java.util.Optional<Long> getId() {
+        // Event handlers typically don't have their own @id in the DSL structure.
+        // If they could, logic to extract from this.annotations would go here.
+        return java.util.Optional.empty();
     }
 
     @Override

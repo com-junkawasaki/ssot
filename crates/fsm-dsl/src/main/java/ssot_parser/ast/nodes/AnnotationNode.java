@@ -24,11 +24,27 @@ public class AnnotationNode implements AstNode {
         return isIdAnnotation;
     }
 
+    public String getName() {
+        return name;
+    }
+
+    public Object getValue() {
+        return value;
+    }
+
     // Since annotations don't have their own sub-annotations in this model,
     // getAnnotations returns an empty map. File/Machine/State nodes hold their annotations.
     @Override
     public Map<String, Object> getAnnotations() {
         return Map.of(); // An annotation itself doesn't have annotations
+    }
+
+    @Override
+    public java.util.Optional<Long> getId() {
+        if (this.isIdAnnotation && this.name.equals("id") && this.value instanceof Number) {
+            return java.util.Optional.of(((Number) this.value).longValue());
+        }
+        return java.util.Optional.empty();
     }
 
     @Override

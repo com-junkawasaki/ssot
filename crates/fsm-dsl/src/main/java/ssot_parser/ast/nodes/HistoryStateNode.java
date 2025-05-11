@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.ArrayList;
+import java.util.Map;
 
 /**
  * Represents a history pseudo-state (shallow or deep) within a state machine.
@@ -18,13 +19,13 @@ public class HistoryStateNode implements AstNode, NodeWithId {
     private final Optional<Long> id;
     private final String name;
     private final HistoryStateType type;
-    private final Optional<TransitionNode> defaultTransition;
+    private final Optional<TransitionSpecNode> defaultTransition;
     private final List<AnnotationNode> annotations;
 
     public HistoryStateNode(Optional<Long> id,
                             String name,
                             HistoryStateType type,
-                            Optional<TransitionNode> defaultTransition,
+                            Optional<TransitionSpecNode> defaultTransition,
                             List<AnnotationNode> annotations) {
         this.id = id;
         this.name = name;
@@ -46,12 +47,19 @@ public class HistoryStateNode implements AstNode, NodeWithId {
         return type;
     }
 
-    public Optional<TransitionNode> getDefaultTransition() {
+    public Optional<TransitionSpecNode> getDefaultTransition() {
         return defaultTransition;
     }
 
-    public List<AnnotationNode> getAnnotations() {
-        return annotations;
+    @Override
+    public Map<String, Object> getAnnotations() {
+        Map<String, Object> annotationMap = new java.util.HashMap<>();
+        if (this.annotations != null) {
+            for (AnnotationNode annotation : this.annotations) {
+                annotationMap.put(annotation.name, annotation.value);
+            }
+        }
+        return java.util.Collections.unmodifiableMap(annotationMap);
     }
 
     @Override
@@ -65,7 +73,7 @@ public class HistoryStateNode implements AstNode, NodeWithId {
                "id=" + id.map(String::valueOf).orElse("none") +
                ", name='" + name + '\'' +
                ", type=" + type +
-               ", defaultTransition=" + defaultTransition.map(TransitionNode::toString).orElse("none") +
+               ", defaultTransition=" + defaultTransition.map(TransitionSpecNode::toString).orElse("none") +
                ", annotations=" + annotations +
                '}';
     }

@@ -30,7 +30,7 @@ public interface ValueNode extends AstNode {
 
     Map<String, Object> getAnnotations();
 
-    public Object getActualValue();
+    Object getActualValue();
 }
 
 // --- Implementation Classes ---
@@ -122,48 +122,3 @@ class FloatValueNode implements ValueNode {
         return value;
     }
 }
-
-/** Represents a reference to a context variable, action, guard etc. */
-class RefValueNode implements ValueNode {
-    public final String identifier; // e.g., "context.user.id", "Actions.logEvent"
-    private final Optional<Long> id = Optional.empty(); // References themselves don't have an @id
-    private final Map<String, Object> annotations = java.util.Collections.emptyMap(); // References themselves don't have $ annotations
-
-    public RefValueNode(String identifier) { this.identifier = identifier; }
-
-    @Override
-    public Optional<Long> getId() {
-        return id;
-    }
-
-    @Override
-    public Map<String, Object> getAnnotations() {
-        return annotations;
-    }
-
-    @Override
-    public <T> T accept(NodeVisitor<T> visitor) { return visitor.visitValueNode(this); /* Placeholder for specific visitor method if any */ }
-
-    @Override
-    public String toString() { return identifier; }
-
-    @Override
-    public Object getValue() {
-        return identifier;
-    }
-
-    @Override
-    public String getRawValue() {
-        return identifier;
-    }
-
-    @Override
-    public ValueNodeType getType() {
-        return ValueNodeType.REFERENCE;
-    }
-
-    @Override
-    public Object getActualValue() {
-        return identifier;
-    }
-} 
