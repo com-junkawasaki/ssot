@@ -3,6 +3,8 @@ package ssot_parser.validation;
 import ssot_parser.SsotRoot;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.nodes.*;
+import ssot_parser.ast.nodes.InterfaceNode;
+import ssot_parser.NodeWithId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Collections;
@@ -92,9 +94,9 @@ public class AstValidator {
 
     private void collectInterfaceDefinitions() {
         if (astRoot.getServiceDefinitions() != null) {
-            for (ServiceDefinitionNode serviceDef : astRoot.getServiceDefinitions()) {
-                if (serviceDef instanceof InterfaceDefinitionNode) {
-                    InterfaceDefinitionNode iface = (InterfaceDefinitionNode) serviceDef;
+            for (AstNode serviceElement : astRoot.getServiceDefinitions()) {
+                if (serviceElement instanceof InterfaceNode) {
+                    InterfaceNode iface = (InterfaceNode) serviceElement;
                     if (interfaceDefinitionsMap.put(iface.getName(), iface) != null) {
                         addError("Duplicate interface definition name '" + iface.getName() + "'.", iface);
                     }
@@ -106,10 +108,18 @@ public class AstValidator {
 
     private void collectServiceAndMachineNames() {
         if (astRoot.getServiceDefinitions() != null) {
-            for (ServiceDefinitionNode service : astRoot.getServiceDefinitions()) {
-                 if (!(service instanceof InterfaceDefinitionNode)) {
-                    if (!definedServiceNames.add(service.getName())) {
-                         addError("Duplicate service definition name '" + service.getName() + "'.", service);
+            for (AstNode serviceElement : astRoot.getServiceDefinitions()) {
+                 if (!(serviceElement instanceof InterfaceNode)) {
+                    if (serviceElement instanceof ServiceNode) {
+                        ServiceNode service = (ServiceNode) serviceElement;
+                        if (!definedServiceNames.add(service.getName())) {
+                             addError("Duplicate service definition name '" + service.getName() + "'.", service);
+                         }
+                     } else if (serviceElement instanceof ServiceDefinitionNode) {
+                        ServiceDefinitionNode service = (ServiceDefinitionNode) serviceElement;
+                        if (!definedServiceNames.add(service.getName())) {
+                            addError("Duplicate service definition name '" + service.getName() + "'.", service);
+                        }
                      }
                  }
             }
@@ -137,16 +147,14 @@ public class AstValidator {
              checkAndRegisterId(machine, seenIdsInMachine);
 
              Set<String> definedActionNames = machine.getActions().stream()
-                                                 .map(ActionDefinitionNode::getName)
+                                                 .map(ActionDefinitionNode::getActionName)
                                                  .collect(Collectors.toSet());
              Set<String> definedGuardNames = machine.getGuards().stream()
-                                                .map(GuardDefinitionNode::getName)
+                                                .map(GuardDefinitionNode::getGuardName)
                                                 .collect(Collectors.toSet());
 
              // Context validation
-             if (machine.getContext() != null) {
-                validateContext(machine.getContext(), seenIdsInMachine);
-             }
+             machine.getContext().ifPresent(contextNode -> validateContext(contextNode, seenIdsInMachine));
 
              validateMachineStateHierarchy(machine, null, definedActionNames, definedGuardNames, seenIdsInMachine);
              Set<String> allDefinedStateNames = collectAllStateNames(machine);
@@ -185,7 +193,7 @@ public class AstValidator {
                  addError("Duplicate state name '" + state.getStateName() + "' defined within scope '" + scopeName + "'.", state);
              }
              // Check IDs of children immediately within this state's definition
-             state.getInvokes().forEach(inv -> checkAndRegisterId(inv, seenIdsInScope));
+             state.getInvokeInvocations().forEach(inv -> checkAndRegisterId(inv, seenIdsInScope));
              state.getTransitions().forEach(t -> checkAndRegisterId(t, seenIdsInScope));
              state.getHistory().ifPresent(h -> checkAndRegisterId(h, seenIdsInScope));
         }
@@ -233,8 +241,8 @@ public class AstValidator {
          }
 
          // Validate Invokes
-         if (state.getInvokes() != null) {
-             for (InvokeStateNode invoke : state.getInvokes()) {
+         if (state.getInvokeInvocations() != null) {
+             for (InvokeStateNode invoke : state.getInvokeInvocations()) {
                  // Validate invoke source
                  String srcName = invoke.getSrc();
                  if (!definedServiceNames.contains(srcName) && !definedMachineNames.contains(srcName)) {
@@ -447,18 +455,17 @@ public class AstValidator {
     }
 
     private void validateTypes() {
-        if (astRoot.getTypeDefinitions() == null) return;
-        Map<Long, AstNode> seenIds = new HashMap<>(); // Track IDs within this block
-
-        for (AstNode node : astRoot.getTypeDefinitions()) {
-            checkAndRegisterId(node, seenIds);
-             if (node instanceof EnumNode enumNode) {
-                 validateEnum(enumNode);
-             } else if (node instanceof TypeDefNode structNode) {
-                 validateStruct(structNode);
-             } else {
-                 addError("Invalid node type found in types block: " + node.getClass().getSimpleName(), node);
-             }
+        if (astRoot.getTypeDefs() != null) {
+            for (TypeDefNode typeDef : astRoot.getTypeDefs()) {
+                checkAndRegisterId(typeDef, new HashMap<>());
+                 if (typeDef instanceof EnumNode enumNode) {
+                     validateEnum(enumNode);
+                 } else if (typeDef instanceof TypeDefNode structNode) {
+                     validateStruct(structNode);
+                 } else {
+                     addError("Invalid node type found in types block: " + typeDef.getClass().getSimpleName(), typeDef);
+                 }
+            }
         }
     }
     private void validateEnum(EnumNode node) {
@@ -641,14 +648,17 @@ public class AstValidator {
             if (idOpt.isPresent()) {
                 Long id = idOpt.get();
                 if (seenIds.containsKey(id)) {
-                    addError("Duplicate ID #" + id + " detected. First seen on '" +
-                             seenIds.get(id).getClass().getSimpleName() + "', now on '" +
-                             node.getClass().getSimpleName() + "'.", node);
+                    AstNode existingNode = seenIds.get(id);
+                    addError("Duplicate ID #" + id + " found. Previously defined by '" +
+                                    getNodeName(existingNode) + "' (" + existingNode.getClass().getSimpleName() + ") at " + getNodeLocation(existingNode) +
+                                    ". Now seen on '" + getNodeName(node) + "' (" + node.getClass().getSimpleName() +").",
+                             node);
                 } else {
                     seenIds.put(id, node);
                 }
             }
         }
+        // Recursively check children if applicable, or delegate to specific validators
     }
 
     // Helper method to add an error

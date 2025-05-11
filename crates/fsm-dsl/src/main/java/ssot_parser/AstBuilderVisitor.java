@@ -146,15 +146,22 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         List<AnnotationContext> topLevelAnnotationCtxs = new ArrayList<>();
         if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
             boolean importsOrBlocksStarted = false;
-            for (AnnotationContext annoCtx : ctx.annotation()) {
-                boolean isAfterImports = ctx.importStatement(0) != null && annoCtx.getStart().getTokenIndex() > ctx.importStatement(0).getStart().getTokenIndex();
-                boolean isAfterBlocks = ctx.definitionBlock(0) != null && annoCtx.getStart().getTokenIndex() > ctx.definitionBlock(0).getStart().getTokenIndex();
-                importsOrBlocksStarted = isAfterImports || isAfterBlocks;
+            // Determine the start index of the first import or definition block if they exist
+            int firstImportOrBlockIndex = Integer.MAX_VALUE;
+            if (ctx.importStatement() != null && !ctx.importStatement().isEmpty()) {
+                firstImportOrBlockIndex = Math.min(firstImportOrBlockIndex, ctx.importStatement(0).getStart().getTokenIndex());
+            }
+            if (ctx.definitionBlock() != null && !ctx.definitionBlock().isEmpty()) {
+                firstImportOrBlockIndex = Math.min(firstImportOrBlockIndex, ctx.definitionBlock(0).getStart().getTokenIndex());
+            }
 
-                if (!importsOrBlocksStarted) {
+            for (AnnotationContext annoCtx : ctx.annotation()) {
+                // Only consider annotations that appear before any import or definition block
+                if (annoCtx.getStart().getTokenIndex() < firstImportOrBlockIndex) {
                     topLevelAnnotationCtxs.add(annoCtx);
                 } else {
-                    System.out.println("Found annotation after imports/blocks started, not treating as top-level file annotation: " + annoCtx.getText());
+                    // This logic might misclassify annotations if they are interleaved in a way not handled by this simple check
+                    System.out.println("Found annotation after imports/blocks started or no imports/blocks present, not treating as top-level file annotation: " + annoCtx.getText());
                 }
             }
         }
@@ -182,26 +189,24 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             System.err.println("Warning: Both fileId (e.g. @0x123) and @id annotation found for file. Using fileId (@0x...). Found @id: " + fileIdFromAnnotation.get());
         }
 
-        SsotRoot root = new SsotRoot(
-                new ArrayList<>(), // imports
-                new ArrayList<>(), // typeDefinitions
-                new ArrayList<>(), // serviceDefinitions
-                new ArrayList<>(), // machineDefinitions
-                new ArrayList<>(), // actorDefinitions
-                new ArrayList<>(), // communicationDefinitions
-                finalFileId,       // ID for the SsotRoot
-                rootAnnotationsMap // annotations for the SsotRoot
-        );
+        // Initialize local lists to store definitions
+        List<ImportNode> imports = new ArrayList<>();
+        List<AstNode> typeDefinitions = new ArrayList<>();
+        List<AstNode> serviceDefinitions = new ArrayList<>(); // Will hold ServiceDefinitionNode and InterfaceNode
+        List<AstNode> machineDefinitions = new ArrayList<>();
+        List<AstNode> actorDefinitions = new ArrayList<>();
+        List<AstNode> communicationDefinitions = new ArrayList<>();
+        // Add other lists as needed, e.g., for deploymentConfig, dependencies
 
         if (ctx.importStatement() != null) {
             for (ImportStatementContext importCtx : ctx.importStatement()) {
-                root.getImports().add((ImportNode) visitImportStatement(importCtx));
+                imports.add((ImportNode) visitImportStatement(importCtx));
             }
         }
 
         if (ctx.definitionBlock() != null) {
             for (DefinitionBlockContext blockCtx : ctx.definitionBlock()) {
-                AstNode visitedNode = visit(blockCtx); 
+                AstNode visitedNode = visit(blockCtx);
                 if (visitedNode instanceof BlockContainerNode) {
                     BlockContainerNode container = (BlockContainerNode) visitedNode;
                     System.out.println("Processing BlockContainer: " + container.blockType + " with " + container.getChildren().size() + " children.");
@@ -209,8 +214,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                     switch (container.blockType) {
                         case "types":
                             container.getChildren().forEach(child -> {
-                                if (child instanceof TypeDefNode) { 
-                                    root.getTypeDefinitions().add((TypeDefNode) child);
+                                if (child instanceof TypeDefNode) {
+                                    typeDefinitions.add(child); // Add to local list
                                 } else {
                                     System.err.println("Warning: Child in types block is not TypeDefNode: " + child.getClass().getName());
                                 }
@@ -218,10 +223,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                             break;
                         case "services":
                             container.getChildren().forEach(child -> {
-                                if (child instanceof ServiceDefinitionNode) {
-                                    root.getServiceDefinitions().add((ServiceDefinitionNode) child);
-                                } else if (child instanceof InterfaceNode) {
-                                    System.err.println("InterfaceNode cannot be directly added to List<ServiceDefinitionNode>. Needs SsotRoot modification or different handling for interfaces.");
+                                // ServiceDefinitionNode and InterfaceNode are both valid children
+                                if (child instanceof ServiceDefinitionNode || child instanceof InterfaceNode) {
+                                    serviceDefinitions.add(child); // Add to local list
                                 } else {
                                      System.err.println("Warning: Child in services block is not ServiceDefinitionNode or InterfaceNode: " + child.getClass().getName());
                                 }
@@ -229,8 +233,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                             break;
                         case "machines":
                             container.getChildren().forEach(child -> {
-                                if (child instanceof MachineNode) { 
-                                    root.getMachineDefinitions().add((MachineNode) child);
+                                if (child instanceof MachineNode) {
+                                    machineDefinitions.add(child); // Add to local list
                                 } else {
                                      System.err.println("Warning: Child in machines block is not MachineNode: " + child.getClass().getName());
                                 }
@@ -239,7 +243,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                         case "actors":
                              container.getChildren().forEach(child -> {
                                  if (child instanceof ActorNode) {
-                                     root.getActorDefinitions().add((ActorNode) child);
+                                     actorDefinitions.add(child); // Add to local list
                                  } else {
                                      System.err.println("Warning: Child in actors block is not ActorNode: " + child.getClass().getName());
                                  }
@@ -248,12 +252,15 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                         case "communication":
                             container.getChildren().forEach(child -> {
                                 if (child instanceof ProtocolNode || child instanceof ChannelNode || child instanceof EventNode) {
-                                    root.getCommunicationDefinitions().add(child); 
+                                    communicationDefinitions.add(child); // Add to local list
                                 } else {
                                     System.err.println("Warning: Child in communication block is not a known comm element: " + child.getClass().getName());
                                 }
                             });
                             break;
+                        // TODO: Add cases for deploymentConfigBlock and dependenciesBlock
+                        // case "deploymentConfig": ...
+                        // case "dependencies": ...
                         default:
                             System.err.println("Warning: Unhandled block container type in visitFile: " + container.blockType);
                             break;
@@ -263,6 +270,19 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                 }
             }
         }
+
+        // Construct SsotRoot with the populated local lists
+        SsotRoot root = new SsotRoot(
+                imports,
+                typeDefinitions,
+                serviceDefinitions,
+                machineDefinitions,
+                actorDefinitions,
+                communicationDefinitions,
+                finalFileId,
+                rootAnnotationsMap
+        );
+
         System.out.println("Finished Visiting File (was SsotDefinition)");
         return root;
     }

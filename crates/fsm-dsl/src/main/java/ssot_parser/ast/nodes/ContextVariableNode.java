@@ -67,7 +67,7 @@ public class ContextVariableNode implements AstNode, NodeWithId {
         Map<String, Object> map = new HashMap<>();
         if (annotationNodes != null) {
             for (AnnotationNode annotation : annotationNodes) {
-                map.put(annotation.getName(), annotation.getValue().orElse(Boolean.TRUE));
+                map.put(annotation.getName(), annotation.getValue());
             }
         }
         return Collections.unmodifiableMap(map);
