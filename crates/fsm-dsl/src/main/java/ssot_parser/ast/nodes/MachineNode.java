@@ -52,6 +52,10 @@ public class MachineNode implements AstNode, NodeWithId {
         return initialStateName;
     }
 
+    public Optional<String> getInitialState() {
+        return Optional.ofNullable(this.initialStateName);
+    }
+
     public Optional<ContextNode> getContext() {
         return context;
     }

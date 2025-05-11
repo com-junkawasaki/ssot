@@ -30,6 +30,10 @@ public class ContextNode implements AstNode {
         return fields;
     }
 
+    public List<ContextVariableNode> getVariables() {
+        return fields;
+    }
+
     @Override
     public Optional<Long> getId() {
         return id;

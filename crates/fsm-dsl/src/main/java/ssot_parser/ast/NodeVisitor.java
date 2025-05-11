@@ -83,4 +83,7 @@ public interface NodeVisitor<T> {
     // Value Nodes
     T visitValueNode(ssot_parser.ast.values.ValueNode node);
 
+    // Invoke Completion Handler Node (New)
+    T visitInvokeCompletionHandlerNode(InvokeCompletionHandlerNode node);
+
 }

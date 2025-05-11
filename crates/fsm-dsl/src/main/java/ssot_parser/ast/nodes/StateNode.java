@@ -129,6 +129,34 @@ public class StateNode implements AstNode, NodeWithId {
         return annotations;
     }
 
+    public List<TransitionNode> getTransitions() {
+        List<TransitionNode> allTransitions = new ArrayList<>();
+        if (this.eventHandlers != null) {
+            allTransitions.addAll(this.eventHandlers);
+        }
+        // Assuming ifTransitions are also a direct part of StateNode's transitions.
+        // If IfConditionTransitionNode is different and needs to be converted or handled separately,
+        // this will need adjustment. Based on current StateNode, ifTransitions is List<TransitionNode>.
+        if (this.ifTransitions != null) {
+            allTransitions.addAll(this.ifTransitions);
+        }
+        return Collections.unmodifiableList(allTransitions);
+    }
+
+    public Optional<HistoryStateNode> getHistory() {
+        if (this.historyStates != null && !this.historyStates.isEmpty()) {
+            return Optional.of(this.historyStates.get(0)); // Returning the first one if multiple exist
+        }
+        return Optional.empty();
+    }
+
+    public Optional<InvokeStateNode> getInvoke() {
+        if (this.invokeInvocations != null && !this.invokeInvocations.isEmpty()) {
+            return Optional.of(this.invokeInvocations.get(0)); // Returning the first one
+        }
+        return Optional.empty();
+    }
+
     @Override
     public <T> T accept(NodeVisitor<T> visitor) {
         return visitor.visitStateNode(this);

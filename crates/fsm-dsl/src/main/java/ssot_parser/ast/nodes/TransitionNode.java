@@ -142,6 +142,14 @@ public class TransitionNode implements AstNode, NodeWithId {
         return annotations;
     }
 
+    // New method
+    public Optional<ActionReferenceNode> getAction() {
+        if (this.actions != null && !this.actions.isEmpty()) {
+            return Optional.of(this.actions.get(0)); // Return the first action if multiple are present
+        }
+        return Optional.empty();
+    }
+
     // Getters and Setters for new fields
     public boolean isAlways() {
         return always;

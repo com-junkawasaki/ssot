@@ -4,7 +4,8 @@ import ssot_parser.ast.AstNode;
 import ssot_parser.NodeWithId;
 import ssot_parser.ast.NodeVisitor;
 import ssot_parser.ast.values.ValueNode;
-import ssot_parser.ast.handlers.InvokeCompletionHandler;
+// import ssot_parser.ast.handlers.InvokeCompletionHandler; // Old import
+import ssot_parser.ast.nodes.InvokeCompletionHandlerNode; // New import
 
 import java.util.Collections;
 import java.util.List;
@@ -29,15 +30,15 @@ public class InvokeStateNode implements AstNode, NodeWithId {
     private final Optional<Long> id; // ID specific to this invocation instance in the state
     public final String invokeDefinitionRef; // Reference to the name in the machine's 'invokes' block
     public final Map<String, ValueNode> inputMapping; // Use the imported ValueNode
-    public final Optional<InvokeCompletionHandler> onDoneHandler; // Use the imported InvokeCompletionHandler
-    public final Optional<InvokeCompletionHandler> onErrorHandler; // Use the imported InvokeCompletionHandler
+    public final Optional<InvokeCompletionHandlerNode> onDoneHandler; // Use the new Node type
+    public final Optional<InvokeCompletionHandlerNode> onErrorHandler; // Use the new Node type
     private final List<AnnotationNode> annotations; // Annotations on the invoke line itself
 
     public InvokeStateNode(Optional<Long> id,
                            String invokeDefinitionRef,
                            Map<String, ValueNode> inputMapping, // Use imported ValueNode
-                           Optional<InvokeCompletionHandler> onDoneHandler, // Use imported InvokeCompletionHandler
-                           Optional<InvokeCompletionHandler> onErrorHandler, // Use imported InvokeCompletionHandler
+                           Optional<InvokeCompletionHandlerNode> onDoneHandler, // Use new Node type
+                           Optional<InvokeCompletionHandlerNode> onErrorHandler, // Use new Node type
                            List<AnnotationNode> annotations) {
         this.id = id;
         this.invokeDefinitionRef = invokeDefinitionRef;
@@ -60,12 +61,16 @@ public class InvokeStateNode implements AstNode, NodeWithId {
         return inputMapping;
     }
 
-    public Optional<InvokeCompletionHandler> getOnDoneHandler() { // Return type uses imported InvokeCompletionHandler
+    public Optional<InvokeCompletionHandlerNode> getOnDoneHandler() { // Return type uses new Node type
         return onDoneHandler;
     }
 
-    public Optional<InvokeCompletionHandler> getOnErrorHandler() { // Return type uses imported InvokeCompletionHandler
+    public Optional<InvokeCompletionHandlerNode> getOnErrorHandler() { // Return type uses new Node type
         return onErrorHandler;
+    }
+
+    public String getSrc() {
+        return this.invokeDefinitionRef;
     }
 
     @Override
@@ -91,8 +96,8 @@ public class InvokeStateNode implements AstNode, NodeWithId {
                "id=" + id.map(String::valueOf).orElse("none") +
                ", invokeDefinitionRef='" + invokeDefinitionRef + "\'" +
                ", inputMapping=" + inputMapping +
-               ", onDoneHandler=" + onDoneHandler.map(InvokeCompletionHandler::toString).orElse("none") + // Use imported class for toString
-               ", onErrorHandler=" + onErrorHandler.map(InvokeCompletionHandler::toString).orElse("none") + // Use imported class for toString
+               ", onDoneHandler=" + onDoneHandler.map(InvokeCompletionHandlerNode::toString).orElse("none") + // Use new Node type for toString
+               ", onErrorHandler=" + onErrorHandler.map(InvokeCompletionHandlerNode::toString).orElse("none") + // Use new Node type for toString
                ", annotations=" + annotations +
                "}";
     }

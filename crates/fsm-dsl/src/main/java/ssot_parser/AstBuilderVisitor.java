@@ -23,7 +23,7 @@ import ssot_parser.ast.values.NullValueNode;
 import ssot_parser.ast.values.ArrayValueNode;
 import ssot_parser.ast.values.ObjectValueNode;
 import ssot_parser.ast.values.RefValueNode;
-import ssot_parser.ast.handlers.InvokeCompletionHandler;
+import ssot_parser.ast.nodes.InvokeCompletionHandlerNode; // New import
 import java.time.Duration;
 import ssot_parser.ast.nodes.StateNode; // Corrected import
 import ssot_parser.ast.nodes.HistoryStateNode; // Corrected import
@@ -108,10 +108,12 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         return actionRefs;
     }
 
-    private InvokeCompletionHandler parseInvokeCompletionHandler(InvokeCompletionContext ctx) {
+    private InvokeCompletionHandlerNode parseInvokeCompletionHandler(InvokeCompletionContext ctx) {
         if (ctx == null) return null; // Or throw, or return an empty handler
 
         List<AnnotationNode> handlerAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
+        Optional<Long> handlerId = extractIdFromList(handlerAnnotations);
+
         List<ActionReferenceNode> handlerActionRefs = new ArrayList<>();
         Optional<TransitionSpecNode> handlerTransitionSpec = Optional.empty();
 
@@ -121,8 +123,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         } else if (ctx.transitionSpec() != null) {
             handlerTransitionSpec = Optional.ofNullable((TransitionSpecNode) visitTransitionSpec(ctx.transitionSpec()));
         }
-        // InvokeCompletionHandler(List<ActionReferenceNode> actions, Optional<TransitionSpecNode> transitionSpec, List<AnnotationNode> annotations)
-        return new InvokeCompletionHandler(handlerActionRefs, handlerTransitionSpec, handlerAnnotations);
+        // InvokeCompletionHandlerNode(Optional<Long> id, List<ActionReferenceNode> actions, Optional<TransitionSpecNode> transitionSpec, List<AnnotationNode> annotations)
+        return new InvokeCompletionHandlerNode(handlerId, handlerActionRefs, handlerTransitionSpec, handlerAnnotations);
     }
 
     @Override
@@ -681,8 +683,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         Optional<ValueNode> srcOpt = Optional.empty();
         Map<String, ValueNode> inputMapping = new HashMap<>(); // Parsed, but not used by current InvokeDefinitionNode constructor
         Map<String, ValueNode> outputMapping = new HashMap<>(); // Parsed, but not used
-        Optional<InvokeCompletionHandler> onDoneOpt = Optional.empty(); // Parsed, but not used
-        Optional<InvokeCompletionHandler> onErrorOpt = Optional.empty(); // Parsed, but not used
+        Optional<InvokeCompletionHandlerNode> onDoneOpt = Optional.empty(); // Parsed, but not used
+        Optional<InvokeCompletionHandlerNode> onErrorOpt = Optional.empty(); // Parsed, but not used
 
         if (ctx.invokeDefinitionBody() != null) {
             for (InvokeAttributeContext attrCtx : ctx.invokeDefinitionBody().invokeAttribute()) {
@@ -962,9 +964,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                     // And `invokeStateBody` can also have `annotation`.
                     // Let's collect all from `invokeStateBody` explicitly.
                     // The ones from `LBRACE annotation*` are trickier if not part of `invokeStateBody` rule itself.
-                    // For now, assume `ctx.annotation()` gives all of them.
-                    // This is problematic if we need to distinguish.
-                    //
+                    // For now, assume `extractAnnotations(ctx.annotation())` gets all annotations at the `invokeState` rule level.
+                    // This is likely fine, as they all describe this specific invocation.
+                    
                     // Let's refine: First list of annotations are for the invoke *instance*.
                     // Annotations inside LBRACE are for *configuring* this instance (overrides, etc.)
                 }
@@ -987,8 +989,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         Optional<ValueNode> srcOverride = Optional.empty(); // Not usually overridden here, src is part of definition
         Map<String, ValueNode> inputMappingOverride = new HashMap<>();
         Map<String, ValueNode> outputMappingOverride = new HashMap<>();
-        Optional<InvokeCompletionHandler> onDoneOverride = Optional.empty();
-        Optional<InvokeCompletionHandler> onErrorOverride = Optional.empty();
+        Optional<InvokeCompletionHandlerNode> onDoneOverride = Optional.empty();
+        Optional<InvokeCompletionHandlerNode> onErrorOverride = Optional.empty();
 
 
         if (ctx.invokeStateBody() != null) {

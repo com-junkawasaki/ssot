@@ -15,72 +15,68 @@ The project is developing a Java/ANTLR-based parser for a custom Domain-Specific
 A rich set of Java classes (`src/main/java/ssot_parser/ast/`) represents the DSL elements in an Abstract Syntax Tree. The core `AstBuilderVisitor.java` class is responsible for constructing this AST from the ANTLR parse tree.
 
 **Recent Progress & Current Focus:**
-Significant effort has been dedicated to achieving a compilable and stable AST and validator. Key achievements include:
-*   Stabilization of `AstBuilderVisitor.java`'s interaction with `SsotRoot.java` regarding node collection and method calls.
-*   Resolution of common `Optional.orElse` misuse in `mapAnnotations` methods within `ContextVariableNode.java` and `GuardDefinitionNode.java`.
-*   Initial corrections in `AstValidator.java`, such as:
-    *   Standardizing on `InterfaceNode` instead of `InterfaceDefinitionNode`.
-    *   Correcting method references (e.g., `ActionDefinitionNode::getActionName`).
-    *   Addressing `Optional` handling for `ContextNode`.
-    *   Updating calls from `getInvokes` to `getInvokeInvocations` on `StateNode`.
+Significant effort has been dedicated to achieving a compilable and stable AST and validator. Key achievements and the primary focus of the last development cycle were:
+*   **Resolving all compilation errors:** This was the main goal. It involved:
+    *   Implementing missing methods in various AST nodes (`StateNode`, `TransitionNode`, `InvokeStateNode`, `MachineNode`, `ContextNode`) as required by `AstValidator.java`.
+    *   Correcting type mismatches and API usage in `AstValidator.java`. This included:
+        *   Standardizing `InvokeCompletionHandlerNode` and updating its usage in `InvokeStateNode`, `AstBuilderVisitor`, and `AstValidator`.
+        *   Ensuring correct list types and filtering for methods like `collectStateNamesRecursive`.
+        *   Properly handling `TargetStateNode` return types instead of assuming `String`.
+        *   Correcting stream collection for `AstNode` lists to `StateNode` specific maps.
+        *   Adjusting logic for `ContextVariableNode` and its name retrieval.
+        *   Refining how `TypeDefNode` kinds (ENUM vs. STRUCT) are handled in validation logic, particularly for `validateEnum` and `validateStruct`.
+    *   Iteratively compiling and fixing new errors as they emerged.
 
-**The current and immediate priority is to resolve all remaining compilation errors, primarily within `AstValidator.java` and the AST node methods it consumes, to achieve a clean `mvn clean compile`.** This will unblock further development of semantic validation logic and comprehensive testing. While the foundational components are largely in place, this stabilization phase is critical for the project's health and future progress towards full DSL feature implementation and code generation capabilities.
+**The project has now achieved a clean `mvn clean compile` state.** This is a major milestone, unblocking further development of semantic validation logic and comprehensive testing.
 
 ## Current Build Status & Remaining Compilation Errors
 
-While `AstBuilderVisitor.java` compiles cleanly, and specific errors in `ContextVariableNode.java` and `GuardDefinitionNode.java` have been resolved, the project build (`mvn clean compile`) still fails. The errors are almost entirely concentrated in `AstValidator.java` due to interactions with various AST node classes.
+**The project now compiles cleanly with `mvn clean compile`.**
 
-The main categories of *current* errors are:
+All previously listed compilation errors in `AstValidator.java` and related AST nodes have been addressed. This included:
+1.  **Implemented Missing Methods in AST Nodes:**
+    *   `StateNode.java`: Added `getTransitions()`, `getHistory()`, `getInvoke()`. Issues related to `getHistoryType()` and `getDefaultHistoryTransition()` were resolved by accessing these through `HistoryStateNode` instances obtained via `StateNode.getHistory()`.
+    *   `TransitionNode.java`: Added `getAction()` returning `Optional<ActionReferenceNode>`.
+    *   `InvokeStateNode.java`: Added `getSrc()`.
+    *   `MachineNode.java`: Added `getInitialState()` returning `Optional<String>`.
+    *   `ContextNode.java`: Added `getVariables()` (delegating to `getFields()`).
+    *   Calls to `getStateName()` on `AstNode` instances are now handled with appropriate type checking and casting (e.g., in `validateUnreachableStates`).
 
-1.  **Missing Methods in AST Nodes (Primarily surfaced by `AstValidator.java`):**
-    *   `StateNode.java`: Missing `getTransitions()`, `getHistory()`, `getInvoke()`, `getHistoryType()`, `getDefaultHistoryTransition()`.
-    *   `TransitionNode.java`: Missing `getAction()`.
-    *   `InvokeStateNode.java`: Missing `getSrc()`.
-    *   `MachineNode.java`: Missing `getInitialState()`.
-    *   `ContextNode.java`: Missing `getVariables()`.
-    *   Generic `AstNode`: Calls to `getStateName()` on `AstNode` instances (may require casting or type checking before call).
+2.  **Addressed Type Mismatches and Incorrect API Usage in `AstValidator.java`:**
+    *   `validateInvokeCompletionHandler` calls: Now correctly uses `InvokeCompletionHandlerNode`.
+    *   `collectStateNamesRecursive` call: Now correctly filters and casts `List<AstNode>` to `List<StateNode>`.
+    *   `TargetStateNode` to `String` conversion: Now correctly uses `TargetStateNode` methods like `getStateName()` and `getType()`.
+    *   `Stream.collect` for `stateMap`: Correctly filters and casts `Stream<AstNode>` to `Stream<StateNode>` before collection.
+    *   `validateActionReferences` call: Adapted where necessary (though many calls already expected `List<String>` which `ActionReferenceNode::getActionName` provides).
 
-2.  **Type Mismatches and Incorrect API Usage in `AstValidator.java`:**
-    *   `validateInvokeCompletionHandler` calls: Mismatch between `Optional<ssot_parser.ast.nodes.InvokeCompletionHandler>` and `Optional<ssot_parser.ast.handlers.InvokeCompletionHandler>`.
-    *   `collectStateNamesRecursive` call: Argument mismatch (`List<AstNode>` passed, `List<StateNode>` expected).
-    *   `TargetStateNode` to `String` conversion: `transition.getTargetState()` returns `TargetStateNode`, but is used as `String`.
-    *   `Stream.collect` for `stateMap`: Attempting `StateNode::getStateName` on a `Stream<AstNode>`.
-    *   `validateActionReferences` call: Argument mismatch (`List<ActionReferenceNode>` passed, `List<String>` expected).
+3.  **Addressed Other Specific Issues in `AstValidator.java`:**
+    *   `TypeDefNode` kind checking: Logic in `validateTypes` now uses `typeDef.getKind()` and `validateEnum`'s signature was changed to accept `TypeDefNode`.
+    *   History state handling in `validateUnreachableStates`: Logic now correctly uses `StateNode.getHistory()` to get an `Optional<HistoryStateNode>` and then calls appropriate methods on it.
 
-3.  **Other Specific Issues in `AstValidator.java`:**
-    *   `instanceof EnumNode` check: `typeDef` is `TypeDefNode`, so `instanceof EnumNode` might be problematic if `EnumNode` doesn't extend `TypeDefNode` directly (use `typeDef.getKind() == TypeDefNode.TypeKind.ENUM`).
-    *   `StateNode.HistoryType` resolution: `HistoryType` enum not correctly resolved in `AstValidator`.
+With the codebase compiling, the next phase can focus on enhancing the semantic validation and overall robustness of the parser and AST.
 
 ## Next Steps
 
-1.  **(High Priority) Achieve a Clean Build (`mvn clean compile`):** This remains the top priority.
-    *   **Fix `AstValidator.java` and related AST Node issues (CONTINUED):**
-        *   Systematically address the errors listed in "Current Build Status & Remaining Compilation Errors" above.
-        *   For missing methods: Add them to the respective AST node classes in `src/main/java/ssot_parser/ast/nodes/` with correct signatures and return types.
-        *   For type mismatches/API usage: Correct the calls in `AstValidator.java` or adapt the method signatures/return types in AST nodes as appropriate.
-        *   This will be an iterative process. After fixing a group of errors, re-run `mvn clean compile -e` to check progress.
-
-2.  **(Post-Compilation) AST Validation Framework Enhancement:**
+1.  **(High Priority) AST Validation Framework Enhancement & Testing:**
     *   With `AstValidator.java` compiling, rigorously test and expand its validation logic.
     *   Implement checks for:
-        *   **Reference Resolution:** Ensure all identifiers (state names, action names, type names, etc.) are defined before use.
-        *   **Type Checking:** Verify type compatibility in expressions, assignments, and parameters.
-        *   **State Machine Semantics:** Validate initial state definitions, transition consistency, reachability, etc.
-        *   Start by fleshing out classes in `src/main/java/ssot_parser/validation/`.
+        *   **Reference Resolution:** Ensure all identifiers (state names, action names, type names, service names, etc.) are defined before use and are of the correct type for the context.
+        *   **Type Checking:** Verify type compatibility in expressions, assignments, and parameters more thoroughly.
+        *   **State Machine Semantics:** Expand validation for initial states (including nested ones), transition consistency, event usage, history state usage, and overall state machine integrity.
+        *   **Invoke Logic:** Ensure `invoke` sources resolve correctly, and input/output mappings are type-compatible (requires further AST enhancements for invoke definitions).
+        *   **Service and Interface Logic:** Validate method implementations against interface definitions, check for duplicate method names, etc.
+    *   Develop a comprehensive test suite using diverse `.ssot` example files (both valid and invalid) to verify the parser, AST construction, and validator.
 
-3.  **(Post-Compilation) Comprehensive Testing:**
-    *   **Unit Tests:** For complex logic within `AstBuilderVisitor.java` methods and individual AST node functionalities.
-    *   **Integration Tests:** Create diverse `.ssot` example files (both valid and invalid) to test the end-to-end parsing and AST construction process. Assert the structure and content of the generated AST.
+2.  **AST Enhancement & Feature Completion:**
+    *   Review and complete the AST node implementations for all DSL constructs (e.g., `InvokeDefinitionNode` to store mappings/handlers, `ActionDefinitionNode` to store parameters/return types, full `ServiceDefinitionNode` details).
+    *   Ensure `AstBuilderVisitor.java` fully populates these richer AST nodes for all DSL features, including `services`, `actors`, `communication`, `deployment_config`, and `dependencies` blocks.
 
-4.  **Implement Remaining DSL Features in AST Builder:**
-    *   Ensure full AST construction for `services`, `actors`, `communication`, `deployment_config`, and `dependencies` blocks as defined in `SSoT.g4`. This includes creating or refining corresponding AST nodes and visitor methods.
+3.  **Code Generation / AST Consumers:**
+    *   Begin planning and prototyping AST consumers, particularly for targets like `MERMAID_OUT` for visualization, and `TS_OUT` or `PROTO_OUT` for code/schema generation.
 
-5.  **Code Generation / AST Consumers:**
-    *   Begin implementation of AST consumers, particularly for the `*_OUT` targets indicated in grammar annotations (e.g., `MERMAID_OUT`, `TS_OUT`, `PROTO_OUT`).
-
-6.  **Documentation Enhancement:**
-    *   Keep `DSL.md` updated with any grammar refinements.
-    *   Maintain this `README.md` with current project status, build/usage instructions, and a clear roadmap.
+4.  **Documentation and DSL Refinement:**
+    *   Keep `DSL.md` updated with any grammar or semantic refinements discovered during validation and AST building.
+    *   Refine this `README.md` with detailed usage instructions for any new tools or validation outputs.
 
 ## ビルドと実行
 

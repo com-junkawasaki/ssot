@@ -223,18 +223,26 @@ public class AstValidator {
          if (state.getTransitions() != null) {
              for (TransitionNode transition : state.getTransitions()) {
                  // Validate target state existence (against all states in the machine)
-                 if (!allStateNames.contains(transition.getTargetState())) {
-                     addError("Transition target state '" + transition.getTargetState() + "' for event '" + transition.getEvent() + "' from state '" + state.getStateName() + "' is not defined within the machine.", transition);
+                 TargetStateNode targetNode = transition.getTargetState();
+                 if (targetNode != null && targetNode.getType() == TargetStateNode.TargetType.STATE_REFERENCE) {
+                     String targetName = targetNode.getStateName().orElse(null);
+                     if (targetName == null || targetName.isEmpty() || !allStateNames.contains(targetName)) {
+                         addError("Transition target state '" + (targetName != null ? targetName : "<empty_or_null>") + "' for event '" + transition.getEvent() + "' from state '" + state.getStateName() + "' is not defined or empty.", transition);
+                     }
+                 } else if (targetNode == null) {
+                     addError("Transition target state is null for event '" + transition.getEvent() + "' from state '" + state.getStateName() + "'.", transition);
                  }
+                 // History targets (".history") are handled differently, usually validated by structure not by name in allStateNames.
+
                  // Validate action/guard references
-                 transition.getAction().ifPresent(actionName -> {
-                     if (!definedActionNames.contains(actionName)) {
-                         addError("Transition action '" + actionName + "' is not defined.", transition);
+                 transition.getAction().ifPresent(actionRefNode -> {
+                     if (!definedActionNames.contains(actionRefNode.getActionName())) {
+                         addError("Transition action '" + actionRefNode.getActionName() + "' is not defined.", transition);
                      }
                  });
-                 transition.getCondition().ifPresent(guardName -> {
-                     if (!definedGuardNames.contains(guardName)) {
-                         addError("Transition guard '" + guardName + "' is not defined.", transition);
+                 transition.getCondition().ifPresent(guardRefNode -> {
+                     if (!definedGuardNames.contains(guardRefNode.getGuardName())) {
+                         addError("Transition guard '" + guardRefNode.getGuardName() + "' is not defined.", transition);
                      }
                  });
              }
@@ -258,7 +266,13 @@ public class AstValidator {
      // Helper to collect all state names recursively
      private Set<String> collectAllStateNames(MachineNode machine) {
          Set<String> names = new HashSet<>();
-         collectStateNamesRecursive(machine.getStates(), names);
+         collectStateNamesRecursive(
+             machine.getStates().stream()
+                 .filter(StateNode.class::isInstance)
+                 .map(StateNode.class::cast)
+                 .collect(Collectors.toList()), 
+             names
+         );
          return names;
      }
 
@@ -323,10 +337,10 @@ public class AstValidator {
         checkAndRegisterId(node, seenIdsInScope); // Check context block ID itself?
 
         if (node.getVariables() != null) {
-            for (FieldNode field : node.getVariables()) {
+            for (ContextVariableNode field : node.getVariables()) {
                 checkAndRegisterId(field, seenIdsInScope);
-                if (!fieldNames.add(field.getName())) {
-                    addError("Duplicate context variable name '" + field.getName() + "' defined.", field);
+                if (!fieldNames.add(field.getVariableName())) {
+                    addError("Duplicate context variable name '" + field.getVariableName() + "' defined.", field);
                 }
                 validateTypeReference(field.getType(), field); // Validate type ref as well
             }
@@ -348,10 +362,17 @@ public class AstValidator {
             reachableStates.add(initialMachineState);
         } else if (initialMachineState == null && !machine.getStates().isEmpty()) {
             // This case should ideally be caught by initial state validation, but as a fallback:
-            String firstDefinedState = machine.getStates().get(0).getStateName();
-            queue.add(firstDefinedState);
-            reachableStates.add(firstDefinedState);
-            addWarning("Machine '" + machine.getMachineName() + "' has no explicit initial state for reachability analysis. Starting with first defined state: " + firstDefinedState, machine);
+            AstNode firstNode = machine.getStates().get(0);
+            if (firstNode instanceof StateNode) {
+                String firstDefinedState = ((StateNode) firstNode).getStateName();
+                queue.add(firstDefinedState);
+                reachableStates.add(firstDefinedState);
+                addWarning("Machine '" + machine.getMachineName() + "' has no explicit initial state for reachability analysis. Starting with first defined state: " + firstDefinedState, machine);
+            } else {
+                // Handle cases where the first node isn't a StateNode, though less likely for a valid machine
+                addError("Machine '" + machine.getMachineName() + "' has no explicit initial state and the first defined element is not a state. Cannot perform reachability analysis.", machine);
+                return;
+            }
         } else if (initialMachineState != null) {
              addError("Initial state '" + initialMachineState + "' for machine '" + machine.getMachineName() + "' is not defined. Cannot perform reachability analysis.", machine);
              return;
@@ -359,7 +380,12 @@ public class AstValidator {
 
 
         Map<String, StateNode> stateMap = machine.getStates().stream()
-                .collect(Collectors.toMap(StateNode::getStateName, s -> s, (s1, s2) -> s1)); // Handle duplicates by taking first
+                .filter(StateNode.class::isInstance)
+                .map(StateNode.class::cast)
+                .collect(Collectors.toMap(StateNode::getStateName, s -> s, (s1, s2) -> {
+                    addWarning("Duplicate state name '" + s1.getStateName() + "' found when building state map for reachability. Check for issues in state name collection or definition.", s1);
+                    return s1; // Keep the first encountered
+                }));
 
         while (!queue.isEmpty()) {
             String currentStateName = queue.remove();
@@ -369,27 +395,32 @@ public class AstValidator {
 
             // Check transitions from the current state
             for (TransitionNode transition : currentState.getTransitions()) {
-                String targetStateName = transition.getTargetState();
-                if (definedStateNames.contains(targetStateName) && reachableStates.add(targetStateName)) {
+                String targetStateName = transition.getTargetState().getStateName().orElse(null);
+                if (targetStateName != null && definedStateNames.contains(targetStateName) && reachableStates.add(targetStateName)) {
                     queue.add(targetStateName);
                 }
             }
 
             // Check transitions from invoke handlers
-            if (currentState.getInvoke() != null) {
-                InvokeStateNode invoke = currentState.getInvoke();
+            currentState.getInvoke().ifPresent(invoke -> {
                 checkAndEnqueueTargetFromHandler(invoke.getOnDoneHandler(), definedStateNames, reachableStates, queue);
                 checkAndEnqueueTargetFromHandler(invoke.getOnErrorHandler(), definedStateNames, reachableStates, queue);
-            }
+            });
             
             // Check transitions from history state defaults
-            if (currentState.getHistoryType() != StateNode.HistoryType.NONE && currentState.getDefaultHistoryTransition().isPresent()) {
-                TransitionNode historyDefault = currentState.getDefaultHistoryTransition().get();
-                 String targetStateName = historyDefault.getTargetState();
-                if (definedStateNames.contains(targetStateName) && reachableStates.add(targetStateName)) {
-                    queue.add(targetStateName);
-                }
-            }
+            currentState.getHistory().ifPresent(historyNode -> {
+                historyNode.getDefaultTransition().ifPresent(transitionSpec -> {
+                    TargetStateNode targetNode = transitionSpec.getTargetState();
+                    // Only consider named state targets for reachability from history default
+                    if (targetNode != null && targetNode.getType() == TargetStateNode.TargetType.STATE_REFERENCE) {
+                        targetNode.getStateName().ifPresent(targetName -> {
+                            if (definedStateNames.contains(targetName) && reachableStates.add(targetName)) {
+                                queue.add(targetName);
+                            }
+                        });
+                    }
+                });
+            });
         }
 
         for (String stateName : definedStateNames) {
@@ -406,17 +437,22 @@ public class AstValidator {
         }
     }
 
-    private void checkAndEnqueueTargetFromHandler(Optional<InvokeCompletionHandler> handlerOpt, Set<String> definedStates, Set<String> reachableStates, Deque<String> queue) {
+    private void checkAndEnqueueTargetFromHandler(Optional<InvokeCompletionHandlerNode> handlerOpt, Set<String> definedStates, Set<String> reachableStates, Deque<String> queue) {
         if (handlerOpt.isPresent()) {
-            InvokeCompletionHandler handler = handlerOpt.get();
-            if (handler.isTransition()) {
-                handler.getTransition().ifPresent(transitionNode -> {
-                    String targetStateName = transitionNode.getTargetState();
-                    if (definedStates.contains(targetStateName) && reachableStates.add(targetStateName)) {
-                        queue.add(targetStateName);
+            InvokeCompletionHandlerNode handler = handlerOpt.get();
+            handler.getTransitionSpec().ifPresent(spec -> {
+                TargetStateNode targetNode = spec.getTargetState();
+                if (targetNode != null && targetNode.getStateName().isPresent()) {
+                    String targetName = targetNode.getStateName().get();
+                    if (definedStates.contains(targetName) && reachableStates.add(targetName)) {
+                        queue.add(targetName);
                     }
-                });
-            }
+                } else if (targetNode != null && targetNode.getType() == TargetStateNode.TargetType.HISTORY_REFERENCE) {
+                    // TODO: How to handle history targets in reachability? For now, assume they are valid if present.
+                    // String owningStateName = getNodeName(handler); // This is problematic, handler doesn't have a direct parent state name
+                    // Need a way to get the context of the current state for '.history'
+                }
+            });
         }
     }
 
@@ -429,28 +465,52 @@ public class AstValidator {
         }
     }
 
-    private void validateInvokeCompletionHandler(Optional<InvokeCompletionHandler> handlerOpt, String handlerType, Set<String> definedStateNames, Set<String> definedActionNames, Set<String> definedGuardNames, InvokeStateNode invokeNode) {
+    private void validateInvokeCompletionHandler(Optional<InvokeCompletionHandlerNode> handlerOpt, String handlerType, Set<String> definedStateNames, Set<String> definedActionNames, Set<String> definedGuardNames, InvokeStateNode invokeNode) {
         if (handlerOpt.isPresent()) {
-            InvokeCompletionHandler handler = handlerOpt.get();
-            if (handler.isTransition()) {
-                handler.getTransition().ifPresent(transitionNode -> {
-                    // Validate target state
-                    String targetState = transitionNode.getTargetState();
-                    if (!definedStateNames.contains(targetState)) {
-                        addError(handlerType + " transition target state '" + targetState + "' is not defined.", invokeNode);
-                    }
-                    // Validate actions in transition
-                    validateActionReferences(transitionNode.getActions(), definedActionNames, handlerType + " transition", invokeNode);
-                    // Validate guard in transition (if applicable, though typically completion transitions don't have guards from invoke)
-                    transitionNode.getCondition().ifPresent(guardName -> {
-                        if (!definedGuardNames.contains(guardName)) {
-                             addError(handlerType + " transition guard '" + guardName + "' is not defined.", invokeNode);
-                        }
-                    });
-                });
-            } else if (handler.isActions()) {
-                validateActionReferences(handler.getActions(), definedActionNames, handlerType + " actions", invokeNode);
+            InvokeCompletionHandlerNode handler = handlerOpt.get();
+
+            // Validate actions in the handler
+            if (handler.getActions() != null && !handler.getActions().isEmpty()) {
+                List<String> actionNames = handler.getActions().stream()
+                                                .map(ActionReferenceNode::getActionName)
+                                                .collect(Collectors.toList());
+                validateActionReferences(actionNames, definedActionNames, handlerType + " actions for invoke '" + invokeNode.getInvokeDefinitionRef() + "'", invokeNode);
             }
+
+            // Validate transition spec in the handler
+            handler.getTransitionSpec().ifPresent(spec -> {
+                // Validate target state
+                TargetStateNode targetNode = spec.getTargetState();
+                if (targetNode != null && targetNode.getStateName().isPresent()) {
+                    String targetStateName = targetNode.getStateName().get();
+                    if (!definedStateNames.contains(targetStateName)) {
+                        addError(handlerType + " transition target state '" + targetStateName + "' for invoke '" + invokeNode.getInvokeDefinitionRef() + "' is not defined.", spec /*invokeNode*/);
+                    }
+                } else if (targetNode == null || (!targetNode.getStateName().isPresent() && targetNode.getType() != TargetStateNode.TargetType.HISTORY_REFERENCE)) {
+                     addError(handlerType + " transition target state is missing or invalid for invoke '" + invokeNode.getInvokeDefinitionRef() + "'.", spec);
+                }
+
+
+                // Validate guards in the transition spec
+                if (spec.getGuards() != null && !spec.getGuards().isEmpty()) {
+                    List<String> guardNames = spec.getGuards().stream()
+                                                .map(GuardReferenceNode::getGuardName)
+                                                .collect(Collectors.toList());
+                    for (String guardName : guardNames) {
+                        if (!definedGuardNames.contains(guardName)) {
+                            addError(handlerType + " transition guard '" + guardName + "' for invoke '" + invokeNode.getInvokeDefinitionRef() + "' is not defined.", spec);
+                        }
+                    }
+                }
+
+                // Validate actions in the transition spec (these are different from handler.getActions())
+                if (spec.getActions() != null && !spec.getActions().isEmpty()) {
+                    List<String> tsActionNames = spec.getActions().stream()
+                                                .map(ActionReferenceNode::getActionName)
+                                                .collect(Collectors.toList());
+                    validateActionReferences(tsActionNames, definedActionNames, handlerType + " transition actions for invoke '" + invokeNode.getInvokeDefinitionRef() + "'", spec);
+                }
+            });
         }
     }
 
@@ -458,17 +518,17 @@ public class AstValidator {
         if (astRoot.getTypeDefs() != null) {
             for (TypeDefNode typeDef : astRoot.getTypeDefs()) {
                 checkAndRegisterId(typeDef, new HashMap<>());
-                 if (typeDef instanceof EnumNode enumNode) {
-                     validateEnum(enumNode);
-                 } else if (typeDef instanceof TypeDefNode structNode) {
-                     validateStruct(structNode);
+                 if (typeDef.getKind() == TypeDefNode.TypeKind.ENUM) {
+                     validateEnum(typeDef);
+                 } else if (typeDef.getKind() == TypeDefNode.TypeKind.STRUCT) {
+                     validateStruct(typeDef);
                  } else {
-                     addError("Invalid node type found in types block: " + typeDef.getClass().getSimpleName(), typeDef);
+                     addError("TypeDefNode '" + typeDef.getName() + "' has unknown kind: " + typeDef.getKind(), typeDef);
                  }
             }
         }
     }
-    private void validateEnum(EnumNode node) {
+    private void validateEnum(TypeDefNode node) {
         System.out.println("Validating enum: " + node.getName());
         Set<String> variantNames = new HashSet<>();
         Map<Long, AstNode> seenVariantIds = new HashMap<>(); // IDs within enum variants
@@ -478,7 +538,7 @@ public class AstValidator {
             for (EnumVariantNode variant : node.getVariants()) {
                 checkAndRegisterId(variant, seenVariantIds);
                 if (!variantNames.add(variant.getName())) {
-                    addError("Duplicate enum variant name '" + variant.getName() + "' defined.", variant);
+                    addError("Duplicate enum variant name '" + variant.getName() + "' defined in enum '" + node.getName() + "'.", variant);
                 }
             }
         }
