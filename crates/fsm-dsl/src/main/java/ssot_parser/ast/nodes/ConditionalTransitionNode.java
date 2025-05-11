@@ -22,7 +22,23 @@ public class ConditionalTransitionNode implements AstNode {
         this.guardName = guardName;
          if (transition == null) {
              System.err.println("Error: ConditionalTransitionNode created with null transition for guard: " + guardName);
-             this.transition = new TransitionNode("ERROR_NULL_TRANSITION", Optional.empty(), Collections.emptyList(), Collections.emptyList());
+             this.transition = new TransitionNode(
+                Optional.empty(), // id
+                null, // sourceStateName
+                "ERROR_EVENT", // event
+                "ERROR_NULL_TRANSITION", // targetStateName
+                Optional.empty(), // conditionRef
+                Collections.emptyList(), // actionRefs
+                Collections.emptyList(), // annotations
+                new TargetStateNode("ERROR_NULL_TRANSITION"), // targetState
+                Optional.empty(), // condition
+                Collections.emptyList(), // actions
+                Collections.emptyList(), // guards
+                Collections.emptyList(), // allowedActors
+                Optional.empty(), // delay
+                TransitionNode.TransitionType.EVENT, // type
+                Collections.emptyMap() // annotationsMap
+             );
         } else {
              this.transition = transition;
         }
@@ -55,7 +71,7 @@ public class ConditionalTransitionNode implements AstNode {
         this.elseTransition = elseTransition;
     }
 
-    public List<AnnotationNode> getAnnotations() {
+    public List<AnnotationNode> getRawAnnotations() {
         return Collections.unmodifiableList(annotations);
     }
 
@@ -81,6 +97,6 @@ public class ConditionalTransitionNode implements AstNode {
     }
 
     // No ID or annotations directly on this node, they are within the TransitionNode
-     @Override public Map<String, Object> getAnnotationsMap() { return transition != null ? transition.getAnnotations() : Collections.emptyMap(); }
+     @Override public Map<String, Object> getAnnotations() { return transition != null ? transition.getAnnotations() : Collections.emptyMap(); }
      @Override public Optional<Long> getId() { return transition != null ? transition.getId() : Optional.empty(); }
 } 

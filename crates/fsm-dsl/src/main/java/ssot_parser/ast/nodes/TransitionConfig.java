@@ -8,13 +8,14 @@ import ssot_parser.ast.NodeVisitor;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
+import ssot_parser.NodeWithId;
 
 /**
  * Represents the configuration details for a single transition target,
  * including target state, actions, and an optional guard condition.
  * This is often used within EventHandlerNode or ConditionalTransitionNode.
  */
-public class TransitionConfig implements AstNode {
+public class TransitionConfig implements NodeWithId {
     public final String targetStateName;
     public final List<String> actions;
     public final Optional<String> condition; // Guard name
@@ -35,6 +36,12 @@ public class TransitionConfig implements AstNode {
 
     public Optional<String> getCondition() {
         return condition;
+    }
+
+    @Override
+    public Optional<Long> getId() {
+        // TransitionConfig nodes do not have their own @id
+        return Optional.empty();
     }
 
     @Override

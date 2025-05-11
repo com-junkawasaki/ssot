@@ -32,8 +32,8 @@ public class OptionalTypeNode implements TypeExprNode {
 
     // AstNode requirements
     @Override
-    public List<AnnotationNode> getAnnotations() {
-        return Collections.emptyList();
+    public java.util.Map<String, Object> getAnnotations() {
+        return Collections.emptyMap();
     }
      @Override
      public Optional<Long> getId() {

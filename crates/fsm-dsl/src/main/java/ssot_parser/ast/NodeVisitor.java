@@ -10,6 +10,8 @@ import ssot_parser.ast.nodes.ContextVariableNode;
 // import ssot_parser.TransitionNode; // Removed
 // import ssot_parser.BlockNode; // Removed
 // No more imports needed from ssot_parser directly for nodes
+import ssot_parser.ast.type.PrimitiveTypeNode;
+import ssot_parser.ast.type.RefTypeNode;
 
 /**
  * Defines the Visitor pattern interface for traversing the AST.
@@ -44,6 +46,7 @@ public interface NodeVisitor<T> {
 
     // Service Nodes
     T visitServiceDefinitionNode(ServiceDefinitionNode node);
+    T visitServiceNode(ServiceNode node);
     T visitInterfaceNode(InterfaceNode node);
     T visitMethodNode(MethodNode node);
     T visitParameterNode(ParameterNode node);
@@ -60,6 +63,16 @@ public interface NodeVisitor<T> {
     // Deployment and Dependency Nodes
     // T visitDeploymentConfigNode(DeploymentConfigNode node); // Commented out for now
     // T visitDependencyNode(DependencyNode node); // Commented out for now
+
+    // Specific Node Types from README
+    T visitGuardNode(GuardNode node);
+    T visitMachineNode(MachineNode node);
+    T visitEnumNode(EnumNode node);
+    T visitActionNode(ActionNode node);
+
+    // Type System Nodes
+    T visitRefTypeNode(RefTypeNode node);
+    T visitPrimitiveTypeNode(PrimitiveTypeNode node);
 
     // Annotation Node (might not be visited directly, but included for completeness)
     // T visitAnnotationNode(AnnotationNode node);

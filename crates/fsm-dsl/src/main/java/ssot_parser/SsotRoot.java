@@ -9,6 +9,10 @@ import java.util.Optional;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.NodeVisitor;
 import ssot_parser.ast.nodes.ImportNode;
+import ssot_parser.ast.nodes.TypeDefNode;
+import ssot_parser.ast.nodes.ServiceDefinitionNode;
+import ssot_parser.ast.nodes.MachineNode;
+import java.util.stream.Collectors;
 
 /**
  * Represents the root node of the SSoT Abstract Syntax Tree (AST).
@@ -49,16 +53,25 @@ public class SsotRoot implements AstNode {
         return imports;
     }
 
-    public List<AstNode> getTypeDefinitions() {
-        return typeDefinitions;
+    public List<TypeDefNode> getTypeDefs() {
+        return typeDefinitions.stream()
+                              .filter(TypeDefNode.class::isInstance)
+                              .map(TypeDefNode.class::cast)
+                              .collect(Collectors.toList());
     }
 
-    public List<AstNode> getServiceDefinitions() {
-        return serviceDefinitions;
+    public List<ServiceDefinitionNode> getServiceDefinitions() {
+        return serviceDefinitions.stream()
+                                 .filter(ServiceDefinitionNode.class::isInstance)
+                                 .map(ServiceDefinitionNode.class::cast)
+                                 .collect(Collectors.toList());
     }
 
-    public List<AstNode> getMachineDefinitions() {
-        return machineDefinitions;
+    public List<MachineNode> getMachineNodes() {
+        return machineDefinitions.stream()
+                               .filter(MachineNode.class::isInstance)
+                               .map(MachineNode.class::cast)
+                               .collect(Collectors.toList());
     }
 
     public List<AstNode> getActorDefinitions() {

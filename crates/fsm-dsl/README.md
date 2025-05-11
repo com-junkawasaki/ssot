@@ -9,46 +9,53 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
 ## Project Status & Recent Developments
 
 **Core Functionality:**
-The project is developing a Java/ANTLR-based parser for a custom Domain-Specific Language (`.ssot` files). This DSL is designed to define comprehensive system specifications, including types, services, state machines, actors, communication, deployment configurations, and dependencies. The ANTLR grammar (`SSoT.g4`) and Maven build process (`pom.xml`) are established.
+The project is developing a Java/ANTLR-based parser for a custom Domain-Specific Language (`.ssot` files). This DSL is designed to define comprehensive system specifications. The ANTLR grammar (`SSoT.g4`) and Maven build process (`pom.xml`) are established, forming the foundational parsing layer.
 
 **Abstract Syntax Tree (AST):**
-A rich set of Java classes (`src/main/java/ssot_parser/ast/`) represents the DSL elements in the AST. The core `AstBuilderVisitor.java` class is responsible for constructing this AST from the ANTLR parse tree.
+A rich set of Java classes (`src/main/java/ssot_parser/ast/`) represents the DSL elements in an Abstract Syntax Tree. The core `AstBuilderVisitor.java` class is responsible for constructing this AST from the ANTLR parse tree and has recently been stabilized.
 
-**Recent Achievements:**
-A significant effort was undertaken to stabilize and correct the `AstBuilderVisitor.java` and its associated AST node interactions. This resolved a comprehensive list of compilation errors and logical issues within the visitor, including corrections for `RefValueNode` resolution, `visitGuardDefinition` logic, and `HistoryStateNode` constructor calls. The `AstBuilderVisitor.java` file now compiles cleanly.
+**Recent Progress & Current Focus:**
+Significant effort has been dedicated to achieving a compilable and stable AST and validator. Key achievements include:
+*   Stabilization of `AstBuilderVisitor.java`.
+*   Systematic correction of `AstNode` interface implementations (e.g., `getId()`, `getAnnotations()`) across various AST node classes (`TransitionConfig`, `ConditionalTransitionNode`, `OptionalTypeNode`, `MapTypeNode`).
+*   Resolution of specific AST node constructor mismatches (e.g., in `ConditionalTransitionNode`).
+*   Enhancement of the `NodeVisitor` interface by adding missing `visitXNode` methods.
+*   Initial corrections in `SsotRoot.java` to align its getter methods with the requirements of `AstValidator.java`.
+
+**The current and immediate priority is to resolve all remaining compilation errors, primarily within `AstValidator.java`, to achieve a clean `mvn clean compile`.** This will unblock further development of semantic validation logic and comprehensive testing. While the foundational components are largely in place, this stabilization phase is critical for the project's health and future progress towards full DSL feature implementation and code generation capabilities.
 
 ## Current Build Status & Remaining Compilation Errors
 
-While `AstBuilderVisitor.java` now compiles cleanly, the project build (`mvn clean compile`) currently fails due to a new set of compilation errors primarily in the AST node definitions and the `AstValidator`. The main categories of errors are:
+While `AstBuilderVisitor.java` compiles cleanly, and significant progress has been made on AST node and `SsotRoot` issues, the project build (`mvn clean compile`) likely still fails due to errors primarily in `AstValidator.java` and potentially some remaining nuanced issues in AST nodes not yet surfaced by the validator fixes.
 
-1.  **AST Node Interface Implementation Issues:**
-    *   **Missing `getId()` Implementation:** Several AST node classes (e.g., `AnnotationNode`, `EventHandlerNode`, `TransitionConfig`) are missing the `getId()` method required by the `AstNode` or `NodeWithId` interface.
-    *   **Incorrect `getAnnotations()` Signature/Implementation:** Many AST node classes (e.g., `EventHandlerNode`, `ConditionalTransitionNode`, `OptionalTypeNode`, `MapTypeNode`) implement `getAnnotations()` with a `List<AnnotationNode>` return type instead of the `Map<String, Object>` required by `AstNode`.
-2.  **AST Node Constructor Mismatches:**
-    *   Errors like `constructor X in class Y cannot be applied to given types` are present, for example, in `ConditionalTransitionNode`'s usage of the `TransitionNode` constructor. These indicate that the arguments passed during object creation do not match any available constructor signatures.
-3.  **Missing Visitor Methods in `NodeVisitor`:**
-    *   Errors such as `cannot find symbol: method visitXNode(ssot_parser.ast.nodes.XNode)` (e.g., for `ServiceNode`, `GuardNode`, `MachineNode`, `EnumNode`, `RefTypeNode`, `ActionNode`, `PrimitiveTypeNode`) indicate that the `NodeVisitor` interface is missing corresponding `visit...` methods for these AST types.
-4.  **Compilation Errors in `AstValidator.java`:**
-    *   This class has a large number of `cannot find symbol` errors for various getter methods (e.g., `getTypeDefs`, `getMachineNodes`, `getInvokes`, `getTransitions`) on AST node objects. This suggests that either the getter methods are missing/misnamed in the AST nodes, or the validator is using outdated/incorrect method calls.
-    *   There are also `incompatible types` errors, likely stemming from the above issues.
+The main categories of *remaining anticipated* errors are:
+
+1.  **Compilation Errors in `AstValidator.java`:**
+    *   This class likely still has `cannot find symbol` errors for various getter methods on AST node objects or incompatible type issues. Systematic review and correction are needed.
+    *   This is the **next primary focus**.
+2.  **AST Node Interface Implementation Issues (Further Review):**
+    *   While several examples were fixed, a full audit of all AST nodes against `AstNode`/`NodeWithId` interface requirements (`getId()`, `getAnnotations()`) might be beneficial if `AstValidator` issues reveal more problems.
+3.  **AST Node Constructor Mismatches (Further Review):**
+    *   One instance was fixed. Others may exist and could be revealed as `AstValidator` is fixed.
+4.  **Missing Visitor Methods in `NodeVisitor` (Review if new nodes added/changed):**
+    *   Major gaps were addressed. If `AstValidator` work implies new visitable nodes or changes, this might need a revisit.
 
 
 ## Next Steps
 
-1.  **(High Priority) Achieve a Clean Build (`mvn clean compile`):** This is the top priority and involves the following sub-steps:
-    *   **Fix `AstNode` Interface Implementations:**
-        *   Iterate through all AST node classes in `src/main/java/ssot_parser/ast/nodes/` and `src/main/java/ssot_parser/ast/type/`.
-        *   For each class implementing `AstNode` (or `NodeWithId`):
-            *   Ensure `Optional<Long> getId()` is implemented. If the node type doesn't typically have an ID, return `Optional.empty()`. If it can have an `@id` annotation, extract it from its internal list of `AnnotationNode`s.
-            *   Ensure `Map<String, Object> getAnnotations()` is implemented correctly, returning a map derived from its internal `List<AnnotationNode>` (if applicable), rather than the list itself.
-    *   **Resolve AST Node Constructor Mismatches:**
-        *   Carefully check the constructor signatures in classes like `TransitionNode` and ensure that calling code (e.g., in `ConditionalTransitionNode`) uses the correct arguments.
-    *   **Update `NodeVisitor.java`:**
-        *   Add any missing `visitXNode(XNode node)` methods to the `NodeVisitor` interface for all AST node types that should be visitable.
-    *   **Fix `AstValidator.java`:**
-        *   Once the AST node classes are compiling and their interfaces are consistent, systematically review `AstValidator.java`.
-        *   Update method calls to use correct getter names and signatures as defined in the AST nodes.
-        *   If necessary, add missing getter methods to the AST node classes if the validator requires access to data not currently exposed.
+1.  **(High Priority) Achieve a Clean Build (`mvn clean compile`):** This remains the top priority.
+    *   **Fix `AstValidator.java` (CONTINUED):**
+        *   Systematically review `AstValidator.java` line by line.
+        *   For each `cannot find symbol` or `incompatible types` error:
+            *   Identify the AST node type and the method being called.
+            *   Verify if the getter method exists on the AST node with the correct name and signature.
+            *   If missing or incorrect, add/correct the getter in the respective AST node class (e.g., in `src/main/java/ssot_parser/ast/nodes/` or `src/main/java/ssot_parser/ast/type/`).
+            *   Ensure the return types match what `AstValidator` expects.
+        *   This will be an iterative process. After fixing a group of errors, re-run `mvn clean compile -e` to check progress.
+    *   **(Post-Validator Fixes) Full AST Node Audit (If Needed):**
+        *   If `AstValidator` fixes don't resolve all build issues, perform a comprehensive audit of all AST node classes in `src/main/java/ssot_parser/ast/nodes/` and `src/main/java/ssot_parser/ast/type/` to ensure:
+            *   Correct implementation of `AstNode` / `NodeWithId` (`getId()`, `getAnnotations()`).
+            *   Correct constructor signatures and usage.
     *   **Iterative Compilation:** After each set of targeted fixes, run `mvn clean compile -e` to track progress and identify new errors.
 
 2.  **(Post-Compilation) AST Validation Framework Enhancement:**
