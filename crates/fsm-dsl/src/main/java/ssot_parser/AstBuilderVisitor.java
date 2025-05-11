@@ -13,6 +13,7 @@ import java.util.HashMap;
 import ssot_parser.SSoTParser.*; // Added for all parser contexts
 import ssot_parser.ast.*;
 import ssot_parser.ast.nodes.*;
+import ssot_parser.ast.nodes.BlockNode; // Added import for BlockNode
 // import ssot_parser.ast.nodes.InvokeStateNode.InvokeTransition; // Commented out
 import ssot_parser.ast.type.*;
 import ssot_parser.ast.values.ValueNode; // Explicit import
@@ -209,13 +210,13 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         if (ctx.definitionBlock() != null) {
             for (DefinitionBlockContext blockCtx : ctx.definitionBlock()) {
                 AstNode visitedNode = visit(blockCtx);
-                if (visitedNode instanceof BlockContainerNode) {
-                    BlockContainerNode container = (BlockContainerNode) visitedNode;
-                    System.out.println("Processing BlockContainer: " + container.blockType + " with " + container.getChildren().size() + " children.");
+                if (visitedNode instanceof BlockNode) {
+                    BlockNode container = (BlockNode) visitedNode;
+                    System.out.println("Processing BlockNode: " + container.blockType + " with " + container.getDefinitions().size() + " definitions.");
 
                     switch (container.blockType) {
                         case "types":
-                            container.getChildren().forEach(child -> {
+                            container.getDefinitions().forEach(child -> {
                                 if (child instanceof TypeDefNode) {
                                     typeDefinitions.add(child); // Add to local list
                                 } else {
@@ -224,7 +225,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                             });
                             break;
                         case "services":
-                            container.getChildren().forEach(child -> {
+                            container.getDefinitions().forEach(child -> {
                                 // ServiceDefinitionNode and InterfaceNode are both valid children
                                 if (child instanceof ServiceDefinitionNode || child instanceof InterfaceNode) {
                                     serviceDefinitions.add(child); // Add to local list
@@ -234,7 +235,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                             });
                             break;
                         case "machines":
-                            container.getChildren().forEach(child -> {
+                            container.getDefinitions().forEach(child -> {
                                 if (child instanceof MachineNode) {
                                     machineDefinitions.add(child); // Add to local list
                                 } else {
@@ -243,7 +244,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                             });
                             break;
                         case "actors":
-                             container.getChildren().forEach(child -> {
+                             container.getDefinitions().forEach(child -> {
                                  if (child instanceof ActorNode) {
                                      actorDefinitions.add(child); // Add to local list
                                  } else {
@@ -252,7 +253,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                              });
                              break;
                         case "communication":
-                            container.getChildren().forEach(child -> {
+                            container.getDefinitions().forEach(child -> {
                                 if (child instanceof ProtocolNode || child instanceof ChannelNode || child instanceof EventNode) {
                                     communicationDefinitions.add(child); // Add to local list
                                 } else {
@@ -309,7 +310,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                 }
             }
         }
-        return new BlockContainerNode("types", typeDefs, blockAnnotations);
+        return new BlockNode(Optional.empty(), "types", typeDefs, mapAnnotations(blockAnnotations));
     }
 
     @Override
@@ -334,7 +335,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         } else {
             System.out.println("No service elements found in services block.");
         }
-        return new BlockContainerNode("services", serviceElements, blockAnnotations);
+        return new BlockNode(Optional.empty(), "services", serviceElements, mapAnnotations(blockAnnotations));
     }
 
     @Override
@@ -350,7 +351,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                 }
             }
         }
-        return new BlockContainerNode("machines", machineDefs, blockAnnotations);
+        return new BlockNode(Optional.empty(), "machines", machineDefs, mapAnnotations(blockAnnotations));
     }
 
     // Add visitServiceElement if not present (it should be generated by ANTLR if serviceElement is a rule)
@@ -480,18 +481,18 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                 if (bodyElCtx.contextDefinition() != null) {
                     contextNode = (ContextNode) visitContextDefinition(bodyElCtx.contextDefinition());
                 } else if (bodyElCtx.actionsDefinition() != null) {
-                    BlockContainerNode actionsContainer = (BlockContainerNode) visitActionsDefinition(bodyElCtx.actionsDefinition());
-                    actionsContainer.getChildren().forEach(child -> actions.add((ActionDefinitionNode) child));
+                    BlockNode actionsContainer = (BlockNode) visitActionsDefinition(bodyElCtx.actionsDefinition());
+                    actionsContainer.getDefinitions().forEach(child -> actions.add((ActionDefinitionNode) child));
                 } else if (bodyElCtx.guardsDefinition() != null) {
-                    BlockContainerNode guardsContainer = (BlockContainerNode) visitGuardsDefinition(bodyElCtx.guardsDefinition());
-                    guardsContainer.getChildren().forEach(child -> guards.add((GuardDefinitionNode) child));
+                    BlockNode guardsContainer = (BlockNode) visitGuardsDefinition(bodyElCtx.guardsDefinition());
+                    guardsContainer.getDefinitions().forEach(child -> guards.add((GuardDefinitionNode) child));
                 } else if (bodyElCtx.invokesDefinition() != null) {
-                    BlockContainerNode invokesContainer = (BlockContainerNode) visitInvokesDefinition(bodyElCtx.invokesDefinition());
-                    invokesContainer.getChildren().forEach(child -> invokes.add((InvokeDefinitionNode) child));
+                    BlockNode invokesContainer = (BlockNode) visitInvokesDefinition(bodyElCtx.invokesDefinition());
+                    invokesContainer.getDefinitions().forEach(child -> invokes.add((InvokeDefinitionNode) child));
                 } else if (bodyElCtx.statesDefinition() != null) {
-                    BlockContainerNode statesContainer = (BlockContainerNode) visitStatesDefinition(bodyElCtx.statesDefinition());
+                    BlockNode statesContainer = (BlockNode) visitStatesDefinition(bodyElCtx.statesDefinition());
                     if (statesContainer != null) {
-                        topLevelStates.addAll(statesContainer.getChildren()); 
+                        topLevelStates.addAll(statesContainer.getDefinitions()); 
                     }
                 } else if (bodyElCtx.annotation() != null) {
                     allMachineAnnotations.add((AnnotationNode) visitAnnotation(bodyElCtx.annotation()));
@@ -548,7 +549,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             }
         }
         List<AnnotationNode> blockAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
-        return new BlockContainerNode("actions", actionDefs, blockAnnotations);
+        return new BlockNode(Optional.empty(), "actions", actionDefs, mapAnnotations(blockAnnotations));
     }
 
     @Override
@@ -589,7 +590,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             }
         }
         List<AnnotationNode> blockAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
-        return new BlockContainerNode("guards", guardDefs, blockAnnotations);
+        return new BlockNode(Optional.empty(), "guards", guardDefs, mapAnnotations(blockAnnotations));
     }
 
     @Override
@@ -667,7 +668,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             }
         }
         List<AnnotationNode> blockAnnotations = ctx.annotation() != null ? extractAnnotations(ctx.annotation()) : Collections.emptyList();
-        return new BlockContainerNode("invokes", invokeDefs, blockAnnotations);
+        return new BlockNode(Optional.empty(), "invokes", invokeDefs, mapAnnotations(blockAnnotations));
     }
 
      @Override
@@ -769,7 +770,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                 }
             }
         }
-        return new BlockContainerNode("states", statesAndHistories, blockAnnotations);
+        return new BlockNode(Optional.empty(), "states", statesAndHistories, mapAnnotations(blockAnnotations));
     }
 
     @Override
@@ -837,11 +838,17 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                          System.err.println("Expected TransitionNode from ifTransitionStatement, got: " + (ifNode != null ? ifNode.getClass().getName() : "null"));
                     }
                 } else if (bodyElementCtx.statesDefinition() != null) {
-                    BlockContainerNode nestedStatesContainer = (BlockContainerNode) visitStatesDefinition(bodyElementCtx.statesDefinition());
-                    if (nestedStatesContainer != null && nestedStatesContainer.getChildren() != null) {
-                        nestedStateElements.addAll(nestedStatesContainer.getChildren());
+                    BlockNode nestedStatesContainer = (BlockNode) visitStatesDefinition(bodyElementCtx.statesDefinition());
+                    if (nestedStatesContainer != null && nestedStatesContainer.getDefinitions() != null) {
+                        nestedStateElements.addAll(nestedStatesContainer.getDefinitions());
                         // Check for $initial on the nested states block itself
-                        nestedInitialStateName = findAnnotationValue(nestedStatesContainer.getBlockAnnotations(), "initial"); 
+                        Map<String, Object> blockAnnots = nestedStatesContainer.getAnnotations();
+                        Object initialValue = blockAnnots.get("initial");
+                        if (initialValue instanceof String) {
+                            nestedInitialStateName = Optional.of((String) initialValue);
+                        } else {
+                            nestedInitialStateName = Optional.empty();
+                        }
                     }
                 } else if (bodyElementCtx.historyDefinition() != null) {
                     HistoryStateNode historyNode = (HistoryStateNode) visitHistoryDefinition(bodyElementCtx.historyDefinition());
@@ -1090,4 +1097,36 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             TargetStateNode simpleTarget = new TargetStateNode(targetStateRef.get()); // Corrected from StateTargetNode
             defaultTransition = Optional.<TransitionSpecNode>of(new TransitionSpecNode(simpleTarget, Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyMap()));
         }
+
+        return new HistoryStateNode(id, historyId, type, defaultTransition, annotations);
+    }
+
+    // Added helper method to extract and visit annotations
+    private List<AnnotationNode> extractAnnotations(List<SSoTParser.AnnotationContext> annotationCtxs) {
+        if (annotationCtxs == null || annotationCtxs.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<AnnotationNode> annotationNodes = new ArrayList<>();
+        for (SSoTParser.AnnotationContext annotationCtx : annotationCtxs) {
+            AnnotationNode annotationNode = (AnnotationNode) visitAnnotation(annotationCtx);
+            if (annotationNode != null) {
+                annotationNodes.add(annotationNode);
+            }
+        }
+        return annotationNodes;
+    }
+
+    // Added helper method to map a list of AnnotationNode to Map<String, Object>
+    private Map<String, Object> mapAnnotations(List<AnnotationNode> annotationNodes) {
+        if (annotationNodes == null || annotationNodes.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, Object> map = new HashMap<>();
+        for (AnnotationNode annotation : annotationNodes) {
+            map.put(annotation.name, Optional.ofNullable(annotation.value).orElse(Boolean.TRUE));
+        }
+        return Collections.unmodifiableMap(map);
+    }
+
+}
 

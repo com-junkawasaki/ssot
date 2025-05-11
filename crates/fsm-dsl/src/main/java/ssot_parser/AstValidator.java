@@ -52,7 +52,7 @@ public class AstValidator {
         }
 
         // Validate different parts of the AST
-        validateTypeDefinitions(root.getTypeDefinitions());
+        validateTypeDefinitions(root.getTypeDefs());
 
         // TODO: Add calls to validate other definition types (services, machines) using their getters
         // validateServiceDefinitions(root.getServiceDefinitions());
@@ -62,18 +62,9 @@ public class AstValidator {
         return errors;
     }
 
-    private void validateTypeDefinitions(List<AstNode> typeDefsPossiblyMixed) {
+    private void validateTypeDefinitions(List<TypeDefNode> typeDefs) {
         System.out.println("Validating Type Definitions...");
-        List<TypeDefNode> actualTypeDefs = new ArrayList<>();
-        for (AstNode node : typeDefsPossiblyMixed) {
-             if (node instanceof TypeDefNode) {
-                 actualTypeDefs.add((TypeDefNode) node);
-             } else if (node != null) {
-                 // This might happen if AstBuilderVisitor puts non-TypeDefNodes in the list
-                 errors.add(new ValidationError("Unexpected node type found in type definitions list: " + node.getClass().getSimpleName(), node));
-             }
-        }
-        validateUniqueTypeNames(actualTypeDefs);
+        validateUniqueTypeNames(typeDefs);
         // TODO: Add validation for unique IDs within the type block
         // TODO: Validate fields and variants within each type definition
     }
