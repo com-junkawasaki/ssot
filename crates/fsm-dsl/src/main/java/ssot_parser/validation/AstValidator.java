@@ -18,6 +18,7 @@ import java.util.Map; // Import Map
 import java.util.ArrayDeque; // Import ArrayDeque
 import java.util.Deque; // Import Deque
 import java.util.Objects; // Import Objects
+import ssot_parser.ast.nodes.EventNode;
 
 /**
  * Performs validation checks on the SSoT AST (Abstract Syntax Tree).
@@ -31,6 +32,7 @@ public class AstValidator {
     private final Map<String, InterfaceNode> interfaceDefinitionsMap; // Add map
     private final Set<String> definedServiceNames; // For invoke source validation
     private final Set<String> definedMachineNames; // For invoke source validation
+    private final Set<String> definedEventNames; // New field
     // Add maps to store definitions for faster lookup if needed elsewhere
     // private final Map<String, TypeDefNode> typeDefinitionsMap;
     // private final Map<String, InterfaceNode> interfaceDefinitionsMap;
@@ -43,6 +45,7 @@ public class AstValidator {
         this.interfaceDefinitionsMap = new HashMap<>(); // Initialize map
         this.definedServiceNames = new HashSet<>(); // Initialize
         this.definedMachineNames = new HashSet<>(); // Initialize
+        this.definedEventNames = new HashSet<>(); // Initialize
         // this.typeDefinitionsMap = new HashMap<>();
         // this.interfaceDefinitionsMap = new HashMap<>();
     }
@@ -58,6 +61,7 @@ public class AstValidator {
         interfaceDefinitionsMap.clear(); // Clear map
         definedServiceNames.clear(); // Clear
         definedMachineNames.clear(); // Clear
+        definedEventNames.clear(); // Clear
 
         if (astRoot == null) {
             errors.add(new ValidationError("AST Root cannot be null.", ValidationError.Severity.ERROR));
@@ -68,6 +72,7 @@ public class AstValidator {
         collectDefinedTypeNames();
         collectInterfaceDefinitions(); // Collect interfaces
         collectServiceAndMachineNames(); // Collect invokable names
+        collectDefinedEventNames(); // Call new collection method
 
         // --- Run validation checks --- 
         validateMachines();
@@ -133,6 +138,21 @@ public class AstValidator {
         }
          System.out.println("Collected service names: " + definedServiceNames);
          System.out.println("Collected machine names: " + definedMachineNames);
+    }
+
+    // New method
+    private void collectDefinedEventNames() {
+        if (astRoot.getCommunicationDefinitions() != null) {
+            for (AstNode commNode : astRoot.getCommunicationDefinitions()) {
+                if (commNode instanceof EventNode) {
+                    EventNode eventNode = (EventNode) commNode;
+                    if (!definedEventNames.add(eventNode.getName())) {
+                        addError("Duplicate event definition name '" + eventNode.getName() + "'.", eventNode);
+                    }
+                }
+            }
+        }
+        System.out.println("Collected defined event names: " + definedEventNames);
     }
 
     // --- Placeholder validation methods for different blocks --- 
@@ -222,6 +242,19 @@ public class AstValidator {
          // Validate Transitions
          if (state.getTransitions() != null) {
              for (TransitionNode transition : state.getTransitions()) {
+                // Validate event
+                String eventName = transition.getEvent();
+                // Only validate event name for actual EVENT type transitions
+                if (transition.getType() == TransitionNode.TransitionType.EVENT) {
+                    if (eventName != null && !eventName.isEmpty()) {
+                        if (!this.definedEventNames.contains(eventName)) {
+                            addError("Event '" + eventName + "' referenced in transition from state '" + state.getStateName() + "' is not defined.", transition);
+                        }
+                    } else { // eventName is null or empty for an EVENT type transition
+                         addError("EVENT type transition from state '" + state.getStateName() + "' has a null or empty event name.", transition);
+                    }
+                }
+
                  // Validate target state existence (against all states in the machine)
                  TargetStateNode targetNode = transition.getTargetState();
                  if (targetNode != null && targetNode.getType() == TargetStateNode.TargetType.STATE_REFERENCE) {
@@ -245,6 +278,41 @@ public class AstValidator {
                          addError("Transition guard '" + guardRefNode.getGuardName() + "' is not defined.", transition);
                      }
                  });
+             }
+         }
+
+         // New: Validate transition consistency (check for duplicate events without distinct guards)
+         if (state.getTransitions() != null && state.getTransitions().size() > 1) {
+             Map<String, List<TransitionNode>> transitionsByEvent = state.getTransitions().stream()
+                 .filter(t -> t.getType() == TransitionNode.TransitionType.EVENT && t.getEvent() != null && !t.getEvent().isEmpty())
+                 .collect(Collectors.groupingBy(TransitionNode::getEvent));
+
+             for (Map.Entry<String, List<TransitionNode>> entry : transitionsByEvent.entrySet()) {
+                 String eventName = entry.getKey();
+                 List<TransitionNode> eventTransitions = entry.getValue();
+
+                 if (eventTransitions.size() > 1) {
+                     // Found multiple transitions for the same event
+                     boolean allGuarded = true;
+                     List<TransitionNode> unguardedTransitions = new ArrayList<>();
+                     for (TransitionNode etn : eventTransitions) {
+                         boolean isGuarded = etn.getCondition().isPresent() || (etn.getGuards() != null && !etn.getGuards().isEmpty());
+                         if (!isGuarded) {
+                             allGuarded = false;
+                             unguardedTransitions.add(etn);
+                         }
+                     }
+
+                     if (!allGuarded) {
+                         // If not all are guarded, it means at least one (or more) is unconditional for this event.
+                         // If there's more than one unconditional, or one unconditional and some conditional, it's ambiguous.
+                         // For simplicity, if >1 transition for an event, and ANY are unguarded, flag it.
+                         // More precise: if count(unguarded) > 1, or if count(unguarded)==1 AND count(total for event) > 1
+                         // The current logic: if eventTransitions.size() > 1 AND any is unguarded, then error.
+                         addError("State '" + state.getStateName() + "' has multiple transitions for event '" + eventName + "', and at least one is not guarded, causing ambiguity.",
+                                  unguardedTransitions.isEmpty() ? state : unguardedTransitions.get(0)); // Report error on state or first unguarded transition
+                     }
+                 }
              }
          }
 
@@ -288,44 +356,53 @@ public class AstValidator {
 
      // Helper to validate initial state within a scope
      private void validateInitialStateInScope(MachineNode machine, StateNode parentState, List<StateNode> currentLevelStates, Set<String> definedStateNamesInScope) {
-          if (parentState != null && !parentState.getNestedStates().isEmpty()) {
-              // Compound state: Check for initial state among children
-              Optional<String> initialName = findInitialStateName(parentState, currentLevelStates); // TODO: Implement findInitial based on grammar/annotations
-              if (initialName.isPresent()) {
-                  if (!definedStateNamesInScope.contains(initialName.get())) {
-                      addError("Explicit or implicit initial nested state '" + initialName.get() + "' not found in compound state '" + parentState.getStateName() + "'.", parentState);
+          if (parentState != null) { // Validating initial state for a compound/parallel state
+              // Ensure currentLevelStates accurately reflects children of parentState that are StateNodes
+              // definedStateNamesInScope should also contain names of these currentLevelStates
+
+              if (parentState.getNestedStates().isEmpty()) {
+                  // A state that is declared as COMPOUND or PARALLEL should have nested states.
+                  // ATOMIC and FINAL states are expected to have no nested states.
+                  if (parentState.getType() == StateType.COMPOUND || parentState.getType() == StateType.PARALLEL) {
+                     addError("State '" + parentState.getStateName() + "' is defined as " + parentState.getType() + " but has no nested states.", parentState);
                   }
-              } else if (currentLevelStates.isEmpty()){
-                   addError("Compound state '" + parentState.getStateName() + "' has no nested states defined.", parentState);
-              } else {
-                   // Convention: default to first if no explicit marker found
-                   addWarning("No explicit initial state defined for compound state '" + parentState.getStateName() + "'. Defaulting to first nested state: '" + currentLevelStates.get(0).getStateName() + "'.", parentState);
+                  // No initial state validation needed if no nested states (e.g., for ATOMIC, FINAL, or empty COMPOUND/PARALLEL which is an error itself)
+              } else { // parentState has nested states defined
+                  Optional<String> explicitInitialStateNameOpt = parentState.getInitialStateName();
+
+                  if (explicitInitialStateNameOpt.isPresent()) {
+                      String explicitInitialName = explicitInitialStateNameOpt.get();
+                      if (!definedStateNamesInScope.contains(explicitInitialName)) {
+                          addError("Explicitly defined initial nested state '$initial(" + explicitInitialName + ")' for state '" + parentState.getStateName() + "' refers to a non-existent or invalid nested state.", parentState);
+                      }
+                      // If present and found in definedStateNamesInScope, it's valid.
+                  } else {
+                      // No explicit $initial annotation was on the parentState.
+                      // Default to the first state in the current level's definition order.
+                      if (!currentLevelStates.isEmpty()) {
+                          addWarning("No explicit initial state (e.g., $initial(ChildState)) defined for " + parentState.getType() + " state '" + parentState.getStateName() + "'. Defaulting to first nested state: '" + currentLevelStates.get(0).getStateName() + "'.", parentState);
+                      } else {
+                          // This case should ideally not be reached if parentState.getNestedStates() was not empty.
+                          // It implies currentLevelStates might be empty due to filtering or other issues.
+                          addError("State '" + parentState.getStateName() + "' has nested state definitions, but no valid first state could be determined for default initial state.", parentState);
+                      }
+                  }
               }
-          } else if (parentState == null) {
+          } else {
               // Top-level machine: Check machine's initial state
               if (machine.getInitialState().isPresent()) {
                   String initialStateName = machine.getInitialState().get();
                   if (!definedStateNamesInScope.contains(initialStateName)) {
-                      addError("Initial state '" + initialStateName + "' is not defined at the top level of machine '" + machine.getMachineName() + "'.", machine);
+                      addError("Initial state '" + initialStateName + "' for machine '" + machine.getMachineName() + "' is not defined at the top level.", machine);
                   }
               } else { // No explicit $initial on machine
                    if (currentLevelStates.isEmpty()) {
                        addError("Machine '" + machine.getMachineName() + "' has no states defined.", machine);
                    } else {
-                       addWarning("No explicit initial state defined for machine '" + machine.getMachineName() + "'. Defaulting to first state: '" + currentLevelStates.get(0).getStateName() + "'.", machine);
+                       addWarning("No explicit initial state (e.g. $initial(SomeState)) defined for machine '" + machine.getMachineName() + "'. Defaulting to first state: '" + currentLevelStates.get(0).getStateName() + "'.", machine);
                    }
               }
           }
-     }
-
-     // Placeholder helper to find initial state marker (needs grammar detail)
-     private Optional<String> findInitialStateName(StateNode parentState, List<StateNode> children) {
-         // TODO: Implement logic based on how initial state is marked:
-         // 1. Check for $initial annotation on parentState?
-         // 2. Check for $initial annotation on one of the children?
-         // 3. Rely on parser setting an 'isInitial' flag on a child StateNode?
-         // For now, return empty to test default convention / missing marker warning.
-         return Optional.empty();
      }
 
     // --- Context Validation ---
