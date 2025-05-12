@@ -59,29 +59,22 @@ public class Main {
         if (ast instanceof SsotRoot) {
             SsotRoot root = (SsotRoot) ast;
             System.out.println("\nValidating AST...");
-            AstValidator validator = new AstValidator();
-            validator.validate(root);
-            List<AstValidator.ValidationError> errors = validator.getErrors();
+
+            // validation パッケージの AstValidator のみを使用
+            ssot_parser.validation.AstValidator validator2 = new ssot_parser.validation.AstValidator(root);
+            List<ssot_parser.validation.ValidationError> errors2 = validator2.validate(); // validate() を呼び出し、戻り値でエラーリストを取得
             System.out.println("Validation finished.");
 
-            if (errors.isEmpty()) {
-                System.out.println("\nAST validation successful!");
-                // Print the generated AST (optional)
-                // System.out.println("\n--- Generated AST ---");
-                // System.out.println(root);
-                // System.out.println("--- End AST ---");
-
-                // Proceed to next steps (e.g., code generation)
-
+            if (errors2.isEmpty()) {
+                 System.out.println("\nAST validation successful!");
             } else {
-                System.err.println("\n--- AST Validation Failed ---");
-                for (AstValidator.ValidationError error : errors) {
-                    System.err.println("- " + error.message());
-                }
-                System.err.println("---------------------------");
-                System.exit(1); // Exit if validation fails
+                 System.err.println("\n--- AST Validation Failed ---");
+                 for (ssot_parser.validation.ValidationError error : errors2) {
+                     System.err.println("- " + error.getMessage());
+                 }
+                 System.err.println("---------------------------");
+                 System.exit(1); // Exit if validation fails
             }
-
         } else {
              System.err.println("Error: AST root node is not of expected type SsotRoot or is null.");
              System.exit(1);
@@ -108,16 +101,11 @@ public class Main {
         System.out.println("--- End Tokens ---");
         */
 
-        // Example: Use the validation results from ssot_parser.validation.AstValidator
-        ssot_parser.validation.AstValidator validator2 = new ssot_parser.validation.AstValidator((ssot_parser.ast.SsotRoot) ast);
-        validator2.validate(); // validation パッケージの方を呼び出し
-        List<ssot_parser.validation.ValidationError> errors2 = validator2.getErrors();
-        if (!errors2.isEmpty()) {
-             System.err.println("AST validation (validation package) failed with " + errors2.size() + " errors:");
-             for (ssot_parser.validation.ValidationError error : errors2) {
-                 System.err.println("- " + error.getMessage());
-             }
-        }
+        // validation パッケージの Validator の呼び出し箇所は上で統合したので削除
+        // ssot_parser.validation.AstValidator validator2 = new ssot_parser.validation.AstValidator((ssot_parser.ast.SsotRoot) ast);
+        // validator2.validate();
+        // List<ssot_parser.validation.ValidationError> errors2 = validator2.getErrors();
+        // if (!errors2.isEmpty()) { ... }
     }
 
     // underlineError method is not needed for this test
