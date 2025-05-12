@@ -11,9 +11,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 
+import ssot_parser.AstBuilderVisitor;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.nodes.*;
 import ssot_parser.ast.type.*;
+import ssot_parser.ast.SsotRoot;
 
 /**
  * Tests for parsing service and interface definitions and building the corresponding AST.
@@ -92,7 +94,8 @@ public class ServiceAstTest {
         assertNotNull(greetMethod);
         assertEquals(Optional.of(101L), greetMethod.getId());
         assertEquals(1, greetMethod.getAnnotations().size());
-        assertEquals("description", greetMethod.getAnnotations().get(0).getName());
+        assertTrue(greetMethod.getAnnotations().containsKey("description"), "Should contain $description annotation");
+        assertEquals("Says hello", greetMethod.getAnnotations().get("description"));
         assertEquals(1, greetMethod.getParameters().size());
         assertEquals("name", greetMethod.getParameters().get(0).getName());
         assertTrue(greetMethod.getParameters().get(0).getType() instanceof PrimitiveTypeNode, "Parameter type should be Primitive");
@@ -147,7 +150,8 @@ public class ServiceAstTest {
          assertNotNull(runMethod);
          assertEquals(Optional.of(201L), runMethod.getId());
          assertEquals(1, runMethod.getAnnotations().size());
-         assertEquals("complexity", runMethod.getAnnotations().get(0).getName());
+         assertTrue(runMethod.getAnnotations().containsKey("complexity"), "Should contain $complexity annotation");
+         assertEquals(5L, runMethod.getAnnotations().get("complexity"));
          assertEquals(1, runMethod.getParameters().size());
          assertTrue(runMethod.getParameters().get(0).getType() instanceof PrimitiveTypeNode, "Run parameter type should be Primitive");
          assertEquals("u32", ((PrimitiveTypeNode)runMethod.getParameters().get(0).getType()).getTypeName());
@@ -174,6 +178,7 @@ public class ServiceAstTest {
         """;
         SsotRoot root = parseAndBuildAst(input);
         assertEquals(1, root.getServiceDefinitions().size()); // Only interface
+        assertTrue(root.getServiceDefinitions().get(0) instanceof InterfaceNode);
         InterfaceNode iface = (InterfaceNode) root.getServiceDefinitions().get(0);
         assertEquals("TypeTester", iface.getName());
         assertEquals(3, iface.getMethods().size());

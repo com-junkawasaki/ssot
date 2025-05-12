@@ -11,9 +11,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 
+import ssot_parser.AstBuilderVisitor;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.nodes.*;
 import ssot_parser.ast.type.*;
+import ssot_parser.ast.SsotRoot;
 
 /**
  * Tests for parsing communication definitions (protocol, channel, event) and building the corresponding AST.
@@ -66,31 +68,29 @@ public class CommunicationAstTest {
         assertEquals(4, root.getCommunicationDefinitions().size());
 
         // Protocol
-        ProtocolNode http = root.getCommunicationDefinitions().stream()
-                               .filter(c -> c instanceof ProtocolNode && ((ProtocolNode)c).getName().equals("HTTP"))
-                               .map(c -> (ProtocolNode)c).findFirst().orElse(null);
-        assertNotNull(http);
-        assertEquals(Optional.of(500L), http.getId());
-        assertEquals(1, http.getAnnotations().size());
-        assertEquals("version", http.getAnnotations().get(0).getName());
-        assertEquals("1.1", http.getAnnotations().get(0).getValue());
+        assertTrue(root.getCommunicationDefinitions().get(0) instanceof ProtocolNode);
+        ProtocolNode proto = (ProtocolNode) root.getCommunicationDefinitions().get(0);
+        assertEquals("HTTP", proto.getName());
+        assertEquals(Optional.of(500L), proto.getId());
+        assertEquals(1, proto.getAnnotations().size());
+        assertTrue(proto.getAnnotations().containsKey("version"));
+        assertEquals("1.1", proto.getAnnotations().get("version"));
 
         // Channel
-        ChannelNode userEvents = root.getCommunicationDefinitions().stream()
-                                   .filter(c -> c instanceof ChannelNode && ((ChannelNode)c).getName().equals("UserEvents"))
-                                   .map(c -> (ChannelNode)c).findFirst().orElse(null);
-        assertNotNull(userEvents);
-        assertEquals(Optional.of(501L), userEvents.getId());
-        assertEquals(1, userEvents.getAnnotations().size());
-        assertEquals("protocol", userEvents.getAnnotations().get(0).getName());
-        // Note: annotation value parsing currently treats referenceValue as String
-        assertEquals("HTTP", userEvents.getAnnotations().get(0).getValue());
+        assertTrue(root.getCommunicationDefinitions().get(1) instanceof ChannelNode);
+        ChannelNode chan = (ChannelNode) root.getCommunicationDefinitions().get(1);
+        assertEquals("UserEvents", chan.getName());
+        // Protocol is via annotation $protocol(HTTP)
+        assertTrue(chan.getAnnotations().containsKey("protocol"));
+        assertEquals("HTTP", chan.getAnnotations().get("protocol"));
+        assertEquals(1, chan.getAnnotations().size());
+        assertTrue(chan.getAnnotations().containsKey("protocol"));
+        assertEquals("HTTP", chan.getAnnotations().get("protocol"));
 
         // Event UserLoggedIn
-        EventNode loggedIn = root.getCommunicationDefinitions().stream()
-                                .filter(c -> c instanceof EventNode && ((EventNode)c).getName().equals("UserLoggedIn"))
-                                .map(c -> (EventNode)c).findFirst().orElse(null);
-        assertNotNull(loggedIn);
+        assertTrue(root.getCommunicationDefinitions().get(2) instanceof EventNode);
+        EventNode loggedIn = (EventNode) root.getCommunicationDefinitions().get(2);
+        assertEquals("UserLoggedIn", loggedIn.getName());
         assertEquals(Optional.of(502L), loggedIn.getId());
         assertTrue(loggedIn.getAnnotations().isEmpty());
         assertEquals(2, loggedIn.getFields().size());
@@ -102,16 +102,18 @@ public class CommunicationAstTest {
         assertEquals("timestamp", loggedIn.getFields().get(1).getName());
 
          // Event OrderPlaced
-         EventNode orderPlaced = root.getCommunicationDefinitions().stream()
-                                 .filter(c -> c instanceof EventNode && ((EventNode)c).getName().equals("OrderPlaced"))
-                                 .map(c -> (EventNode)c).findFirst().orElse(null);
-         assertNotNull(orderPlaced);
-         assertTrue(orderPlaced.getId().isEmpty());
-         assertTrue(orderPlaced.getAnnotations().isEmpty());
+         assertTrue(root.getCommunicationDefinitions().get(3) instanceof EventNode);
+         EventNode orderPlaced = (EventNode) root.getCommunicationDefinitions().get(3);
+         assertEquals("OrderPlaced", orderPlaced.getName());
+         // Channel for event is via annotation $channel(UserEvents)
+         assertTrue(orderPlaced.getAnnotations().containsKey("channel"), "Event should have $channel annotation");
+         assertEquals("UserEvents", orderPlaced.getAnnotations().get("channel"));
+         assertEquals(Optional.of(502L), orderPlaced.getId());
+         // Check total annotations (should be 1 if only $channel is present)
+         assertEquals(1, orderPlaced.getAnnotations().size(), "Event should have only $channel annotation");
          assertEquals(1, orderPlaced.getFields().size());
          assertEquals("orderId", orderPlaced.getFields().get(0).getName());
          assertTrue(orderPlaced.getFields().get(0).getType() instanceof PrimitiveTypeNode);
          assertEquals("u64", ((PrimitiveTypeNode)orderPlaced.getFields().get(0).getType()).getTypeName());
-
     }
 } 

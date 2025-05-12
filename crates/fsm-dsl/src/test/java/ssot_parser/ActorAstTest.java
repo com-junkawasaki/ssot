@@ -11,9 +11,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 
+import ssot_parser.AstBuilderVisitor;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.nodes.*;
 import ssot_parser.ast.type.*;
+import ssot_parser.ast.SsotRoot;
 
 /**
  * Tests for parsing actor definitions and building the corresponding AST.
@@ -57,19 +59,16 @@ public class ActorAstTest {
         SsotRoot root = parseAndBuildAst(input);
         assertEquals(2, root.getActorDefinitions().size());
 
-        ActorNode user = root.getActorDefinitions().stream()
-                           .filter(a -> a instanceof ActorNode && ((ActorNode)a).getName().equals("User"))
-                           .map(a -> (ActorNode)a).findFirst().orElse(null);
-        assertNotNull(user);
+        assertTrue(root.getActorDefinitions().get(0) instanceof ActorNode);
+        ActorNode user = (ActorNode) root.getActorDefinitions().get(0);
         assertEquals("User", user.getName());
         assertEquals(Optional.of(400L), user.getId());
         assertEquals(1, user.getAnnotations().size());
-        assertEquals("description", user.getAnnotations().get(0).getName());
+        assertTrue(user.getAnnotations().containsKey("description"));
+        assertEquals("End user", user.getAnnotations().get("description"));
 
-        ActorNode system = root.getActorDefinitions().stream()
-                             .filter(a -> a instanceof ActorNode && ((ActorNode)a).getName().equals("System"))
-                             .map(a -> (ActorNode)a).findFirst().orElse(null);
-        assertNotNull(system);
+        assertTrue(root.getActorDefinitions().get(1) instanceof ActorNode);
+        ActorNode system = (ActorNode) root.getActorDefinitions().get(1);
         assertEquals("System", system.getName());
         assertTrue(system.getId().isEmpty());
         assertTrue(system.getAnnotations().isEmpty());
