@@ -48,7 +48,7 @@ structDefinition
     ;
 
 structFieldDefinition
-    : annotation* ID COLON typeReference (LBRACE annotation* RBRACE)? SEMI // Field annotations allowed
+    : annotation* ID COLON typeReference (LBRACE annotation* RBRACE)? SEMI // Reverted: Use ID directly
     ;
 
 enumDefinition
@@ -83,7 +83,7 @@ eventDefinition // Inner annotations and field definitions
     ;
 
 eventFieldDefinition // Field annotations allowed
-    : annotation* ID COLON typeReference SEMI
+    : annotation* ID COLON typeReference SEMI // Reverted: Use ID directly
     ;
 
 // --- Services Block ---
@@ -209,7 +209,7 @@ annotation
     | DOLLAR annotationName annotationValue # ValueAnnotation
     ;
 
-annotationName : ID ;
+annotationName : ID | PROTOCOL | CHANNEL ;
 
 annotationValue
     : LPAREN literal RPAREN
@@ -230,7 +230,7 @@ paramList // Parameter list for methods, actions, guards
     ;
 
 parameter
-    : ID COLON typeReference
+    : ID COLON typeReference // Reverted: Use ID directly
     ;
 
 typeReference // Defines various ways a type can be referenced
@@ -249,6 +249,9 @@ optionalType: OPTIONAL LT typeReference GT ;
 // =========================================
 // Lexer Rules
 // =========================================
+
+// Identifiers (Moved before Keywords) - Removed
+// ID : [a-zA-Z_] [a-zA-Z0-9_]* ;
 
 // Keywords
 ACTORS : 'actors';
@@ -331,9 +334,17 @@ FLOAT : '-'? [0-9]+ '.' [0-9]+ ( [eE] [+\-]? [0-9]+ )? ;
 BOOLEAN: 'true' | 'false' ;
 NULL: 'null';
 
-// Identifiers
+// Identifiers (Original Position - Restored)
 ID : [a-zA-Z_] [a-zA-Z0-9_]* ;
 
 // Whitespace and Comments
 WS : [ \t\r\n]+ -> skip ;
 COMMENT : '//' .*? '\n' -> skip ; 
+
+// Helper rule for field/parameter names (Removed)
+// fieldNameId : ID | TIMESTAMP_TYPE ; // Removed this rule
+
+// General utilities
+qualifiedIdentifier
+    : ID
+    ; 

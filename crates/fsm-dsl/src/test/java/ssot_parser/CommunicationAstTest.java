@@ -50,15 +50,24 @@ public class CommunicationAstTest {
     void testCommunicationBlock() throws Exception {
         String input = """
         communication {
-            protocol HTTP { @id(500) $version("1.1") }
+            protocol HTTP {
+                @id(500)
+                $version("1.1")
+            }
 
-            channel UserEvents { @id(501) $protocol(HTTP) }
+            channel UserEvents {
+                @id(501)
+                $protocol(HTTP)
+            }
 
-            event UserLoggedIn { @id(502)
+            event UserLoggedIn {
+                @id(502)
                 userId: string;
                 timestamp: timestamp;
             }
-            event OrderPlaced { @id(503) $channel(UserEvents)
+            event OrderPlaced {
+                @id(503)
+                $channel(UserEvents)
                 orderId: u64;
             }
         }

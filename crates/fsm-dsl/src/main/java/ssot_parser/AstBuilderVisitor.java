@@ -331,15 +331,12 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     public AstNode visitStructFieldDefinition(StructFieldDefinitionContext ctx) { // Corrected context type
         List<AnnotationNode> annotations = Collections.emptyList();
         if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
-             annotations = extractAnnotations(ctx.annotation());
+            annotations = extractAnnotations(ctx.annotation());
         }
         Optional<Long> id = extractIdFromList(annotations);
-        // Map<String, Object> annotationMap = mapAnnotations(annotations.stream().filter(a -> !a.isIdAnnotation()).collect(Collectors.toList())); // Not needed for constructor
-
-        String name = ctx.ID().getText();
+        String name = ctx.ID().getText(); // Reverted: Use ID()
         TypeExprNode type = (TypeExprNode) visit(ctx.typeReference());
-
-        // Constructor is: FieldNode(Optional<Long> id, String name, TypeExprNode type, List<AnnotationNode> annotations)
+        // TODO: Extract annotations within braces after type if needed ctx.annotation(1)
         return new FieldNode(id, name, type, annotations);
     }
 
@@ -782,9 +779,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                          initialStateNameOpt = Optional.of(elementCtx.statesDefinition().initialStateDefinition().ID().getText());
                      }
                  } else if (elementCtx.actionsDefinition() != null) {
-                     actions.addAll(visitActionsDefinition(elementCtx.actionsDefinition())); // Helper needed
+                     actions.addAll(visitActionsDefinitionHelper(elementCtx.actionsDefinition())); // Helper needed
                  } else if (elementCtx.guardsDefinition() != null) {
-                      guards.addAll(visitGuardsDefinition(elementCtx.guardsDefinition())); // Helper needed
+                      guards.addAll(visitGuardsDefinitionHelper(elementCtx.guardsDefinition())); // Helper needed
                  } else {
                       System.err.println("Warning: Unknown machine body element: " + elementCtx.getText());
                  }
@@ -851,21 +848,21 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
     // Helper visitor for event fields (similar to struct fields)
+    @Override
     public AstNode visitEventFieldDefinition(EventFieldDefinitionContext ctx) {
         List<AnnotationNode> annotations = Collections.emptyList();
         if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
             annotations = extractAnnotations(ctx.annotation());
         }
         Optional<Long> id = extractIdFromList(annotations);
-        String name = ctx.ID().getText();
+        String name = ctx.ID().getText(); // Reverted: Use ID()
         TypeExprNode type = (TypeExprNode) visit(ctx.typeReference());
-        // Constructor: FieldNode(Optional<Long> id, String name, TypeExprNode type, List<AnnotationNode> annotations)
         return new FieldNode(id, name, type, annotations);
     }
 
      // --- Helper visitors for Machine Definition Body ---
 
-    public List<ActionDefinitionNode> visitActionsDefinition(ActionsDefinitionContext ctx) {
+    public List<ActionDefinitionNode> visitActionsDefinitionHelper(ActionsDefinitionContext ctx) {
         List<ActionDefinitionNode> actions = new ArrayList<>();
         if (ctx.actionDefinition() != null) {
             for(ActionDefinitionContext actionCtx : ctx.actionDefinition()) {
@@ -880,7 +877,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         return actions;
     }
 
-     public List<GuardDefinitionNode> visitGuardsDefinition(GuardsDefinitionContext ctx) {
+     public List<GuardDefinitionNode> visitGuardsDefinitionHelper(GuardsDefinitionContext ctx) {
         List<GuardDefinitionNode> guards = new ArrayList<>();
         if (ctx.guardDefinition() != null) {
             for(GuardDefinitionContext guardCtx : ctx.guardDefinition()) {
@@ -901,7 +898,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          String name = ctx.ID().getText();
          List<ParameterNode> params = new ArrayList<>();
          if (ctx.paramList() != null) {
-             params.addAll(visitParamList(ctx.paramList())); // Need visitParamList helper
+             params.addAll(visitParamListHelper(ctx.paramList())); // Use Helper suffix
          }
          // ID/Annotations handled by parent block?
          // Constructor: ActionDefinitionNode(Optional<Long> id, String actionName, List<ParameterNode> parameters, Optional<TypeExprNode> returnType, List<AnnotationNode> annotations)
@@ -913,7 +910,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          String name = ctx.ID().getText();
          List<ParameterNode> params = new ArrayList<>();
          if (ctx.paramList() != null) {
-             params.addAll(visitParamList(ctx.paramList())); // Need visitParamList helper
+             params.addAll(visitParamListHelper(ctx.paramList())); // Use Helper suffix
          }
          Optional<TypeExprNode> returnTypeOpt = Optional.empty();
          if (ctx.typeReference() != null) {
@@ -927,13 +924,13 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          }
          // Guards must return boolean. If not specified, assume boolean.
          // If specified and not boolean, GuardDefinitionNode constructor logs a warning and sets it to boolean.
-         TypeExprNode effectiveReturnType = returnTypeOpt.orElse(new PrimitiveTypeNode(PrimitiveTypeNode.PrimitiveType.BOOLEAN));
+         TypeExprNode effectiveReturnType = returnTypeOpt.orElse(new PrimitiveTypeNode(PrimitiveTypeNode.PrimitiveType.BOOL));
 
 
          return new GuardDefinitionNode(Optional.empty(), name, Collections.emptyList(), effectiveReturnType, null, paramMap);
      }
 
-     public List<ParameterNode> visitParamList(ParamListContext ctx) {
+     public List<ParameterNode> visitParamListHelper(ParamListContext ctx) { // Rename definition
          List<ParameterNode> params = new ArrayList<>();
          if (ctx.parameter() != null) {
              for (ParameterContext paramCtx : ctx.parameter()) {
@@ -950,10 +947,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
       public AstNode visitParameter(ParameterContext ctx) {
          // Grammar: ID COLON typeReference
-         String name = ctx.ID().getText();
+         String name = ctx.ID().getText(); // Reverted: Use ID()
          TypeExprNode type = (TypeExprNode) visit(ctx.typeReference());
-         // Constructor: ParameterNode(Optional<Long> id, List<AnnotationNode> annotations, String name, TypeExprNode type)
-         return new ParameterNode(Optional.empty(), Collections.emptyList(), name, type);
+         return new ParameterNode(name, type);
       }
 
 
