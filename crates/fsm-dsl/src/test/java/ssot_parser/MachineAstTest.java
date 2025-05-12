@@ -57,8 +57,10 @@ public class MachineAstTest {
         machines {
             @id(1) $description("A simple machine")
             machine SimpleMachine {
-                initial state Idle;
-                state Idle {}
+                states {
+                    initial state Idle;
+                    state Idle {};
+                }
             }
         }
         """;
@@ -82,15 +84,17 @@ public class MachineAstTest {
         String input = """
         machines {
             machine TrafficLight {
-                initial state Red;
-                state Red {
-                    on TIMER transition Green;
-                }
-                state Green {
-                    on TIMER transition Yellow;
-                }
-                state Yellow {
-                    on TIMER transition Red;
+                states {
+                    initial state Red;
+                    state Red {
+                        on TIMER transition Green;
+                    };
+                    state Green {
+                        on TIMER transition Yellow;
+                    };
+                    state Yellow {
+                        on TIMER transition Red;
+                    };
                 }
             }
         }

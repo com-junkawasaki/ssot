@@ -50,10 +50,8 @@ public class ActorAstTest {
     void testSimpleActor() throws Exception {
         String input = """
         actors {
-            @id(400)
-            User { $description("End user"); }
-
-            System { }
+            actor User { @id(400) $description("End user") }
+            actor System { }
         }
         """;
         SsotRoot root = parseAndBuildAst(input);

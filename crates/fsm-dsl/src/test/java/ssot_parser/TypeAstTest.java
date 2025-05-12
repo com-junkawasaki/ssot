@@ -50,11 +50,9 @@ public class TypeAstTest {
     void testEnumDefinition() throws Exception {
         String input = """
         types {
-            @id(300)
-            enum Status {
+            @id(300) enum Status {
                 PENDING;
-                @id(301) $description("Task succeeded")
-                SUCCESS;
+                @id(301) $description("Task succeeded") SUCCESS;
                 FAILURE;
             }
         }
@@ -92,65 +90,77 @@ public class TypeAstTest {
     void testStructDefinition() throws Exception {
         String input = """
         types {
-            @id(300)
-            enum Status {
-                PENDING;
-                @id(301) $description("Task succeeded")
-                SUCCESS;
-                FAILURE;
+            @id(302) struct Point {
+                x: i32;
+                @id(304) $meta("coordinate")
+                y: i32;
             }
 
-            @id(302)
-            struct MyStruct {
-                // Add some fields or events here
-            }
-
-            @id(303)
+            @id(303) $tags(["data", "user"])
             struct User {
-                // Add some fields or events here
+                userId: string;
+                isActive: bool { $default(true) };
+                profile: Point;
             }
         }
         """;
         SsotRoot root = parseAndBuildAst(input);
-        assertEquals(3, root.getTypeDefinitions().size());
+        assertEquals(2, root.getTypeDefinitions().size());
+
+        // --- Validate Point Struct ---
         assertTrue(root.getTypeDefinitions().get(0) instanceof TypeDefNode);
-        assertEquals(TypeDefNode.TypeKind.ENUM, ((TypeDefNode)root.getTypeDefinitions().get(0)).getKind());
+        TypeDefNode pointDef = (TypeDefNode) root.getTypeDefinitions().get(0);
+        assertEquals(TypeDefNode.TypeKind.STRUCT, pointDef.getKind());
+        assertEquals("Point", pointDef.getName());
+        assertEquals(Optional.of(302L), pointDef.getId());
+        assertTrue(pointDef.getAnnotations().isEmpty());
+        assertEquals(2, pointDef.getFields().size());
+
+        FieldNode xField = pointDef.getFields().get(0);
+        assertEquals("x", xField.getName());
+        assertTrue(xField.getType() instanceof PrimitiveTypeNode);
+        assertEquals("i32", ((PrimitiveTypeNode)xField.getType()).getTypeName());
+        assertTrue(xField.getId().isEmpty());
+        assertTrue(xField.getAnnotations().isEmpty());
+
+        FieldNode yField = pointDef.getFields().get(1);
+        assertEquals("y", yField.getName());
+        assertTrue(yField.getType() instanceof PrimitiveTypeNode);
+        assertEquals("i32", ((PrimitiveTypeNode)yField.getType()).getTypeName());
+        assertEquals(Optional.of(304L), yField.getId());
+        assertEquals(1, yField.getAnnotations().size());
+        assertTrue(yField.getAnnotations().containsKey("meta"));
+        assertEquals("coordinate", yField.getAnnotations().get("meta"));
+
+        // --- Validate User Struct ---
         assertTrue(root.getTypeDefinitions().get(1) instanceof TypeDefNode);
-        assertEquals(TypeDefNode.TypeKind.STRUCT, ((TypeDefNode)root.getTypeDefinitions().get(1)).getKind());
-        assertTrue(root.getTypeDefinitions().get(2) instanceof TypeDefNode);
-        assertEquals(TypeDefNode.TypeKind.STRUCT, ((TypeDefNode)root.getTypeDefinitions().get(2)).getKind());
+        TypeDefNode userDef = (TypeDefNode) root.getTypeDefinitions().get(1);
+        assertEquals(TypeDefNode.TypeKind.STRUCT, userDef.getKind());
+        assertEquals("User", userDef.getName());
+        assertEquals(Optional.of(303L), userDef.getId());
+        assertEquals(1, userDef.getAnnotations().size());
+        assertTrue(userDef.getAnnotations().containsKey("tags"));
 
-        TypeDefNode enumDef = (TypeDefNode) root.getTypeDefinitions().get(0);
-        assertEquals("Status", enumDef.getName());
-        assertEquals(Optional.of(300L), enumDef.getId());
-        assertTrue(enumDef.getAnnotations().isEmpty());
-        assertEquals(3, enumDef.getVariants().size());
+        assertEquals(3, userDef.getFields().size());
 
-        EnumVariantNode pending = enumDef.getVariants().stream().filter(v -> v.getName().equals("PENDING")).findFirst().orElse(null);
-        assertNotNull(pending);
-        assertTrue(pending.getId().isEmpty());
-        assertTrue(pending.getAnnotations().isEmpty());
+        FieldNode userIdField = userDef.getFields().get(0);
+        assertEquals("userId", userIdField.getName());
+        assertTrue(userIdField.getType() instanceof PrimitiveTypeNode);
+        assertEquals("string", ((PrimitiveTypeNode)userIdField.getType()).getTypeName());
+        assertTrue(userIdField.getAnnotations().isEmpty());
 
-        EnumVariantNode success = enumDef.getVariants().stream().filter(v -> v.getName().equals("SUCCESS")).findFirst().orElse(null);
-        assertNotNull(success);
-        assertEquals(Optional.of(301L), success.getId());
-        assertEquals(1, success.getAnnotations().size());
-        assertTrue(success.getAnnotations().containsKey("description"));
-        assertEquals("Task succeeded", success.getAnnotations().get("description"));
+        FieldNode activeField = userDef.getFields().get(1);
+        assertEquals("isActive", activeField.getName());
+        assertTrue(activeField.getType() instanceof PrimitiveTypeNode);
+        assertEquals("bool", ((PrimitiveTypeNode)activeField.getType()).getTypeName());
+        assertEquals(1, activeField.getAnnotations().size());
+        assertTrue(activeField.getAnnotations().containsKey("default"));
+        assertEquals(true, activeField.getAnnotations().get("default"));
 
-        EnumVariantNode failure = enumDef.getVariants().stream().filter(v -> v.getName().equals("FAILURE")).findFirst().orElse(null);
-        assertNotNull(failure);
-        assertTrue(failure.getId().isEmpty());
-        assertTrue(failure.getAnnotations().isEmpty());
-
-        TypeDefNode structDef1 = (TypeDefNode) root.getTypeDefinitions().get(1);
-        assertEquals("MyStruct", structDef1.getName());
-        assertEquals(TypeDefNode.TypeKind.STRUCT, structDef1.getKind());
-        assertTrue(structDef1.getFields().isEmpty());
-
-        TypeDefNode structDef2 = (TypeDefNode) root.getTypeDefinitions().get(2);
-        assertEquals("User", structDef2.getName());
-        assertEquals(TypeDefNode.TypeKind.STRUCT, structDef2.getKind());
-        assertTrue(structDef2.getFields().isEmpty());
+        FieldNode profileField = userDef.getFields().get(2);
+        assertEquals("profile", profileField.getName());
+        assertTrue(profileField.getType() instanceof ReferenceTypeNode);
+        assertEquals("Point", ((ReferenceTypeNode)profileField.getType()).getReferencedTypeName());
+        assertTrue(profileField.getAnnotations().isEmpty());
     }
 } 

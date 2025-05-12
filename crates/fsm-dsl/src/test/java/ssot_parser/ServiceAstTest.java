@@ -72,10 +72,9 @@ public class ServiceAstTest {
     void testInterfaceWithDetails() throws Exception {
         String input = """
         services {
-            @id(100)
-            interface Greeter {
+            @id(100) interface Greeter {
                 @id(101) $description("Says hello")
-                greet(name: string) -> string; 
+                greet(name: string) -> string;
 
                 // Method with no return type
                 log(message: string);
@@ -121,9 +120,10 @@ public class ServiceAstTest {
              interface MyInterface { run(data: u32); }
 
              @id(200)
-             service MyService implements MyInterface {
+             service MyService {
+                 $implements(MyInterface);
                  @id(201)
-                 run(data: u32) { $complexity(5) }
+                 run(data: u32) { $complexity(5) };
 
                  // Own method
                  internalHelper();
@@ -141,8 +141,10 @@ public class ServiceAstTest {
          assertEquals("MyService", service.getName());
          assertEquals(Optional.of(200L), service.getId());
 
-         assertEquals(1, service.getImplementedInterfaces().size());
-         assertEquals("MyInterface", service.getImplementedInterfaces().get(0));
+         // Implementation check via annotation
+         assertEquals(1, service.getAnnotations().size());
+         assertTrue(service.getAnnotations().containsKey("implements"));
+         assertEquals("MyInterface", service.getAnnotations().get("implements"));
 
          assertEquals(2, service.getMethods().size()); // run + internalHelper
 
@@ -166,7 +168,7 @@ public class ServiceAstTest {
     void testComplexTypes() throws Exception {
         String input = """
         types {
-            struct User {}
+            struct User {};
         }
         services {
             interface TypeTester {

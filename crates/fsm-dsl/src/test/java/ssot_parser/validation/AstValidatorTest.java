@@ -45,16 +45,17 @@ public class AstValidatorTest {
     void testValidMachine() throws Exception {
         String input = """
         machines {
-            MyMachine {
-                 $initial("StateA"); // Explicit initial state
+            @id(1) machine MyMachine {
+                 actions { Worker(); }
                  states {
-                    StateA {
-                        on Event1 target StateB;
-                        invoke Worker { onDone Success; onError Failure; }
-                    }
-                    StateB { on Event2 target StateA; }
-                    Success { }
-                    Failure { }
+                    initial state StateA;
+                    state StateA {
+                        on Event1 transition StateB;
+                        invoke Worker { onDone Success; onError Failure; };
+                    };
+                    state StateB { on Event2 transition StateA; };
+                    state Success { type final; };
+                    state Failure { type final; };
                  }
             }
         }
@@ -69,10 +70,10 @@ public class AstValidatorTest {
     void testInvalidInitialState() throws Exception {
         String input = """
         machines {
-            MyMachine {
-                 $initial("NonExistentState"); // Invalid initial state
+            machine MyMachine {
                  states {
-                    StateA { }
+                    initial state NonExistentState;
+                    state StateA { }
                  }
             }
         }
@@ -89,10 +90,11 @@ public class AstValidatorTest {
     void testInvalidTransitionTarget() throws Exception {
         String input = """
         machines {
-            MyMachine {
+            machine MyMachine {
                  states {
-                    StateA { on Event1 target NonExistentState; } // Invalid target
-                    StateB { }
+                    initial state StateA;
+                    state StateA { on Event1 transition NonExistentState; }
+                    state StateB { }
                  }
             }
         }
@@ -112,12 +114,14 @@ public class AstValidatorTest {
     void testInvalidInvokeTransitionTarget() throws Exception {
         String input = """
         machines {
-            MyMachine {
+            machine MyMachine {
+                 actions { Worker; }
                  states {
-                    Processing {
-                        invoke Worker { onDone NonExistentSuccess; onError AlsoNonExistent; }
+                    initial state Processing;
+                    state Processing {
+                        invoke Worker { onDone NonExistentSuccess; onError AlsoNonExistent; };
                     }
-                    RealSuccess {} // Only this state exists
+                    state RealSuccess {}
                  }
             }
         }
@@ -139,17 +143,18 @@ public class AstValidatorTest {
     void testUndefinedActionGuard() throws Exception {
         String input = """
         machines {
-            MyMachine {
-                 actions { Log; } // Only Log is defined
-                 guards { AlwaysTrue; } // Only AlwaysTrue is defined
+            machine MyMachine {
+                 actions { Log; }
+                 guards { AlwaysTrue; }
                  states {
-                    StateA {
-                        on Enter action DoSomething; // Undefined action
-                        on Event1 target StateB guard CheckSomething; // Undefined guard
-                        on Exit action Log; // Defined action
+                    initial state StateA;
+                    state StateA {
+                        onEntry action DoSomething;
+                        on Event1 transition StateB guard CheckSomething;
+                        onExit action Log;
                     }
-                    StateB {
-                         invoke Something { onError target StateA action Cleanup; } // Undefined action
+                    state StateB {
+                         invoke Log { onError transition StateA action Cleanup; };
                     }
                  }
             }
@@ -254,17 +259,14 @@ public class AstValidatorTest {
     void testUndefinedImplementedInterface() throws Exception {
          String input = """
          services {
-             service MyService implements NonExistentIface { // Undefined
-                 run();
-             }
-             interface RealIface { run(); }
+             service MyServiceImpl { $implements(UnknownInterface); }
          }
          """;
          SsotRoot root = parseAndBuildAst(input);
          AstValidator validator = new AstValidator(root);
          List<ValidationError> errors = validator.validate();
          assertEquals(1, errors.size());
-         assertTrue(errors.get(0).getMessage().contains("Service 'MyService' implements undefined interface 'NonExistentIface'"));
+         assertTrue(errors.get(0).getMessage().contains("Service 'MyService' implements undefined interface 'UnknownInterface'"));
          assertTrue(errors.get(0).getNode() instanceof ServiceNode);
     }
 
@@ -272,14 +274,21 @@ public class AstValidatorTest {
     void testUndefinedTypeReference() throws Exception {
         String input = """
         types {
-            struct Point { x: u32; y: u32; }
+            struct Point {
+                x: u32;
+                y: NotAType;
+            }
+            enum Status {
+                ACTIVE;
+                INACTIVE(reason: MaybeType);
+            }
         }
         services {
             interface Renderer {
-                 renderPoint(p: Point); // Valid
-                 renderShape(s: Shape); // Invalid - Shape not defined
-                 getPoints() -> list<optional<Point>>; // Valid nested
-                 getStyles() -> map<string, Style>; // Invalid - Style not defined
+                 renderPoint(p: Point);
+                 renderShape(s: Shape);
+                 getPoints() -> list<optional<Point>>;
+                 getStyles() -> map<string, Style>;
             }
         }
         """;
@@ -301,28 +310,27 @@ public class AstValidatorTest {
     void testDuplicateIds() throws Exception {
          String input = """
          types {
-             @id(1)
-             struct A { @id(2) field1: u32; }
-             @id(1) // Duplicate type ID
-             enum B { @id(3) V1; }
+             @id(100)
+             struct TypeA {}
+             @id(100)
+             enum TypeB { V1; }
+         }
+         services {
+             @id(200)
+             interface IfaceA { m(); }
+             @id(100)
+             service ServiceA { $implements(IfaceA); }
          }
          machines {
-            @id(10) // OK - different block
-            MachineX {
-                @id(11)
-                actions { Action1; }
-                @id(11) // Duplicate action ID within machine
-                guards { Guard1; }
-                states {
-                    @id(12)
-                    StateA {
-                        @id(13)
-                        on Event1 target StateB;
-                    }
-                    @id(12) // Duplicate state ID within machine
-                    StateB { }
-                }
-            }
+             @id(300)
+             machine MachineA {
+                 actions { ActionA; }
+                 states { initial state S1; state S1{}; }
+             }
+             @id(300)
+             machine MachineB {
+                 states { initial state S2; state S2{}; }
+             }
          }
          """;
          SsotRoot root = parseAndBuildAst(input);
@@ -333,11 +341,11 @@ public class AstValidatorTest {
                       "Should have 3 errors for duplicate IDs");
 
          // Check specific duplicate ID errors
-         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate @id(1)") && e.getNode() instanceof EnumNode),
+         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate @id(100)") && e.getNode() instanceof EnumNode),
                     "Duplicate type ID error missing");
-         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate @id(11)") && e.getNode() instanceof GuardNode),
+         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate @id(100)") && e.getNode() instanceof MethodNode),
                     "Duplicate machine inner ID (guard) error missing");
-         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate @id(12)") && e.getNode() instanceof StateNode && ((StateNode)e.getNode()).getStateName().equals("StateB")),
+         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate @id(100)") && e.getNode() instanceof StateNode && ((StateNode)e.getNode()).getStateName().equals("S1")),
                     "Duplicate state ID error missing");
 
          // Optionally check the "first used near" part of the message if implemented fully
@@ -347,14 +355,12 @@ public class AstValidatorTest {
     void testUnreachableState() throws Exception {
         String input = """
         machines {
-            MyMachine {
-                 $initial("A");
+            machine MyMachine {
                  states {
-                    A { on Event1 target B; }
-                    B { }
-                    C { } // Unreachable
-                    D { invoke X { onError C; } } // C becomes reachable via invoke
-                    E { } // Still unreachable
+                    initial state StateA;
+                    state StateA { on E1 transition StateB; }
+                    state StateB { }
+                    state UnreachableState { }
                  }
             }
         }
@@ -363,54 +369,50 @@ public class AstValidatorTest {
         AstValidator validator = new AstValidator(root);
         List<ValidationError> errors = validator.validate();
 
-        // Expect 1 warning for state E
+        // Expect 1 warning for state UnreachableState
         assertEquals(1, errors.size(), "Should have 1 warning for unreachable state");
         assertEquals(1, errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.WARNING).count());
         ValidationError warning = errors.get(0);
-        assertTrue(warning.getMessage().contains("State 'E' is unreachable"), "Warning message mismatch: " + warning.getMessage());
+        assertTrue(warning.getMessage().contains("State 'UnreachableState' is unreachable"), "Warning message mismatch: " + warning.getMessage());
         assertEquals(ValidationError.Severity.WARNING, warning.getSeverity());
-        assertTrue(warning.getNode() instanceof StateNode && ((StateNode)warning.getNode()).getStateName().equals("E"), "Warning should point to state E");
+        assertTrue(warning.getNode() instanceof StateNode && ((StateNode)warning.getNode()).getStateName().equals("UnreachableState"), "Warning should point to state UnreachableState");
 
     }
 
     @Test
     void testServiceImplementationChecks() throws Exception {
          String input = """
-         types { struct Data {} }
+         types { struct InputData {}; struct OutputData {}; }
          services {
-             interface Crud {
-                 create(d: Data);
-                 read(id: u64) -> optional<Data>;
-                 delete(id: u64) -> bool;
+             interface MyService {
+                 methodA(data: InputData) -> OutputData;
+                 methodB(flag: bool);
              }
 
-             // Valid implementation
-             service DataService implements Crud {
-                 create(d: Data) { }
-                 read(id: u64) -> optional<Data> { }
-                 delete(id: u64) -> bool { }
+             service MyServiceImpl_Correct { $implements(MyService);
+                  methodA(data: InputData) -> OutputData;
+                  methodB(flag: bool);
              }
 
-             // Missing method
-             service PartialService implements Crud {
-                 create(d: Data) { }
-                 // Missing read
-                 delete(id: u64) -> bool { }
+             service MyServiceImpl_Missing { $implements(MyService);
+                  methodA(data: InputData) -> OutputData;
              }
 
-             // Wrong parameter type
-             service WrongParamService implements Crud {
-                 create(d: string); // Wrong type
-                 read(id: u64) -> optional<Data>;
-                 delete(id: u64) -> bool;
+             service MyServiceImpl_ParamType { $implements(MyService);
+                  methodA(data: string) -> OutputData;
+                  methodB(flag: bool);
              }
 
-             // Wrong return type
-             service WrongReturnService implements Crud {
-                 create(d: Data);
-                 read(id: u64) -> Data; // Wrong return type (not optional)
-                 delete(id: u64) -> bool;
+             service MyServiceImpl_ReturnType { $implements(MyService);
+                  methodA(data: InputData) -> string;
+                  methodB(flag: bool);
              }
+
+              service MyServiceImpl_Extra { $implements(MyService);
+                   methodA(data: InputData) -> OutputData;
+                   methodB(flag: bool);
+                   methodC();
+              }
          }
          """;
          SsotRoot root = parseAndBuildAst(input);
@@ -421,32 +423,32 @@ public class AstValidatorTest {
          assertEquals(3, errors.size(), "Should have 3 errors");
 
          assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("missing implementation for method 'read'")
-                                            && e.getNode() instanceof ServiceNode && ((ServiceNode)e.getNode()).getName().equals("PartialService")),
-                    "Missing method error not found for PartialService");
+                                            && e.getNode() instanceof ServiceNode && ((ServiceNode)e.getNode()).getName().equals("MyServiceImpl_Missing")),
+                    "Missing method error not found for MyServiceImpl_Missing");
 
          assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Method signature mismatch for 'create'. Parameter types do not match")
-                                            && e.getNode() instanceof MethodNode && ((MethodNode)e.getNode()).getName().equals("create")
-                                            /* Check context points to WrongParamService method */ ),
-                    "Parameter type mismatch error not found for WrongParamService.create");
+                                            && e.getNode() instanceof MethodNode && ((MethodNode)e.getNode()).getName().equals("methodA")
+                                            /* Check context points to MyServiceImpl_ParamType method */ ),
+                    "Parameter type mismatch error not found for MyServiceImpl_ParamType.methodA");
 
          assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Method signature mismatch for 'read'. Return type does not match")
-                                            && e.getNode() instanceof MethodNode && ((MethodNode)e.getNode()).getName().equals("read")
-                                            /* Check context points to WrongReturnService method */ ),
-                    "Return type mismatch error not found for WrongReturnService.read");
+                                            && e.getNode() instanceof MethodNode && ((MethodNode)e.getNode()).getName().equals("methodA")
+                                            /* Check context points to MyServiceImpl_ReturnType method */ ),
+                    "Return type mismatch error not found for MyServiceImpl_ReturnType.methodA");
     }
 
     @Test
     void testUndefinedInvokeSource() throws Exception {
          String input = """
-         services { service RealService {} }
          machines {
-             machine RealMachine {}
-             machine Caller {
-                 states {
-                     S1 { invoke RealService; } // OK
-                     S2 { invoke RealMachine; } // OK
-                     S3 { invoke UndefinedThing; } // Error
-                 }
+             machine MyMachine {
+                  states {
+                     initial state Idle;
+                     state Idle {
+                         invoke NonExistentService { onDone Success; };
+                     }
+                     state Success { type final; }
+                  }
              }
          }
          """;

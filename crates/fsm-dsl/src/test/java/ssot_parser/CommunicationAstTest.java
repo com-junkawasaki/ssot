@@ -50,18 +50,15 @@ public class CommunicationAstTest {
     void testCommunicationBlock() throws Exception {
         String input = """
         communication {
-            @id(500)
-            protocol HTTP { $version("1.1"); }
+            protocol HTTP { @id(500) $version("1.1") }
 
-            @id(501)
-            channel UserEvents { $protocol(HTTP); }
+            channel UserEvents { @id(501) $protocol(HTTP) }
 
-            @id(502)
-            event UserLoggedIn {
+            event UserLoggedIn { @id(502)
                 userId: string;
                 timestamp: timestamp;
             }
-             event OrderPlaced { orderId: u64; }
+            event OrderPlaced { @id(503) orderId: u64; $channel(UserEvents) }
         }
         """;
         SsotRoot root = parseAndBuildAst(input);
@@ -83,9 +80,8 @@ public class CommunicationAstTest {
         // Protocol is via annotation $protocol(HTTP)
         assertTrue(chan.getAnnotations().containsKey("protocol"));
         assertEquals("HTTP", chan.getAnnotations().get("protocol"));
+        assertEquals(Optional.of(501L), chan.getId());
         assertEquals(1, chan.getAnnotations().size());
-        assertTrue(chan.getAnnotations().containsKey("protocol"));
-        assertEquals("HTTP", chan.getAnnotations().get("protocol"));
 
         // Event UserLoggedIn
         assertTrue(root.getCommunicationDefinitions().get(2) instanceof EventNode);
@@ -108,8 +104,7 @@ public class CommunicationAstTest {
          // Channel for event is via annotation $channel(UserEvents)
          assertTrue(orderPlaced.getAnnotations().containsKey("channel"), "Event should have $channel annotation");
          assertEquals("UserEvents", orderPlaced.getAnnotations().get("channel"));
-         assertEquals(Optional.of(502L), orderPlaced.getId());
-         // Check total annotations (should be 1 if only $channel is present)
+         assertEquals(Optional.of(503L), orderPlaced.getId());
          assertEquals(1, orderPlaced.getAnnotations().size(), "Event should have only $channel annotation");
          assertEquals(1, orderPlaced.getFields().size());
          assertEquals("orderId", orderPlaced.getFields().get(0).getName());
