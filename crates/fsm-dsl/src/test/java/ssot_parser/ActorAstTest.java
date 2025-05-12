@@ -50,7 +50,7 @@ public class ActorAstTest {
     void testSimpleActor() throws Exception {
         String input = """
         actors {
-            actor User { @id(400) $description("End user") }
+            @id(400) actor User { $description("End user") }
             actor System { }
         }
         """;

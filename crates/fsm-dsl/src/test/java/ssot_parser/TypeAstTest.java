@@ -52,7 +52,8 @@ public class TypeAstTest {
         types {
             @id(300) enum Status {
                 PENDING;
-                @id(301) $description("Task succeeded") SUCCESS;
+                @id(301) $description("Task succeeded")
+                SUCCESS;
                 FAILURE;
             }
         }
@@ -96,8 +97,8 @@ public class TypeAstTest {
                 y: i32;
             }
 
-            @id(303) $tags(["data", "user"])
-            struct User {
+            @id(303) struct User {
+                $tags(["data", "user"])
                 userId: string;
                 isActive: bool { $default(true) };
                 profile: Point;

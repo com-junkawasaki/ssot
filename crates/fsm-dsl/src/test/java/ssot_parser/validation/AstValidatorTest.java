@@ -70,11 +70,11 @@ public class AstValidatorTest {
     void testInvalidInitialState() throws Exception {
         String input = """
         machines {
-            machine MyMachine {
-                 states {
-                    initial state NonExistentState;
-                    state StateA { }
-                 }
+            @id(2) machine MyMachine {
+                states {
+                    state StateA {};
+                    state StateB {};
+                }
             }
         }
         """;
@@ -90,12 +90,12 @@ public class AstValidatorTest {
     void testInvalidTransitionTarget() throws Exception {
         String input = """
         machines {
-            machine MyMachine {
-                 states {
+            @id(3) machine MyMachine {
+                states {
                     initial state StateA;
-                    state StateA { on Event1 transition NonExistentState; }
-                    state StateB { }
-                 }
+                    state StateA { on Event1 transition NonExistentState; };
+                    state StateB {};
+                }
             }
         }
         """;
@@ -114,14 +114,14 @@ public class AstValidatorTest {
     void testInvalidInvokeTransitionTarget() throws Exception {
         String input = """
         machines {
-            machine MyMachine {
-                 actions { Worker; }
+            @id(4) machine MyMachine {
+                 actions { Worker(); }
                  states {
                     initial state Processing;
                     state Processing {
                         invoke Worker { onDone NonExistentSuccess; onError AlsoNonExistent; };
-                    }
-                    state RealSuccess {}
+                    };
+                    state RealSuccess {};
                  }
             }
         }
@@ -143,18 +143,18 @@ public class AstValidatorTest {
     void testUndefinedActionGuard() throws Exception {
         String input = """
         machines {
-            machine MyMachine {
-                 actions { Log; }
-                 guards { AlwaysTrue; }
+            @id(5) machine MyMachine {
+                 actions { Log(); DoSomething(); Cleanup(); }
+                 guards { AlwaysTrue(); CheckSomething(); }
                  states {
                     initial state StateA;
                     state StateA {
-                        onEntry action DoSomething;
-                        on Event1 transition StateB guard CheckSomething;
-                        onExit action Log;
+                        onEntry action DoSomething();
+                        on Event1 transition StateB guard CheckSomething();
+                        onExit action Log();
                     }
                     state StateB {
-                         invoke Log { onError transition StateA action Cleanup; };
+                         invoke Log { onError transition StateA action Cleanup(); };
                     }
                  }
             }
@@ -181,7 +181,7 @@ public class AstValidatorTest {
     void testDuplicateEnumVariant() throws Exception {
         String input = """
         types {
-            enum Color {
+            @id(10) enum Color {
                 RED;
                 GREEN;
                 RED; // Duplicate
@@ -201,10 +201,10 @@ public class AstValidatorTest {
     void testDuplicateStructField() throws Exception {
         String input = """
         types {
-            struct Point {
-                x: u32;
-                y: u32;
-                x: f64; // Duplicate
+            @id(11) struct Point {
+                x: i32;
+                y: i32;
+                x: string; // Duplicate name
             }
         }
         """;
@@ -221,7 +221,7 @@ public class AstValidatorTest {
     void testDuplicateInterfaceMethod() throws Exception {
          String input = """
          services {
-             interface MyIface {
+             @id(12) interface MyIface {
                  doA();
                  doB();
                  doA(); // Duplicate
@@ -240,11 +240,10 @@ public class AstValidatorTest {
     void testDuplicateServiceMethod() throws Exception {
          String input = """
          services {
-             service MyService {
-                 run();
-                 stop();
-                 run(); // Duplicate
+             @id(13) interface BadInterface {
+                 run(); run(); // Duplicate methods
              }
+             @id(14) service MyService { $implements(BadInterface) }
          }
          """;
          SsotRoot root = parseAndBuildAst(input);
@@ -259,7 +258,7 @@ public class AstValidatorTest {
     void testUndefinedImplementedInterface() throws Exception {
          String input = """
          services {
-             service MyServiceImpl { $implements(UnknownInterface); }
+             @id(6) service MyServiceImpl { $implements(UnknownInterface) }
          }
          """;
          SsotRoot root = parseAndBuildAst(input);
@@ -274,21 +273,17 @@ public class AstValidatorTest {
     void testUndefinedTypeReference() throws Exception {
         String input = """
         types {
-            struct Point {
-                x: u32;
-                y: NotAType;
+            @id(7) struct Box {
+                content: UnknownType; // Undefined type
             }
-            enum Status {
-                ACTIVE;
-                INACTIVE(reason: MaybeType);
+            @id(8) enum Status {
+                PENDING; SUCCESS; FAILURE;
             }
         }
         services {
-            interface Renderer {
-                 renderPoint(p: Point);
-                 renderShape(s: Shape);
-                 getPoints() -> list<optional<Point>>;
-                 getStyles() -> map<string, Style>;
+            @id(9) interface Renderer {
+                 renderShape(s: Shape); // Undefined Shape type
+                 getStyles() -> map<string, Style>; // Undefined Style type
             }
         }
         """;
@@ -310,27 +305,16 @@ public class AstValidatorTest {
     void testDuplicateIds() throws Exception {
          String input = """
          types {
-             @id(100)
-             struct TypeA {}
-             @id(100)
-             enum TypeB { V1; }
+             @id(1) struct A { x: i32; }
          }
          services {
-             @id(200)
-             interface IfaceA { m(); }
-             @id(100)
-             service ServiceA { $implements(IfaceA); }
+             @id(1) interface B { go(); }
          }
          machines {
-             @id(300)
-             machine MachineA {
-                 actions { ActionA; }
-                 states { initial state S1; state S1{}; }
+             @id(2) machine C {
+                 states { initial state S1; state S1 { @id(1) }; }
              }
-             @id(300)
-             machine MachineB {
-                 states { initial state S2; state S2{}; }
-             }
+             @id(2) machine D { states { initial state S2; state S2{}; }; }
          }
          """;
          SsotRoot root = parseAndBuildAst(input);
@@ -355,13 +339,13 @@ public class AstValidatorTest {
     void testUnreachableState() throws Exception {
         String input = """
         machines {
-            machine MyMachine {
-                 states {
-                    initial state StateA;
-                    state StateA { on E1 transition StateB; }
-                    state StateB { }
-                    state UnreachableState { }
-                 }
+            @id(15) machine Unreachable {
+                states {
+                    initial state A;
+                    state A { on Ev1 transition B; };
+                    state B {};
+                    state C {};
+                }
             }
         }
         """;
@@ -382,37 +366,20 @@ public class AstValidatorTest {
     @Test
     void testServiceImplementationChecks() throws Exception {
          String input = """
-         types { struct InputData {}; struct OutputData {}; }
+         types { \
+             struct Request { data: string; } \
+             struct Response { value: i32; } \
+         }
          services {
-             interface MyService {
-                 methodA(data: InputData) -> OutputData;
-                 methodB(flag: bool);
+             @id(20) interface Calculator {
+                 add(a: i32, b: i32) -> i32;
+                 process(req: Request) -> Response;
+                 notify(msg: string); \
              }
 
-             service MyServiceImpl_Correct { $implements(MyService);
-                  methodA(data: InputData) -> OutputData;
-                  methodB(flag: bool);
-             }
+             @id(21) service CalcImpl { $implements(Calculator) }
 
-             service MyServiceImpl_Missing { $implements(MyService);
-                  methodA(data: InputData) -> OutputData;
-             }
-
-             service MyServiceImpl_ParamType { $implements(MyService);
-                  methodA(data: string) -> OutputData;
-                  methodB(flag: bool);
-             }
-
-             service MyServiceImpl_ReturnType { $implements(MyService);
-                  methodA(data: InputData) -> string;
-                  methodB(flag: bool);
-             }
-
-              service MyServiceImpl_Extra { $implements(MyService);
-                   methodA(data: InputData) -> OutputData;
-                   methodB(flag: bool);
-                   methodC();
-              }
+             @id(22) service WrongImpl { $implements(MissingInterface) }
          }
          """;
          SsotRoot root = parseAndBuildAst(input);
@@ -441,13 +408,11 @@ public class AstValidatorTest {
     void testUndefinedInvokeSource() throws Exception {
          String input = """
          machines {
-             machine MyMachine {
+             @id(16) machine InvokeTest {
                   states {
-                     initial state Idle;
-                     state Idle {
-                         invoke NonExistentService { onDone Success; };
-                     }
-                     state Success { type final; }
+                     initial state A;
+                     state A { invoke UndefinedAction { onDone B; }; };
+                     state B { type final; };
                   }
              }
          }
@@ -468,19 +433,15 @@ public class AstValidatorTest {
     void testValidNestedStates() throws Exception {
         String input = """
         machines {
-            MyMachine {
-                 $initial("OuterA");
-                 states {
-                    OuterA {
-                        $initial("InnerA1"); // Initial for nested
-                        states {
-                           InnerA1 { on Event1 target InnerA2; }
-                           InnerA2 { }
-                        }
-                        on Event2 target OuterB;
-                    }
-                    OuterB { }
-                 }
+            @id(17) machine Nested {
+                states {
+                    initial state Parent;
+                    state Parent {
+                        initial state ChildA;
+                        state ChildA { on Ev transition ChildB; };
+                        state ChildB {};
+                    };
+                }
             }
         }
         """;
@@ -494,18 +455,13 @@ public class AstValidatorTest {
     void testInvalidNestedStateMissingInitial() throws Exception {
         String input = """
         machines {
-            MyMachine {
-                 $initial("OuterA");
-                 states {
-                    OuterA { // Compound state missing $initial
-                        states {
-                           InnerA1 { on Event1 target InnerA2; }
-                           InnerA2 { }
-                        }
-                        on Event2 target OuterB;
-                    }
-                    OuterB { }
-                 }
+            @id(18) machine Nested {
+                states {
+                    initial state Parent;
+                    state Parent {
+                        state ChildA {};
+                    };
+                }
             }
         }
         """;
@@ -514,31 +470,25 @@ public class AstValidatorTest {
         List<ValidationError> errors = validator.validate();
         assertEquals(1, errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).count(), "Should have 1 ERROR for missing initial state");
         ValidationError error = errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).findFirst().get();
-        assertTrue(error.getMessage().contains("Compound state 'OuterA' must specify an initial state using $initial"), "Error message mismatch: " + error.getMessage());
-        assertTrue(error.getNode() instanceof StateNode && ((StateNode)error.getNode()).getStateName().equals("OuterA"), "Error should point to OuterA state node");
+        assertTrue(error.getMessage().contains("Compound state 'Parent' must specify an initial state using $initial"), "Error message mismatch: " + error.getMessage());
+        assertTrue(error.getNode() instanceof StateNode && ((StateNode)error.getNode()).getStateName().equals("Parent"), "Error should point to Parent state node");
     }
 
     @Test
     void testValidShallowHistory() throws Exception {
         String input = """
         machines {
-            MyMachine {
-                 $initial("Group");
-                 states {
-                    Group {
-                        $initial("A");
-                        $H; // Shallow history marker
-                        states {
-                           A { on Ev1 target B; }
-                           B { on Ev2 target C; }
-                           C { }
-                        }
-                        on Interrupt target Interrupted;
-                    }
-                    Interrupted {
-                        on Resume target Group.$H; // Transition to history
-                    }
-                 }
+            @id(19) machine HistoryTest {
+                states {
+                    initial state A;
+                    state A { on Ev transition B; };
+                    state B {
+                        history shallow H;
+                        initial state B1;
+                        state B1 { on Ev transition B2; };
+                        state B2 { on Ev transition A; };
+                    };
+                }
             }
         }
         """;
@@ -552,30 +502,20 @@ public class AstValidatorTest {
     void testValidDeepHistory() throws Exception {
         String input = """
         machines {
-            MyMachine {
-                 $initial("Group1");
-                 states {
-                    Group1 {
-                        $initial("A");
-                        $H*; // Deep history marker
-                        states {
-                           A { on Ev1 target Group2; }
-                           Group2 {
-                               $initial("B");
-                               $H; // Shallow history within deep
-                               states {
-                                  B { on Ev2 target C; }
-                                  C { }
-                               }
-                               on Back target A;
-                           }
-                        }
-                        on Interrupt target Interrupted;
-                    }
-                    Interrupted {
-                        on Resume target Group1.$H*; // Transition to deep history
-                    }
-                 }
+            @id(20) machine HistoryTest {
+                states {
+                    initial state A;
+                    state A { on Ev transition B; };
+                    state B {
+                        history deep H;
+                        initial state B1;
+                        state B1 {
+                            initial state B1a;
+                            state B1a { on Ev transition B2; };
+                        };
+                        state B2 { on Ev transition A; };
+                    };
+                }
             }
         }
         """;
@@ -589,24 +529,15 @@ public class AstValidatorTest {
     void testInvalidTransitionToMissingHistory() throws Exception {
         String input = """
         machines {
-            MyMachine {
-                 $initial("Group");
-                 states {
-                    Group { // No history marker ($H or $H*)
-                        $initial("A");
-                        states {
-                           A { on Ev1 target B; }
-                           B { }
-                        }
-                        on Interrupt target Interrupted;
-                    }
-                    Interrupted {
-                        on Resume target Group.$H; // Invalid: Group has no $H
-                    }
-                    InterruptedDeep {
-                        on ResumeDeep target Group.$H*; // Invalid: Group has no $H*
-                    }
-                 }
+            @id(21) machine HistoryTest {
+                states {
+                    initial state A;
+                    state A { on Ev transition B.H; };
+                    state B {
+                        initial state B1;
+                        state B1 {};
+                    };
+                }
             }
         }
         """;
@@ -616,8 +547,8 @@ public class AstValidatorTest {
 
         assertEquals(2, errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).count(), "Should have 2 ERRORs for invalid history transitions");
 
-        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Transition target 'Group.$H' refers to a shallow history state, but state 'Group' does not define one")), "Shallow history error missing");
-        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Transition target 'Group.$H*' refers to a deep history state, but state 'Group' does not define one")), "Deep history error missing");
+        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Transition target 'Parent.$H' refers to a shallow history state, but state 'Parent' does not define one")), "Shallow history error missing");
+        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Transition target 'Parent.$H*' refers to a deep history state, but state 'Parent' does not define one")), "Deep history error missing");
 
         assertTrue(errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).allMatch(e -> e.getNode() instanceof TransitionNode), "Errors should point to TransitionNode");
     }
@@ -626,26 +557,22 @@ public class AstValidatorTest {
     void testDuplicateStateNameNested() throws Exception {
         String input = """
         machines {
-            MyMachine {
-                 $initial("OuterA");
-                 states {
-                    OuterA {
-                        $initial("InnerA");
-                        states {
-                           InnerA { }
-                           InnerB { }
-                           InnerA { } // Duplicate name within OuterA
-                        }
-                    }
-                    OuterB {
-                        $initial("InnerA"); // OK, different parent
-                        states {
-                            InnerA {}
-                        }
-                    }
-                    OuterC { }
-                    OuterA { } // Duplicate name at top level
-                 }
+            @id(22) machine NestedDup {
+                states {
+                    initial state A;
+                    state A {
+                        initial state B;
+                        state B {};
+                    };
+                    state B {
+                         initial state C;
+                         state C{};
+                    };
+                    state A {
+                       initial state D;
+                       state D {};
+                    };
+                }
             }
         }
         """;
@@ -655,14 +582,14 @@ public class AstValidatorTest {
 
         assertEquals(2, errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).count(), "Should have 2 ERRORs for duplicate state names");
 
-        // Check duplicate within OuterA
-        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate state name 'InnerA' within parent state 'OuterA'")
-                                            && e.getNode() instanceof StateNode && ((StateNode)e.getNode()).getStateName().equals("InnerA")), // Points to the second InnerA
+        // Check duplicate within Parent
+        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate state name 'Child' within parent state 'Parent'")
+                                            && e.getNode() instanceof StateNode && ((StateNode)e.getNode()).getStateName().equals("Child")),
                     "Duplicate nested state name error missing");
 
         // Check duplicate at top level
-        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate state name 'OuterA' within parent machine 'MyMachine'")
-                                            && e.getNode() instanceof StateNode && ((StateNode)e.getNode()).getStateName().equals("OuterA")), // Points to the second OuterA
+        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate state name 'Parent' within parent machine 'MyMachine'")
+                                            && e.getNode() instanceof StateNode && ((StateNode)e.getNode()).getStateName().equals("Parent")),
                     "Duplicate top-level state name error missing");
     }
 

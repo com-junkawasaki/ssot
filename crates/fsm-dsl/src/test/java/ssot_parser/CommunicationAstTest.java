@@ -50,15 +50,18 @@ public class CommunicationAstTest {
     void testCommunicationBlock() throws Exception {
         String input = """
         communication {
-            protocol HTTP { @id(500) $version("1.1") }
+            @id(500) protocol HTTP { $version("1.1") }
 
-            channel UserEvents { @id(501) $protocol(HTTP) }
+            @id(501) channel UserEvents { $protocol(HTTP) }
 
-            event UserLoggedIn { @id(502)
+            @id(502) event UserLoggedIn {
                 userId: string;
                 timestamp: timestamp;
             }
-            event OrderPlaced { @id(503) orderId: u64; $channel(UserEvents) }
+            @id(503) event OrderPlaced {
+                $channel(UserEvents)
+                orderId: u64;
+            }
         }
         """;
         SsotRoot root = parseAndBuildAst(input);

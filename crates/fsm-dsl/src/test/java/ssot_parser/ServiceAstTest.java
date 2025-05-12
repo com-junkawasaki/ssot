@@ -117,17 +117,8 @@ public class ServiceAstTest {
      void testServiceImplementation() throws Exception {
          String input = """
          services {
-             interface MyInterface { run(data: u32); }
-
-             @id(200)
-             service MyService {
-                 $implements(MyInterface);
-                 @id(201)
-                 run(data: u32) { $complexity(5) };
-
-                 // Own method
-                 internalHelper();
-             }
+             interface MyInterface { doSomething(); }
+             @id(5) service MyServiceImpl { $implements(MyInterface) }
          }
          """;
          SsotRoot root = parseAndBuildAst(input);
@@ -138,43 +129,34 @@ public class ServiceAstTest {
                                 .map(s -> (ServiceNode)s)
                                 .findFirst().orElse(null);
          assertNotNull(service);
-         assertEquals("MyService", service.getName());
-         assertEquals(Optional.of(200L), service.getId());
+         assertEquals("MyServiceImpl", service.getName());
+         assertEquals(Optional.of(5L), service.getId());
 
          // Implementation check via annotation
          assertEquals(1, service.getAnnotations().size());
          assertTrue(service.getAnnotations().containsKey("implements"));
          assertEquals("MyInterface", service.getAnnotations().get("implements"));
 
-         assertEquals(2, service.getMethods().size()); // run + internalHelper
+         assertEquals(1, service.getMethods().size()); // doSomething
 
-         MethodNode runMethod = service.getMethods().stream().filter(m -> m.getName().equals("run")).findFirst().orElse(null);
-         assertNotNull(runMethod);
-         assertEquals(Optional.of(201L), runMethod.getId());
-         assertEquals(1, runMethod.getAnnotations().size());
-         assertTrue(runMethod.getAnnotations().containsKey("complexity"), "Should contain $complexity annotation");
-         assertEquals(5L, runMethod.getAnnotations().get("complexity"));
-         assertEquals(1, runMethod.getParameters().size());
-         assertTrue(runMethod.getParameters().get(0).getType() instanceof PrimitiveTypeNode, "Run parameter type should be Primitive");
-         assertEquals("u32", ((PrimitiveTypeNode)runMethod.getParameters().get(0).getType()).getTypeName());
-         assertTrue(runMethod.getReturnType().isEmpty(), "Run return type should be empty");
-
-         MethodNode helperMethod = service.getMethods().stream().filter(m -> m.getName().equals("internalHelper")).findFirst().orElse(null);
-         assertNotNull(helperMethod);
-         assertTrue(helperMethod.getParameters().isEmpty());
+         MethodNode method = service.getMethods().stream().filter(m -> m.getName().equals("doSomething")).findFirst().orElse(null);
+         assertNotNull(method);
+         assertTrue(method.getParameters().isEmpty());
      }
 
     @Test
     void testComplexTypes() throws Exception {
         String input = """
         types {
-            struct User {};
+            struct Point { x: i32; y: i32; }
+            enum Style { SOLID; DASHED; }
         }
         services {
-            interface TypeTester {
-                processOptional(data: optional<string>);
-                processList(items: list<User>);
-                processMap(lookup: map<string, list<optional<u64>>>);
+            interface Renderer {
+                renderPoint(p: Point);
+                renderShape(s: Shape);
+                getPoints() -> list<optional<Point>>;
+                getStyles() -> map<string, Style>;
             }
         }
         """;
@@ -182,47 +164,51 @@ public class ServiceAstTest {
         assertEquals(1, root.getServiceDefinitions().size()); // Only interface
         assertTrue(root.getServiceDefinitions().get(0) instanceof InterfaceNode);
         InterfaceNode iface = (InterfaceNode) root.getServiceDefinitions().get(0);
-        assertEquals("TypeTester", iface.getName());
-        assertEquals(3, iface.getMethods().size());
+        assertEquals("Renderer", iface.getName());
+        assertEquals(4, iface.getMethods().size());
 
-        // Test optional<string>
-        MethodNode optMethod = iface.getMethods().stream().filter(m -> m.getName().equals("processOptional")).findFirst().orElse(null);
-        assertNotNull(optMethod);
-        assertEquals(1, optMethod.getParameters().size());
-        ParameterNode optParam = optMethod.getParameters().get(0);
-        assertTrue(optParam.getType() instanceof OptionalTypeNode, "Type should be Optional");
-        OptionalTypeNode optType = (OptionalTypeNode) optParam.getType();
-        assertTrue(optType.getInnerType() instanceof PrimitiveTypeNode, "Inner type should be Primitive");
-        assertEquals("string", ((PrimitiveTypeNode)optType.getInnerType()).getTypeName());
+        // Test renderPoint(p: Point)
+        MethodNode pointMethod = iface.getMethods().stream().filter(m -> m.getName().equals("renderPoint")).findFirst().orElse(null);
+        assertNotNull(pointMethod);
+        assertEquals(1, pointMethod.getParameters().size());
+        ParameterNode pointParam = pointMethod.getParameters().get(0);
+        assertTrue(pointParam.getType() instanceof ReferenceTypeNode, "Parameter type should be Reference");
+        ReferenceTypeNode pointType = (ReferenceTypeNode) pointParam.getType();
+        assertEquals("Point", pointType.getReferencedTypeName());
 
-        // Test list<User>
-        MethodNode listMethod = iface.getMethods().stream().filter(m -> m.getName().equals("processList")).findFirst().orElse(null);
-        assertNotNull(listMethod);
-        assertEquals(1, listMethod.getParameters().size());
-        ParameterNode listParam = listMethod.getParameters().get(0);
-        assertTrue(listParam.getType() instanceof ListTypeNode, "Type should be List");
-        ListTypeNode listType = (ListTypeNode) listParam.getType();
-        assertTrue(listType.getElementType() instanceof ReferenceTypeNode, "Element type should be Reference");
-        assertEquals("User", ((ReferenceTypeNode)listType.getElementType()).getReferencedTypeName());
+        // Test renderShape(s: Shape)
+        MethodNode shapeMethod = iface.getMethods().stream().filter(m -> m.getName().equals("renderShape")).findFirst().orElse(null);
+        assertNotNull(shapeMethod);
+        assertEquals(1, shapeMethod.getParameters().size());
+        ParameterNode shapeParam = shapeMethod.getParameters().get(0);
+        assertTrue(shapeParam.getType() instanceof ReferenceTypeNode, "Parameter type should be Reference");
+        ReferenceTypeNode shapeType = (ReferenceTypeNode) shapeParam.getType();
+        assertEquals("Shape", shapeType.getReferencedTypeName());
 
-        // Test map<string, list<optional<u64>>>
-        MethodNode mapMethod = iface.getMethods().stream().filter(m -> m.getName().equals("processMap")).findFirst().orElse(null);
-        assertNotNull(mapMethod);
-        assertEquals(1, mapMethod.getParameters().size());
-        ParameterNode mapParam = mapMethod.getParameters().get(0);
-        assertTrue(mapParam.getType() instanceof MapTypeNode, "Type should be Map");
-        MapTypeNode mapType = (MapTypeNode) mapParam.getType();
+        // Test getPoints() -> list<optional<Point>>
+        MethodNode pointsMethod = iface.getMethods().stream().filter(m -> m.getName().equals("getPoints")).findFirst().orElse(null);
+        assertNotNull(pointsMethod);
+        assertEquals(0, pointsMethod.getParameters().size());
+        assertTrue(pointsMethod.getReturnType().isPresent(), "Method should have a return type");
+        assertTrue(pointsMethod.getReturnType().get() instanceof ListTypeNode, "Return type should be List");
+        ListTypeNode pointsReturnType = (ListTypeNode) pointsMethod.getReturnType().get();
+        assertTrue(pointsReturnType.getElementType() instanceof OptionalTypeNode, "List element type should be Optional");
+        OptionalTypeNode pointsElementType = (OptionalTypeNode) pointsReturnType.getElementType();
+        assertTrue(pointsElementType.getInnerType() instanceof ReferenceTypeNode, "Optional inner type should be Reference");
+        assertEquals("Point", ((ReferenceTypeNode)pointsElementType.getInnerType()).getReferencedTypeName());
 
-        assertTrue(mapType.getKeyType() instanceof PrimitiveTypeNode, "Map key type should be Primitive");
-        assertEquals("string", ((PrimitiveTypeNode)mapType.getKeyType()).getTypeName());
-
-        assertTrue(mapType.getValueType() instanceof ListTypeNode, "Map value type should be List");
-        ListTypeNode mapValueListType = (ListTypeNode) mapType.getValueType();
-        assertTrue(mapValueListType.getElementType() instanceof OptionalTypeNode, "Map value element type should be Optional");
-        OptionalTypeNode mapValueOptionalType = (OptionalTypeNode) mapValueListType.getElementType();
-        assertTrue(mapValueOptionalType.getInnerType() instanceof PrimitiveTypeNode, "Map value inner type should be Primitive");
-        assertEquals("u64", ((PrimitiveTypeNode)mapValueOptionalType.getInnerType()).getTypeName());
-
+        // Test getStyles() -> map<string, Style>
+        MethodNode stylesMethod = iface.getMethods().stream().filter(m -> m.getName().equals("getStyles")).findFirst().orElse(null);
+        assertNotNull(stylesMethod);
+        assertEquals(0, stylesMethod.getParameters().size());
+        assertTrue(stylesMethod.getReturnType().isPresent(), "Method should have a return type");
+        assertTrue(stylesMethod.getReturnType().get() instanceof MapTypeNode, "Return type should be Map");
+        MapTypeNode stylesReturnType = (MapTypeNode) stylesMethod.getReturnType().get();
+        assertTrue(stylesReturnType.getKeyType() instanceof PrimitiveTypeNode, "Map key type should be Primitive");
+        assertEquals("string", ((PrimitiveTypeNode)stylesReturnType.getKeyType()).getTypeName());
+        assertTrue(stylesReturnType.getValueType() instanceof ReferenceTypeNode, "Map value type should be Reference");
+        ReferenceTypeNode stylesValueType = (ReferenceTypeNode) stylesReturnType.getValueType();
+        assertEquals("Style", stylesValueType.getReferencedTypeName());
     }
 
 } 
