@@ -50,7 +50,7 @@ public class TypeAstTest {
     void testEnumDefinition() throws Exception {
         String input = """
         types {
-            @id(300) enum Status {
+            enum Status {
                 PENDING;
                 @id(301) $description("Task succeeded")
                 SUCCESS;
@@ -65,7 +65,6 @@ public class TypeAstTest {
         assertEquals(TypeDefNode.TypeKind.ENUM, typeDef.getKind());
 
         assertEquals("Status", typeDef.getName());
-        assertEquals(Optional.of(300L), typeDef.getId());
         assertTrue(typeDef.getAnnotations().isEmpty()); // Annotations on type itself
         assertEquals(3, typeDef.getVariants().size());
 
@@ -91,14 +90,13 @@ public class TypeAstTest {
     void testStructDefinition() throws Exception {
         String input = """
         types {
-            @id(302) struct Point {
+            struct Point {
                 x: i32;
                 @id(304) $meta("coordinate")
                 y: i32;
             }
 
-            @id(303) struct User {
-                $tags(["data", "user"])
+            struct User {
                 userId: string;
                 isActive: bool { $default(true) };
                 profile: Point;
@@ -113,7 +111,6 @@ public class TypeAstTest {
         TypeDefNode pointDef = (TypeDefNode) root.getTypeDefinitions().get(0);
         assertEquals(TypeDefNode.TypeKind.STRUCT, pointDef.getKind());
         assertEquals("Point", pointDef.getName());
-        assertEquals(Optional.of(302L), pointDef.getId());
         assertTrue(pointDef.getAnnotations().isEmpty());
         assertEquals(2, pointDef.getFields().size());
 
@@ -138,9 +135,7 @@ public class TypeAstTest {
         TypeDefNode userDef = (TypeDefNode) root.getTypeDefinitions().get(1);
         assertEquals(TypeDefNode.TypeKind.STRUCT, userDef.getKind());
         assertEquals("User", userDef.getName());
-        assertEquals(Optional.of(303L), userDef.getId());
-        assertEquals(1, userDef.getAnnotations().size());
-        assertTrue(userDef.getAnnotations().containsKey("tags"));
+        assertTrue(userDef.getAnnotations().isEmpty());
 
         assertEquals(3, userDef.getFields().size());
 

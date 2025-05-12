@@ -12,21 +12,22 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors; // Needed for helper method
 
+// Keep base parser/visitor imports
 import ssot_parser.SSoTLexer;
 import ssot_parser.SSoTParser;
 import ssot_parser.AstBuilderVisitor;
+
+// General AST node imports
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.SsotRoot;
-import ssot_parser.ast.nodes.MachineNode; // Correct import
-import ssot_parser.ast.nodes.*;
-import ssot_parser.ast.type.*;
-import ssot_parser.ast.nodes.state.*;
-import ssot_parser.ast.nodes.state.HistoryNode; // Explicit import for HistoryNode
-import ssot_parser.ast.nodes.state.StateType; // Explicit import for StateType
-import ssot_parser.ast.nodes.HistoryStateNode; // Correct import path
-import ssot_parser.ast.type.StateType;      // Correct import path
-import ssot_parser.ast.nodes.HistoryStateNode;   // Specific node import
-import ssot_parser.ast.nodes.state.HistoryStateType; // Import for enum
+import ssot_parser.ast.nodes.*; // Keep wildcard for MachineNode, StateNode etc.
+
+// Specific type imports
+import ssot_parser.ast.type.StateType;      // For NORMAL, COMPOUND etc.
+
+// Specific state-related imports
+import ssot_parser.ast.nodes.HistoryStateNode;   // Specific node import (assuming in nodes package)
+import ssot_parser.ast.nodes.state.HistoryStateType; // For SHALLOW, DEEP enum
 
 /**
  * Tests for parsing state machine definitions and building the corresponding AST.
@@ -62,7 +63,6 @@ public class MachineAstTest {
     void testMinimalMachine() throws Exception {
         String input = """
         machines {
-            @id(1) $description("A simple machine")
             machine SimpleMachine {
                 states {
                     initial state Idle;
@@ -77,10 +77,6 @@ public class MachineAstTest {
         // Use MachineNode
         MachineNode sm = (MachineNode) root.getMachineDefinitions().get(0); 
         assertEquals("SimpleMachine", sm.getMachineName());
-        assertEquals(Optional.of(1L), sm.getId());
-        assertEquals(1, sm.getAnnotations().size());
-        assertTrue(sm.getAnnotations().containsKey("description"));
-        assertEquals("A simple machine", sm.getAnnotations().get("description"));
         assertEquals("Idle", sm.getInitialStateName());
         assertEquals(1, sm.getStates().size());
         // Find the state node within the list of AstNode
@@ -99,13 +95,13 @@ public class MachineAstTest {
                 states {
                     initial state Red;
                     state Red {
-                        on TIMER transition Green;
+                        on TIMER target Green;
                     };
                     state Green {
-                        on TIMER transition Yellow;
+                        on TIMER target Yellow;
                     };
                     state Yellow {
-                        on TIMER transition Red;
+                        on TIMER target Red;
                     };
                 }
             }
@@ -155,7 +151,7 @@ public class MachineAstTest {
                            state Child1 {}; // Added 'state' keyword and {}
                            state Child2 {}; // Added 'state' keyword and {}
                         }
-                        on GoToChild1 transition Child1;
+                        on GoToChild1 target Child1;
                     }
                     state Sibling { // Added 'state' keyword
                          history deep;

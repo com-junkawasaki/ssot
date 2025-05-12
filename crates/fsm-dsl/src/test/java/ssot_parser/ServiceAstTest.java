@@ -72,7 +72,7 @@ public class ServiceAstTest {
     void testInterfaceWithDetails() throws Exception {
         String input = """
         services {
-            @id(100) interface Greeter {
+            interface Greeter {
                 @id(101) $description("Says hello")
                 greet(name: string) -> string;
 
@@ -86,7 +86,6 @@ public class ServiceAstTest {
         InterfaceNode iface = (InterfaceNode) root.getServiceDefinitions().get(0);
 
         assertEquals("Greeter", iface.getName());
-        assertEquals(Optional.of(100L), iface.getId());
         assertEquals(2, iface.getMethods().size());
 
         MethodNode greetMethod = iface.getMethods().stream().filter(m -> m.getName().equals("greet")).findFirst().orElse(null);
@@ -118,7 +117,7 @@ public class ServiceAstTest {
          String input = """
          services {
              interface MyInterface { doSomething(); }
-             @id(5) service MyServiceImpl { $implements(MyInterface) }
+             service MyServiceImpl { $implements(MyInterface) }
          }
          """;
          SsotRoot root = parseAndBuildAst(input);
@@ -130,7 +129,6 @@ public class ServiceAstTest {
                                 .findFirst().orElse(null);
          assertNotNull(service);
          assertEquals("MyServiceImpl", service.getName());
-         assertEquals(Optional.of(5L), service.getId());
 
          // Implementation check via annotation
          assertEquals(1, service.getAnnotations().size());

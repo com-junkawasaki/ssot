@@ -32,15 +32,6 @@ The project features a robust Java/ANTLR-based parser for a custom Domain-Specif
     *   The test suite now **compiles successfully**.
 *   **Current Challenge:** Despite compiling, `mvn test` reveals numerous runtime **ANTLR syntax errors** across most test files. This indicates a significant mismatch between the DSL examples used in the tests and the current ANTLR grammar (`src/main/antlr4/SSoT.g4`). The grammar has evolved, and the test inputs need to be updated accordingly.
 
-**Current Focus & Next Steps:**
-
-1.  **Align Test DSL with Grammar:** The immediate priority is to meticulously update the DSL input strings within all failing test files (`ActorAstTest`, `CommunicationAstTest`, `TypeAstTest`, `ServiceAstTest`, `MachineAstTest`, `AstValidatorTest`) to conform to the current `SSoT.g4` grammar. Key grammar changes to address include:
-    *   The top-level block for state machines is `machines { ... }` (not `statemachines`).
-    *   Keywords like `machine`, `actor`, `service`, `interface`, `struct`, `enum`, `protocol`, `channel`, `event` are now explicitly part of their respective definition syntax.
-    *   Annotation syntax rules: `@id(value)` and `$name(value)` do not have trailing semicolons; flag-style annotations like `$flag;` do.
-    *   Semicolon requirements: Required at the end of `fieldDefinition`, `enumVariant`, `methodDefinition`, `onTransition`, `historyDefinition`, etc.
-2.  **Achieve Passing Tests:** Ensure all tests pass after updating the DSL syntax.
-3.  **Resume Core Development:** Once the test suite is stable and passing, development can refocus on enhancing the AST, improving validation, and progressing towards the primary goal of code generation.
 
 **Future Goals:**
 The primary long-term goal remains the development of code generators that leverage the AST to produce various artifacts (code, schemas, documentation). The "ドクトリン" (doctrine) concept noted in the IDEA section is also a potential future DSL enhancement. Further improvements could include more detailed validation rules and enhanced error reporting once the current test-related issues are resolved.
