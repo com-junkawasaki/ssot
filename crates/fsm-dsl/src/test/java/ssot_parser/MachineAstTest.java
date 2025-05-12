@@ -66,7 +66,7 @@ public class MachineAstTest {
             machine SimpleMachine {
                 states {
                     initial state Idle;
-                    state Idle {};
+                    state Idle;
                 }
             }
         }
@@ -96,13 +96,13 @@ public class MachineAstTest {
                     initial state Red;
                     state Red {
                         on TIMER target Green;
-                    };
+                    }
                     state Green {
                         on TIMER target Yellow;
-                    };
+                    }
                     state Yellow {
                         on TIMER target Red;
-                    };
+                    }
                 }
             }
         }
@@ -141,34 +141,32 @@ public class MachineAstTest {
     void testHistoryStates() throws Exception {
         String input = """
         machines {
-            machine MyMachine { // Added 'machine' keyword
+            machine MyMachine {
                 states {
-                    initial state Parent; // Added initial state for clarity/validity?
-                    state Parent {
+                    initial state Parent; // Initial state for the *machine* is Parent
+                    state Parent { // Compound state
                         history shallow;
-                        initial state Child1; // Compound states need an initial state
-                        states {
-                           state Child1 {}; // Added 'state' keyword and {}
-                           state Child2 {}; // Added 'state' keyword and {}
-                        }
-                        on GoToChild1 target Child1;
+                        // Nested states are defined directly here
+                        state Child1;
+                        state Child2;
+                        on GoToChild1 target Child1; // Transition within Parent
+                        // The initial state for the *nested* scope of Parent is defined here:
+                        initial state Child1;
                     }
-                    state Sibling { // Added 'state' keyword
+                    state Sibling { // Another top-level state (compound)
                          history deep;
                          @id(123)
                          $description("Deep history state")
-                         // Deep history itself doesn't define nested states in this block,
-                         // it applies to the nested states defined within its 'states' block.
-                         initial state GrandChild; // Required as it's compound
-                         states {
-                             state GrandChild { // Added 'state' keyword
-                                history; // Default history (shallow) - applies to GGrandChild
-                                initial state GGrandChild; // Required as it's compound
-                                states {
-                                    state GGrandChild {}; // Added 'state' keyword
-                                }
-                             }
+                         // Nested state defined directly:
+                         state GrandChild { // Compound nested state
+                            history; // Default history (shallow)
+                             // Nested state defined directly:
+                            state GGrandChild;
+                            // The initial state for the *nested* scope of GrandChild:
+                            initial state GGrandChild;
                          }
+                         // The initial state for the *nested* scope of Sibling:
+                         initial state GrandChild;
                     }
                 }
             }
@@ -184,16 +182,14 @@ public class MachineAstTest {
         StateNode parentState = findStateByName(sm.getStates(), "Parent");
         assertNotNull(parentState, "Parent state not found");
         assertEquals(StateType.COMPOUND, parentState.getType());
-        // Check Optional initial state name
         assertTrue(parentState.getInitialStateName().isPresent(), "Parent state should have initial state name");
         assertEquals("Child1", parentState.getInitialStateName().get());
 
         assertTrue(parentState.getHistory().isPresent(), "Parent state should have history");
         HistoryStateNode parentHistory = parentState.getHistory().get(); // Use getHistory() and correct type
         assertEquals(HistoryStateType.SHALLOW, parentHistory.getType(), "Parent history should be shallow"); // Check type enum
-        // assertEquals(parentState, parentHistory.getParentState(), "History node parent mismatch"); // HistoryStateNode might not hold parent state ref
 
-        // Verify nested states in Parent
+        // Verify nested states in Parent - Expecting initial state defined within this structure
         assertEquals(2, parentState.getNestedStates().size()); // Use getNestedStates()
         StateNode child1 = findStateByName(parentState.getNestedStates(), "Child1"); // Use getNestedStates()
         StateNode child2 = findStateByName(parentState.getNestedStates(), "Child2"); // Use getNestedStates()
@@ -215,9 +211,8 @@ public class MachineAstTest {
         assertTrue(siblingState.getHistory().isPresent(), "Sibling state should have history");
         HistoryStateNode siblingHistory = siblingState.getHistory().get(); // Use getHistory() and correct type
         assertEquals(HistoryStateType.DEEP, siblingHistory.getType(), "Sibling history should be deep"); // Check type enum
-        // assertEquals(siblingState, siblingHistory.getParentState()); // Check if HistoryStateNode has parent link
 
-        // Verify nested states in Sibling
+        // Verify nested states in Sibling - Expecting initial state defined within this structure
         assertEquals(1, siblingState.getNestedStates().size()); // Use getNestedStates()
         StateNode grandChildState = findStateByName(siblingState.getNestedStates(), "GrandChild"); // Use getNestedStates()
         assertNotNull(grandChildState, "GrandChild state not found");
@@ -228,14 +223,12 @@ public class MachineAstTest {
         assertTrue(grandChildState.getHistory().isPresent(), "GrandChild state should have history");
         HistoryStateNode grandChildHistory = grandChildState.getHistory().get(); // Use getHistory() and correct type
         assertEquals(HistoryStateType.SHALLOW, grandChildHistory.getType(), "GrandChild history should be default (shallow)"); // Check type enum
-        // assertEquals(grandChildState, grandChildHistory.getParentState()); // Check if HistoryStateNode has parent link
 
-        // Verify nested states in GrandChild
+        // Verify nested states in GrandChild - Expecting initial state defined within this structure
         assertEquals(1, grandChildState.getNestedStates().size()); // Use getNestedStates()
         StateNode gGrandChildState = findStateByName(grandChildState.getNestedStates(), "GGrandChild"); // Use getNestedStates()
         assertNotNull(gGrandChildState, "GGrandChild state not found");
         assertEquals(StateType.NORMAL, gGrandChildState.getType()); // Use NORMAL for simple states
-
 
         // Check transition in Parent state
         assertEquals(1, parentState.getTransitions().size()); // Use getTransitions()

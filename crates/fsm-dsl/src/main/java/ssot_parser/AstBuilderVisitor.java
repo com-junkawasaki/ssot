@@ -44,6 +44,8 @@ import ssot_parser.ast.nodes.DurationNode;
 // +++ End missing AST Node imports +++
 
 import ssot_parser.ast.nodes.state.HistoryStateType; // Added import
+import org.antlr.v4.runtime.Token; // <<< Added import
+import ssot_parser.ast.nodes.InvokeCompletionType; // <<< Added import
 
 /**
  * Visits the ANTLR Parse Tree and builds the Abstract Syntax Tree (AST).
@@ -200,7 +202,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                 } else if (contentNode instanceof CommunicationBlockContext) {
                     visitedNode = visitCommunicationBlock((CommunicationBlockContext)contentNode, blockId, blockAnnotationMap);
                 } else if (contentNode instanceof MachinesBlockContext) {
-                    visitedNode = visitMachinesBlock((MachinesBlockContext)contentNode, blockId, blockAnnotationMap);
+                    visitedNode = visitMachinesBlock((MachinesBlockContext)contentNode, blockId, blockAnnotations);
                 }
 
 
@@ -303,14 +305,96 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
 
     // Modified to accept ID and annotations
-    public AstNode visitMachinesBlock(MachinesBlockContext ctx, Optional<Long> id, Map<String, Object> annotations) {
-        List<AstNode> definitions = new ArrayList<>();
+    public AstNode visitMachinesBlock(MachinesBlockContext ctx, Optional<Long> id, List<AnnotationNode> blockAnnotations) {
+        List<AstNode> machineDefs = new ArrayList<>();
         if (ctx.machineDefinition() != null) {
-            for (MachineDefinitionContext machineCtx : ctx.machineDefinition()) {
-                definitions.add(visit(machineCtx));
+            for (MachineDefinitionContext mDefCtx : ctx.machineDefinition()) {
+                // Pass blockId and blockAnnotations down to visitMachineDefinition
+                // This assumes annotations apply to the block, not individual machines within it.
+                // If machines have their own annotations (@ before 'machine'), visitMachineDefinition needs updating.
+                AstNode visitedMachine = visitMachineDefinition(mDefCtx, id, blockAnnotations);
+                if (visitedMachine != null) {
+                    machineDefs.add(visitedMachine);
+                } else {
+                    System.err.println("Warning: Visiting machine definition returned null: " + mDefCtx.getText());
+                }
             }
         }
-        return new BlockNode(id, "machines", definitions, annotations);
+        // Return BlockNode containing MachineNodes
+        return new BlockNode(id, "machines", machineDefs, mapAnnotations(blockAnnotations));
+    }
+
+    // Visits machine MyMachine { ... }
+    // Accept ID and annotations from the containing block
+    public AstNode visitMachineDefinition(MachineDefinitionContext ctx, Optional<Long> blockId, List<AnnotationNode> blockAnnotations) {
+        String machineName = ctx.ID().getText();
+
+        // Assuming annotations from the block apply here. If machines need their own @id/@ann, this needs rework.
+        Optional<Long> machineId = blockId;
+        List<AnnotationNode> machineAnnotations = blockAnnotations;
+
+        // ... process body elements (states, actions, guards) ...
+        List<StateNode> states = new ArrayList<>();
+        List<ActionDefinitionNode> actions = new ArrayList<>();
+        List<GuardDefinitionNode> guards = new ArrayList<>();
+        String initialStateName = null;
+
+        // Process machine body elements
+        if (ctx.machineBodyElement() != null) {
+            for (MachineBodyElementContext bodyCtx : ctx.machineBodyElement()) {
+                if (bodyCtx.statesDefinition() != null) {
+                    // Process states definition - Populates 'states' list and returns initial state name
+                     initialStateName = processStatesDefinition(bodyCtx.statesDefinition(), states);
+                } else if (bodyCtx.actionsDefinition() != null) {
+                     actions.addAll(visitActionsDefinitionHelper(bodyCtx.actionsDefinition()));
+                } else if (bodyCtx.guardsDefinition() != null) {
+                     guards.addAll(visitGuardsDefinitionHelper(bodyCtx.guardsDefinition()));
+                }
+            }
+        }
+
+        // Ensure we return a MachineNode using the correct constructor
+        // public MachineNode(Optional<Long> id, String machineName, String initialStateName,
+        //                    Optional<ContextNode> context, List<ActionDefinitionNode> actions,
+        //                    List<GuardDefinitionNode> guards, List<InvokeDefinitionNode> invokes,
+        //                    List<AstNode> states, List<AnnotationNode> annotations)
+        return new MachineNode(
+            machineId,       // Use ID passed down from block
+            machineName,
+            initialStateName, // From processStatesDefinition
+            Optional.empty(), // ContextNode not handled yet
+            actions,
+            guards,
+            Collections.emptyList(), // InvokeDefinitionNode not handled yet
+            new ArrayList<>(states), // Convert List<StateNode> to List<AstNode>
+            machineAnnotations // Use Annotations passed down from block
+        );
+    }
+
+    // Helper to process states { ... }
+    // Returns the initial state name for this scope and populates the 'states' list
+    private String processStatesDefinition(StatesDefinitionContext ctx, List<StateNode> states) {
+        // Extract initial state name defined in this scope
+        String initialState = null;
+        if (ctx.initialStateDefinition() != null) {
+            initialState = ctx.initialStateDefinition().ID().getText();
+        }
+
+        // Visit state definitions and history states
+        if (ctx.stateDefinitionOrHistoryState() != null) {
+            for (StateDefinitionOrHistoryStateContext stateOrHistCtx : ctx.stateDefinitionOrHistoryState()) {
+                AstNode visitedNode = visit(stateOrHistCtx);
+                if (visitedNode instanceof StateNode) {
+                    states.add((StateNode) visitedNode);
+                } else if (visitedNode != null) {
+                     System.err.println("Warning: Visiting stateDefinitionOrHistoryState did not yield StateNode: " + visitedNode.getClass().getName() + " for text: " + stateOrHistCtx.getText());
+                } else {
+                    System.err.println("Warning: Visiting stateDefinitionOrHistoryState returned null for text: " + stateOrHistCtx.getText());
+                }
+            }
+        }
+        // Return the initial state name for this specific states { ... } block
+        return initialState;
     }
 
     // Modified to accept ID and annotations
@@ -753,127 +837,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         return new ActorNode(id, name, otherInnerAnnotations);
     }
 
-    // Machine Block visitor
-    @Override
-    public AstNode visitMachineDefinition(MachineDefinitionContext ctx) {
-         // ID/Annotations are handled by parent DefinitionBlock
-        String name = ctx.ID().getText();
-        // Process machine body elements (states, actions, guards)
-         ContextNode context = null; // TODO: Implement context parsing
-         List<ActionDefinitionNode> actions = new ArrayList<>();
-         List<GuardDefinitionNode> guards = new ArrayList<>();
-         List<InvokeDefinitionNode> invokes = new ArrayList<>(); // Assuming invokes are defined here? Grammar shows them in states.
-         List<StateNode> states = new ArrayList<>(); // This list should contain all states, including history states
-         Optional<String> initialStateNameOpt = Optional.empty(); // Corrected from initialState
-         // List<HistoryStateNode> historyStates = new ArrayList<>(); // History states will be part of the states list
-
-         // Iterate through machineBodyElement
-         if (ctx.machineBodyElement() != null) {
-             for (MachineBodyElementContext elementCtx : ctx.machineBodyElement()) {
-                 if (elementCtx.statesDefinition() != null) {
-                     // visitStatesDefinition populates the 'states' list (which includes history states)
-                     visitStatesDefinition(elementCtx.statesDefinition(), states /*, historyStates */); // historyStates removed as it's merged
-                     // Extract initial state if defined within statesDefinition
-                     if (elementCtx.statesDefinition().initialStateDefinition() != null) {
-                         initialStateNameOpt = Optional.of(elementCtx.statesDefinition().initialStateDefinition().ID().getText());
-                     }
-                 } else if (elementCtx.actionsDefinition() != null) {
-                     actions.addAll(visitActionsDefinitionHelper(elementCtx.actionsDefinition())); // Helper needed
-                 } else if (elementCtx.guardsDefinition() != null) {
-                      guards.addAll(visitGuardsDefinitionHelper(elementCtx.guardsDefinition())); // Helper needed
-                 } else {
-                      System.err.println("Warning: Unknown machine body element: " + elementCtx.getText());
-                 }
-             }
-         }
-
-        // Constructor: MachineDefinitionNode(Optional<Long> id, String machineName, Map<String, Object> annotations, ContextNode context, List<ActionDefinitionNode> actions, List<GuardDefinitionNode> guards, List<InvokeDefinitionNode> invokes, List<StateNode> states, String initialStateName)
-        // ID from parent block. Pass emptyMap for annotations for now.
-        return new MachineDefinitionNode(Optional.empty(), name, Collections.emptyMap(), context, actions, guards, invokes, states, initialStateNameOpt.orElse(null));
-    }
-
-     // Communication Block visitors
-    @Override
-    public AstNode visitProtocolDefinition(ProtocolDefinitionContext ctx) {
-         String name = ctx.ID().getText();
-        List<AnnotationNode> allInnerAnnotations = new ArrayList<>();
-         if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
-             allInnerAnnotations.addAll(extractAnnotations(ctx.annotation()));
-         }
-
-         Optional<Long> id = extractIdFromList(allInnerAnnotations);
-         List<AnnotationNode> otherInnerAnnotations = allInnerAnnotations.stream()
-                                                     .filter(a -> !a.isIdAnnotation())
-                                                     .collect(Collectors.toList());
-
-        // Constructor: ProtocolNode(Optional<Long> id, String name, List<AnnotationNode> innerAnnotations)
-        return new ProtocolNode(id, name, otherInnerAnnotations);
-    }
-
-    @Override
-    public AstNode visitChannelDefinition(ChannelDefinitionContext ctx) {
-        String name = ctx.ID().getText();
-        List<AnnotationNode> allInnerAnnotations = new ArrayList<>();
-        if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
-            allInnerAnnotations.addAll(extractAnnotations(ctx.annotation()));
-        }
-
-        Optional<Long> id = extractIdFromList(allInnerAnnotations);
-        List<AnnotationNode> otherInnerAnnotations = allInnerAnnotations.stream()
-                                                    .filter(a -> !a.isIdAnnotation())
-                                                    .collect(Collectors.toList());
-
-        // Constructor: ChannelNode(Optional<Long> id, String name, List<AnnotationNode> innerAnnotations)
-        return new ChannelNode(id, name, otherInnerAnnotations);
-    }
-
-    @Override
-    public AstNode visitEventDefinition(EventDefinitionContext ctx) {
-        String name = ctx.ID().getText();
-        List<AnnotationNode> allInnerAnnotations = new ArrayList<>();
-        List<FieldNode> fields = new ArrayList<>();
-
-        if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
-            allInnerAnnotations.addAll(extractAnnotations(ctx.annotation()));
-        }
-
-        Optional<Long> id = extractIdFromList(allInnerAnnotations);
-        List<AnnotationNode> otherInnerAnnotations = allInnerAnnotations.stream()
-                                                    .filter(a -> !a.isIdAnnotation())
-                                                    .collect(Collectors.toList());
-
-        if (ctx.eventFieldDefinition() != null) {
-            for (EventFieldDefinitionContext fieldCtx : ctx.eventFieldDefinition()) {
-                 // Assuming eventFieldDefinition is similar to structFieldDefinition
-                 // Need visitEventFieldDefinition method
-                 AstNode visitedField = visitEventFieldDefinition(fieldCtx); // Call specific visitor
-                 if (visitedField instanceof FieldNode) {
-                    fields.add((FieldNode) visitedField);
-                 } else {
-                      System.err.println("Warning: Visiting event field did not yield FieldNode: " + fieldCtx.getText());
-                 }
-            }
-        }
-        // Constructor: EventNode(Optional<Long> id, String name, List<FieldNode> fields, List<AnnotationNode> innerAnnotations)
-        // ID comes from parent block, pass placeholder.
-        return new EventNode(id, name, fields, otherInnerAnnotations);
-    }
-
-    // Helper visitor for event fields (similar to struct fields)
-    @Override
-    public AstNode visitEventFieldDefinition(EventFieldDefinitionContext ctx) {
-        List<AnnotationNode> annotations = Collections.emptyList();
-        if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
-            annotations = extractAnnotations(ctx.annotation());
-        }
-        Optional<Long> id = extractIdFromList(annotations);
-        String name = ctx.fieldId().getText(); // Use fieldId()
-        TypeExprNode type = (TypeExprNode) visit(ctx.typeReference());
-        return new FieldNode(id, name, type, annotations);
-    }
-
-     // --- Helper visitors for Machine Definition Body ---
-
+    // Helper visitors for Machine Definition Body
     public List<ActionDefinitionNode> visitActionsDefinitionHelper(ActionsDefinitionContext ctx) {
         List<ActionDefinitionNode> actions = new ArrayList<>();
         if (ctx.actionDefinition() != null) {
@@ -965,24 +929,214 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          return new ParameterNode(Optional.empty(), Collections.emptyList(), name, type);
       }
 
+    // New helper method to visit Entry/Exit Actions
+    public void visitEntryExitAction(EntryExitActionContext ctx, List<ActionReferenceNode> entryActions, List<ActionReferenceNode> exitActions) {
+        if (ctx.actionReference() == null) return;
+        // Pass the ActionReferenceContext to visitActionReference
+        AstNode visitedRef = visitActionReference(ctx.actionReference());
+        if (visitedRef instanceof ActionReferenceNode) {
+             ActionReferenceNode actionRef = (ActionReferenceNode) visitedRef;
+            if (ctx.ON_ENTRY() != null) {
+                entryActions.add(actionRef);
+            } else if (ctx.ON_EXIT() != null) {
+                exitActions.add(actionRef);
+            }
+        } else {
+             System.err.println("Warning: Visiting action reference in entry/exit did not yield ActionReferenceNode: " + ctx.actionReference().getText());
+        }
+    }
 
-    public void visitStatesDefinition(StatesDefinitionContext ctx, List<StateNode> states /*, List<HistoryStateNode> historyStates Removed */) {
-        // Handles initialStateDefinition? stateDefinitionOrHistoryState*
-        // Initial state name is extracted in visitMachineDefinition
-        if (ctx.stateDefinitionOrHistoryState() != null) {
-            for (StateDefinitionOrHistoryStateContext stateOrHistCtx : ctx.stateDefinitionOrHistoryState()) {
-                AstNode visitedNode = visit(stateOrHistCtx);
-                if (visitedNode instanceof StateNode) { // This includes HistoryStateNode if it extends StateNode
-                    states.add((StateNode) visitedNode);
-                // } else if (visitedNode instanceof HistoryStateNode) { // This case might be redundant if HistoryStateNode is a StateNode
-                // historyStates.add((HistoryStateNode) visitedNode);
-                } else if (visitedNode != null) {
-                     System.err.println("Warning: Visiting stateDefinitionOrHistoryState did not yield StateNode: " + visitedNode.getClass().getName() + " for text: " + stateOrHistCtx.getText());
-                } else {
-                    System.err.println("Warning: Visiting stateDefinitionOrHistoryState returned null for text: " + stateOrHistCtx.getText());
-                }
+    // New visitor for Action Reference
+    @Override
+    public AstNode visitActionReference(ActionReferenceContext ctx) {
+        String actionName = ctx.ID().getText();
+        // Action references themselves don't have annotations in the current grammar
+        return new ActionReferenceNode(actionName, Collections.emptyMap());
+    }
+
+    // New visitor for Transition Definition
+    @Override
+    public AstNode visitTransitionDefinition(TransitionDefinitionContext ctx) {
+        String event = ctx.event.getText();
+        Optional<GuardReferenceNode> guard = Optional.empty();
+        Optional<ActionReferenceNode> action = Optional.empty();
+        TargetStateNode target = null;
+
+        if (ctx.guard != null) {
+            AstNode visitedGuardRef = visitGuardReference(ctx.guard);
+            if (visitedGuardRef instanceof GuardReferenceNode) {
+                guard = Optional.of((GuardReferenceNode) visitedGuardRef);
+            } else {
+                 System.err.println("Warning: Visiting guard reference did not yield GuardReferenceNode: " + ctx.guard.getText());
             }
         }
+        if (ctx.action != null) {
+             // ctx.action is a Token (ID). Need to create ActionReferenceNode from it.
+             action = Optional.of(new ActionReferenceNode(ctx.action.getText(), Collections.emptyMap()));
+        }
+        if (ctx.transitionTarget() != null) {
+            AstNode visitedTarget = visitTransitionTarget(ctx.transitionTarget());
+            if (visitedTarget instanceof TargetStateNode) {
+                target = (TargetStateNode) visitedTarget;
+            } else {
+                 System.err.println("Warning: Visiting transition target did not yield TargetStateNode: " + ctx.transitionTarget().getText());
+            }
+        }
+
+        if (target == null) {
+             System.err.println("Error: Transition target is mandatory but was not parsed correctly for event: " + event);
+             return null; // Cannot create TransitionNode without a target
+        }
+
+        // Annotations are not directly on transitionDefinition in grammar
+        List<AnnotationNode> annotationsList = Collections.emptyList();
+        Optional<Long> id = Optional.empty(); // No @id on transitions currently
+        Map<String, Object> annotationsMap = Collections.emptyMap();
+
+        // Constructor: TransitionNode(Optional<Long> id, String sourceStateName, String event, String targetStateName,
+        //                          Optional<String> conditionRef, List<String> actionRefs, List<AnnotationNode> annotations,
+        //                          TargetStateNode targetState, Optional<GuardReferenceNode> condition, List<ActionReferenceNode> actions,
+        //                          List<GuardReferenceNode> guards, List<String> allowedActors, Optional<DurationNode> delay,
+        //                          TransitionType type, Map<String, Object> annotationsMap)
+        return new TransitionNode(
+            id,
+            null, // sourceStateName set later
+            event,
+            target.getStateName().orElse("ERROR_NO_TARGET_NAME"), // Get name from TargetStateNode
+            guard.map(GuardReferenceNode::getGuardName), // conditionRef (String)
+            action.map(a -> List.of(a.getActionName())).orElse(Collections.emptyList()), // actionRefs (List<String>)
+            annotationsList, // annotations (List<AnnotationNode>)
+            target, // targetState (TargetStateNode)
+            guard, // condition (Optional<GuardReferenceNode>)
+            action.map(List::of).orElse(Collections.emptyList()), // actions (List<ActionReferenceNode>)
+            Collections.emptyList(), // guards (from block - none here)
+            Collections.emptyList(), // allowedActors (from block - none here)
+            Optional.empty(), // delay (none here)
+            TransitionNode.TransitionType.EVENT, // type
+            annotationsMap // annotationsMap (from transition line - none here)
+        );
+    }
+
+    // Visitor for Guard Reference (accepts Token)
+    public AstNode visitGuardReference(Token guardToken) {
+        // Constructor: GuardReferenceNode(Optional<Long> id, String guardName, boolean isNegated, Map<String, Object> annotations)
+        return new GuardReferenceNode(
+            Optional.empty(), // No ID on reference
+            guardToken.getText(), // guardName
+            false, // isNegated - grammar doesn't support negation here yet
+            Collections.emptyMap() // No annotations on reference
+        );
+    }
+
+    // New Visitor for Transition Target (very simple)
+    @Override
+    public AstNode visitTransitionTarget(TransitionTargetContext ctx) {
+        // Targets are referenced by ID, no annotations attached here
+        // Constructor: TargetStateNode(String stateName)
+        return new TargetStateNode(ctx.state.getText());
+    }
+
+    // New Visitor for Invoke Definition // <<< COMMENTING OUT INVOKE LOGIC TEMPORARILY
+    /*
+    @Override
+    public AstNode visitInvokeDefinition(InvokeDefinitionContext ctx) {
+        String source = ctx.src.getText(); // The action/service being invoked
+        List<InvokeCompletionHandlerNode> completionHandlers = new ArrayList<>();
+
+        if (ctx.invokeCallback() != null && !ctx.invokeCallback().isEmpty()) {
+             for (InvokeCallbackContext callbackCtx : ctx.invokeCallback()) {
+                AstNode visitedHandler = visitInvokeCallback(callbackCtx);
+                if (visitedHandler instanceof InvokeCompletionHandlerNode) {
+                    completionHandlers.add((InvokeCompletionHandlerNode) visitedHandler);
+                } else {
+                     System.err.println("Warning: Visiting invoke callback did not yield InvokeCompletionHandlerNode: " + callbackCtx.getText());
+                }
+             }
+        }
+
+        Optional<Long> id = Optional.empty();
+        List<AnnotationNode> annotations = Collections.emptyList();
+
+        // Constructor: InvokeDefinitionNode(Optional<Long> id, String invokeName, String source, List<AnnotationNode> annotations)
+        // Assuming invokeName == source for now
+        return new InvokeDefinitionNode(id, source, source, annotations);
+    }
+    */
+
+    // New Visitor for Invoke Callback // <<< COMMENTING OUT INVOKE LOGIC TEMPORARILY
+    /*
+    @Override
+    public AstNode visitInvokeCallback(InvokeCallbackContext ctx) {
+        AstNode visitedTarget = visitTransitionTarget(ctx.transitionTarget());
+        TargetStateNode target = null;
+        if (visitedTarget instanceof TargetStateNode) {
+            target = (TargetStateNode) visitedTarget;
+        } else {
+             System.err.println("Error: Invoke callback requires a valid transition target.");
+             return null; // Cannot proceed without target
+        }
+
+        // TransitionSpecNode(TargetStateNode targetState, List<ActionReferenceNode> actions, List<GuardReferenceNode> guards, List<String> allowedActors, Map<String, Object> blockAnnotations)
+        TransitionSpecNode transitionSpec = new TransitionSpecNode(
+            target,
+            Collections.emptyList(), // No actions defined directly in invokeCallback rule
+            Collections.emptyList(), // No guards defined directly in invokeCallback rule
+            Collections.emptyList(), // No actors defined directly in invokeCallback rule
+            Collections.emptyMap()   // No block annotations defined directly in invokeCallback rule
+        );
+
+        InvokeCompletionType completionType = ctx.ONDONE() != null ? InvokeCompletionType.ON_DONE : InvokeCompletionType.ON_ERROR;
+
+        Optional<Long> id = Optional.empty();
+        List<AnnotationNode> annotations = Collections.emptyList();
+
+        // Constructor: InvokeCompletionHandlerNode(Optional<Long> id, InvokeCompletionType type, Optional<TransitionSpecNode> transitionSpec, List<AnnotationNode> annotations)
+        // Constructor signature seems wrong based on linter error. Needs InvokeCompletionHandlerNode.java check.
+        // Let's use the actual one: InvokeCompletionHandlerNode(Optional<Long> id, List<ActionReferenceNode> actions, Optional<TransitionSpecNode> transitionSpec, List<AnnotationNode> annotations)
+        return new InvokeCompletionHandlerNode(id, 
+                                               Collections.emptyList(), // No actions in basic callback 
+                                               Optional.of(transitionSpec), 
+                                               annotations);
+    }
+    */
+
+    // In visitStateDefinition, comment out invoke processing
+    @Override
+    public AstNode visitStateDefinition(StateDefinitionContext ctx) {
+        // ... (initial part is the same)
+        List<InvokeDefinitionNode> invokes = new ArrayList<>(); // Keep the list but don't populate
+        String nestedInitialStateName = null;
+
+        if (ctx.stateBody() != null && ctx.stateBody().LBRACE() != null) { 
+            // ... (annotations processing)
+            for (StateBodyElementContext elementCtx : ctx.stateBody().stateBodyElement()) {
+                // ... (initialStateDefinition handling) ...
+                // ... (stateDefinitionOrHistoryState handling) ...
+                // ... (transitionDefinition handling) ...
+                // ... (entryExitAction handling) ...
+                
+                // Handle Invokes // <<< COMMENTING OUT
+                /*
+                else if (elementCtx.invokeDefinition() != null) {
+                    AstNode visitedInvoke = visit(elementCtx.invokeDefinition());
+                    if (visitedInvoke instanceof InvokeDefinitionNode) {
+                        invokes.add((InvokeDefinitionNode) visitedInvoke);
+                    } else {
+                        System.err.println("Warning: Visiting invoke definition did not yield InvokeDefinitionNode: " + elementCtx.invokeDefinition().getText());
+                    }
+                }
+                */
+                // ... (annotation handling) ...
+            }
+            // ... (set stateType = COMPOUND logic)
+        }
+        // ... (create StateNode)
+         return new StateNode(
+             // ... constructor arguments ...
+             invokes, // Pass the empty list
+             nestedStates,
+             historyNode
+         );
     }
 
 } // End of class AstBuilderVisitor

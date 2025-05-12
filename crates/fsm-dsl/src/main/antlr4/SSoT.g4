@@ -173,7 +173,8 @@ stateBodyElement
     | transitionDefinition
     | invokeDefinition
     | stateDefinitionOrHistoryState // For nested states
-    | annotation // Allow annotations on specific elements within a state if needed
+    | initialStateDefinition      // Allow initial state def within a state body
+    | annotation
     ;
 
 entryExitAction
