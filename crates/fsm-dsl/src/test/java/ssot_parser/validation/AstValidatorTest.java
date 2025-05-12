@@ -105,7 +105,7 @@ public class AstValidatorTest {
         ValidationError error = errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).findFirst().get();
         assertTrue(error.getMessage().contains("Transition target state 'NonExistentState' for event 'Event1' from state 'StateA' is not defined"), "Error message mismatch: " + error.getMessage());
         // Check if the error node is StateA
-        assertTrue(error.getNode() instanceof StateNode && ((StateNode)error.getNode()).getName().equals("StateA"));
+        assertTrue(error.getNode() instanceof StateNode && ((StateNode)error.getNode()).getStateName().equals("StateA"));
     }
 
      @Test
@@ -337,7 +337,7 @@ public class AstValidatorTest {
                     "Duplicate type ID error missing");
          assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate @id(11)") && e.getNode() instanceof GuardNode),
                     "Duplicate machine inner ID (guard) error missing");
-         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate @id(12)") && e.getNode() instanceof StateNode && ((StateNode)e.getNode()).getName().equals("StateB")),
+         assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate @id(12)") && e.getNode() instanceof StateNode && ((StateNode)e.getNode()).getStateName().equals("StateB")),
                     "Duplicate state ID error missing");
 
          // Optionally check the "first used near" part of the message if implemented fully
@@ -369,7 +369,7 @@ public class AstValidatorTest {
         ValidationError warning = errors.get(0);
         assertTrue(warning.getMessage().contains("State 'E' is unreachable"), "Warning message mismatch: " + warning.getMessage());
         assertEquals(ValidationError.Severity.WARNING, warning.getSeverity());
-        assertTrue(warning.getNode() instanceof StateNode && ((StateNode)warning.getNode()).getName().equals("E"), "Warning should point to state E");
+        assertTrue(warning.getNode() instanceof StateNode && ((StateNode)warning.getNode()).getStateName().equals("E"), "Warning should point to state E");
 
     }
 
@@ -460,6 +460,208 @@ public class AstValidatorTest {
 
          assertTrue(error.getMessage().contains("Invoke source 'UndefinedThing' does not resolve to a defined service or machine"), "Error message mismatch");
          assertTrue(error.getNode() instanceof InvokeStateNode, "Error should point to InvokeStateNode");
+    }
+
+    @Test
+    void testValidNestedStates() throws Exception {
+        String input = """
+        machines {
+            MyMachine {
+                 $initial("OuterA");
+                 states {
+                    OuterA {
+                        $initial("InnerA1"); // Initial for nested
+                        states {
+                           InnerA1 { on Event1 target InnerA2; }
+                           InnerA2 { }
+                        }
+                        on Event2 target OuterB;
+                    }
+                    OuterB { }
+                 }
+            }
+        }
+        """;
+        SsotRoot root = parseAndBuildAst(input);
+        AstValidator validator = new AstValidator(root);
+        List<ValidationError> errors = validator.validate();
+        assertTrue(errors.isEmpty(), "Valid nested states should have no errors, but got: " + errors);
+    }
+
+    @Test
+    void testInvalidNestedStateMissingInitial() throws Exception {
+        String input = """
+        machines {
+            MyMachine {
+                 $initial("OuterA");
+                 states {
+                    OuterA { // Compound state missing $initial
+                        states {
+                           InnerA1 { on Event1 target InnerA2; }
+                           InnerA2 { }
+                        }
+                        on Event2 target OuterB;
+                    }
+                    OuterB { }
+                 }
+            }
+        }
+        """;
+        SsotRoot root = parseAndBuildAst(input);
+        AstValidator validator = new AstValidator(root);
+        List<ValidationError> errors = validator.validate();
+        assertEquals(1, errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).count(), "Should have 1 ERROR for missing initial state");
+        ValidationError error = errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).findFirst().get();
+        assertTrue(error.getMessage().contains("Compound state 'OuterA' must specify an initial state using $initial"), "Error message mismatch: " + error.getMessage());
+        assertTrue(error.getNode() instanceof StateNode && ((StateNode)error.getNode()).getStateName().equals("OuterA"), "Error should point to OuterA state node");
+    }
+
+    @Test
+    void testValidShallowHistory() throws Exception {
+        String input = """
+        machines {
+            MyMachine {
+                 $initial("Group");
+                 states {
+                    Group {
+                        $initial("A");
+                        $H; // Shallow history marker
+                        states {
+                           A { on Ev1 target B; }
+                           B { on Ev2 target C; }
+                           C { }
+                        }
+                        on Interrupt target Interrupted;
+                    }
+                    Interrupted {
+                        on Resume target Group.$H; // Transition to history
+                    }
+                 }
+            }
+        }
+        """;
+        SsotRoot root = parseAndBuildAst(input);
+        AstValidator validator = new AstValidator(root);
+        List<ValidationError> errors = validator.validate();
+        assertTrue(errors.isEmpty(), "Valid shallow history should have no errors, but got: " + errors);
+    }
+
+    @Test
+    void testValidDeepHistory() throws Exception {
+        String input = """
+        machines {
+            MyMachine {
+                 $initial("Group1");
+                 states {
+                    Group1 {
+                        $initial("A");
+                        $H*; // Deep history marker
+                        states {
+                           A { on Ev1 target Group2; }
+                           Group2 {
+                               $initial("B");
+                               $H; // Shallow history within deep
+                               states {
+                                  B { on Ev2 target C; }
+                                  C { }
+                               }
+                               on Back target A;
+                           }
+                        }
+                        on Interrupt target Interrupted;
+                    }
+                    Interrupted {
+                        on Resume target Group1.$H*; // Transition to deep history
+                    }
+                 }
+            }
+        }
+        """;
+        SsotRoot root = parseAndBuildAst(input);
+        AstValidator validator = new AstValidator(root);
+        List<ValidationError> errors = validator.validate();
+        assertTrue(errors.isEmpty(), "Valid deep history should have no errors, but got: " + errors);
+    }
+
+    @Test
+    void testInvalidTransitionToMissingHistory() throws Exception {
+        String input = """
+        machines {
+            MyMachine {
+                 $initial("Group");
+                 states {
+                    Group { // No history marker ($H or $H*)
+                        $initial("A");
+                        states {
+                           A { on Ev1 target B; }
+                           B { }
+                        }
+                        on Interrupt target Interrupted;
+                    }
+                    Interrupted {
+                        on Resume target Group.$H; // Invalid: Group has no $H
+                    }
+                    InterruptedDeep {
+                        on ResumeDeep target Group.$H*; // Invalid: Group has no $H*
+                    }
+                 }
+            }
+        }
+        """;
+        SsotRoot root = parseAndBuildAst(input);
+        AstValidator validator = new AstValidator(root);
+        List<ValidationError> errors = validator.validate();
+
+        assertEquals(2, errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).count(), "Should have 2 ERRORs for invalid history transitions");
+
+        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Transition target 'Group.$H' refers to a shallow history state, but state 'Group' does not define one")), "Shallow history error missing");
+        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Transition target 'Group.$H*' refers to a deep history state, but state 'Group' does not define one")), "Deep history error missing");
+
+        assertTrue(errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).allMatch(e -> e.getNode() instanceof TransitionNode), "Errors should point to TransitionNode");
+    }
+
+    @Test
+    void testDuplicateStateNameNested() throws Exception {
+        String input = """
+        machines {
+            MyMachine {
+                 $initial("OuterA");
+                 states {
+                    OuterA {
+                        $initial("InnerA");
+                        states {
+                           InnerA { }
+                           InnerB { }
+                           InnerA { } // Duplicate name within OuterA
+                        }
+                    }
+                    OuterB {
+                        $initial("InnerA"); // OK, different parent
+                        states {
+                            InnerA {}
+                        }
+                    }
+                    OuterC { }
+                    OuterA { } // Duplicate name at top level
+                 }
+            }
+        }
+        """;
+        SsotRoot root = parseAndBuildAst(input);
+        AstValidator validator = new AstValidator(root);
+        List<ValidationError> errors = validator.validate();
+
+        assertEquals(2, errors.stream().filter(e -> e.getSeverity() == ValidationError.Severity.ERROR).count(), "Should have 2 ERRORs for duplicate state names");
+
+        // Check duplicate within OuterA
+        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate state name 'InnerA' within parent state 'OuterA'")
+                                            && e.getNode() instanceof StateNode && ((StateNode)e.getNode()).getStateName().equals("InnerA")), // Points to the second InnerA
+                    "Duplicate nested state name error missing");
+
+        // Check duplicate at top level
+        assertTrue(errors.stream().anyMatch(e -> e.getMessage().contains("Duplicate state name 'OuterA' within parent machine 'MyMachine'")
+                                            && e.getNode() instanceof StateNode && ((StateNode)e.getNode()).getStateName().equals("OuterA")), // Points to the second OuterA
+                    "Duplicate top-level state name error missing");
     }
 
     // TODO: Add tests for context, initial state markers, etc.

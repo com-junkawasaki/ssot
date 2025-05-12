@@ -194,11 +194,11 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
         // Initialize local lists to store definitions
         List<ImportNode> imports = new ArrayList<>();
-        List<AstNode> typeDefinitions = new ArrayList<>();
-        List<AstNode> serviceDefinitions = new ArrayList<>(); // Will hold ServiceDefinitionNode and InterfaceNode
-        List<AstNode> machineDefinitions = new ArrayList<>();
-        List<AstNode> actorDefinitions = new ArrayList<>();
-        List<AstNode> communicationDefinitions = new ArrayList<>();
+        List<TypeDefNode> typeDefinitions = new ArrayList<>();
+        List<AstNode> serviceDefinitions = new ArrayList<>(); // Stays AstNode (holds Service/Interface)
+        List<MachineNode> machineDefinitions = new ArrayList<>(); // Use specific type
+        List<ActorNode> actorDefinitions = new ArrayList<>(); // Use specific type
+        List<AstNode> communicationDefinitions = new ArrayList<>(); // Stays AstNode (holds Event/Channel/Protocol)
         // Add other lists as needed, e.g., for deploymentConfig, dependencies
 
         if (ctx.importStatement() != null) {
@@ -218,7 +218,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                         case "types":
                             container.getDefinitions().forEach(child -> {
                                 if (child instanceof TypeDefNode) {
-                                    typeDefinitions.add(child); // Add to local list
+                                    typeDefinitions.add((TypeDefNode) child); // Add to local list
                                 } else {
                                     System.err.println("Warning: Child in types block is not TypeDefNode: " + child.getClass().getName());
                                 }
@@ -237,7 +237,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                         case "machines":
                             container.getDefinitions().forEach(child -> {
                                 if (child instanceof MachineNode) {
-                                    machineDefinitions.add(child); // Add to local list
+                                    machineDefinitions.add((MachineNode) child); // Add to local list
                                 } else {
                                      System.err.println("Warning: Child in machines block is not MachineNode: " + child.getClass().getName());
                                 }
@@ -246,7 +246,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                         case "actors":
                              container.getDefinitions().forEach(child -> {
                                  if (child instanceof ActorNode) {
-                                     actorDefinitions.add(child); // Add to local list
+                                     actorDefinitions.add((ActorNode) child); // Add to local list
                                  } else {
                                      System.err.println("Warning: Child in actors block is not ActorNode: " + child.getClass().getName());
                                  }
@@ -265,29 +265,25 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                         // case "deploymentConfig": ...
                         // case "dependencies": ...
                         default:
-                            System.err.println("Warning: Unhandled block container type in visitFile: " + container.blockType);
-                            break;
+                            System.err.println("Warning: Unknown block type: " + container.blockType);
                     }
-                } else if (visitedNode != null) {
-                    System.err.println("Warning: Visited definition block did not return a BlockContainerNode. Node type: " + visitedNode.getClass().getName());
+                } else {
+                     System.err.println("Warning: Visited node from DefinitionBlockContext is not a BlockNode: " + (visitedNode != null ? visitedNode.getClass().getName() : "null"));
                 }
             }
         }
 
-        // Construct SsotRoot with the populated local lists
-        SsotRoot root = new SsotRoot(
-                imports,
-                typeDefinitions,
-                serviceDefinitions,
-                machineDefinitions,
-                actorDefinitions,
-                communicationDefinitions,
-                finalFileId,
-                rootAnnotationsMap
+        // Return the fully populated SsotRoot node
+        return new SsotRoot(
+            finalFileId,
+            rootAnnotationsMap,
+            imports,
+            typeDefinitions,
+            serviceDefinitions,
+            machineDefinitions,
+            actorDefinitions,
+            communicationDefinitions
         );
-
-        System.out.println("Finished Visiting File (was SsotDefinition)");
-        return root;
     }
 
     @Override
