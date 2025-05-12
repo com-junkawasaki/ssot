@@ -30,6 +30,8 @@ import ssot_parser.ast.nodes.StateNode; // Corrected import
 import ssot_parser.ast.nodes.HistoryStateNode; // Corrected import
 import ssot_parser.ast.type.StateType; // Corrected import
 import ssot_parser.ast.type.RefTypeNode; // Added import
+import ssot_parser.ast.type.BaseType; // Added import for BaseType
+import ssot_parser.ast.type.PrimitiveTypeNode; // Ensure this is imported
 // import ssot_parser.ast.nodes.EventHandlerNode; // If this is a specific type
 // import ssot_parser.ast.nodes.ConditionalTransitionNode; // If this is a specific type
 
@@ -677,10 +679,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                  }
             }
         }
-        // Assuming TypeDefNode represents both structs and enums, using TypeKind.STRUCT
-        // Constructor: TypeDefNode(Optional<Long> id, List<AnnotationNode> annotations, String name, TypeKind kind, List<?> members)
-        // ID and annotations come from parent, pass empty placeholders for now. Members are FieldNodes.
-        return new TypeDefNode(Optional.empty(), Collections.emptyList(), name, TypeDefNode.TypeKind.STRUCT, fields);
+        // Constructor: TypeDefNode(Optional<Long> id, String name, TypeKind kind, List<FieldNode> fields, List<EnumVariantNode> variants, List<AnnotationNode> annotationsList)
+        // ID and annotations come from parent. Pass empty for annotationsList for now.
+        return new TypeDefNode(Optional.empty(), name, TypeDefNode.TypeKind.STRUCT, fields, null, Collections.emptyList());
     }
 
     @Override
@@ -698,9 +699,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
                  }
             }
         }
-         // Constructor: TypeDefNode(Optional<Long> id, List<AnnotationNode> annotations, String name, TypeKind kind, List<?> members)
-         // ID and annotations come from parent, pass empty placeholders. Members are EnumVariantNodes.
-        return new TypeDefNode(Optional.empty(), Collections.emptyList(), name, TypeDefNode.TypeKind.ENUM, variants);
+         // Constructor: TypeDefNode(Optional<Long> id, String name, TypeKind kind, List<FieldNode> fields, List<EnumVariantNode> variants, List<AnnotationNode> annotationsList)
+         // ID and annotations come from parent. Pass empty for annotationsList for now.
+        return new TypeDefNode(Optional.empty(), name, TypeDefNode.TypeKind.ENUM, null, variants, Collections.emptyList());
     }
 
      // Service Block visitors
@@ -737,9 +738,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          if (ctx.annotation() != null) {
              innerAnnotations.addAll(extractAnnotations(ctx.annotation()));
          }
-         // Constructor: ServiceDefinitionNode(Optional<Long> id, String name, List<AnnotationNode> innerAnnotations)
-         // ID comes from parent block, pass placeholder.
-        return new ServiceDefinitionNode(Optional.empty(), name, innerAnnotations);
+         // Constructor: ServiceDefinitionNode(Optional<Long> id, String name, List<AnnotationNode> annotations, List<InterfaceNode> implementedInterfaces, List<MethodNode> methods)
+         // ID comes from parent block, pass placeholder. Pass empty lists for implementedInterfaces and methods.
+        return new ServiceDefinitionNode(Optional.empty(), name, innerAnnotations, Collections.emptyList(), Collections.emptyList());
     }
 
     // Actor Block visitor
@@ -762,23 +763,23 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          // ID/Annotations are handled by parent DefinitionBlock
         String name = ctx.ID().getText();
         // Process machine body elements (states, actions, guards)
-         ContextNode context = null;
+         ContextNode context = null; // TODO: Implement context parsing
          List<ActionDefinitionNode> actions = new ArrayList<>();
          List<GuardDefinitionNode> guards = new ArrayList<>();
          List<InvokeDefinitionNode> invokes = new ArrayList<>(); // Assuming invokes are defined here? Grammar shows them in states.
-         List<StateNode> states = new ArrayList<>();
-         Optional<String> initialState = Optional.empty();
-         List<HistoryStateNode> historyStates = new ArrayList<>();
+         List<StateNode> states = new ArrayList<>(); // This list should contain all states, including history states
+         Optional<String> initialStateNameOpt = Optional.empty(); // Corrected from initialState
+         // List<HistoryStateNode> historyStates = new ArrayList<>(); // History states will be part of the states list
 
          // Iterate through machineBodyElement
          if (ctx.machineBodyElement() != null) {
              for (MachineBodyElementContext elementCtx : ctx.machineBodyElement()) {
                  if (elementCtx.statesDefinition() != null) {
-                     // Visit statesDefinition to populate states, initialState, historyStates
-                     visitStatesDefinition(elementCtx.statesDefinition(), states, historyStates); // Helper needed
+                     // visitStatesDefinition populates the 'states' list (which includes history states)
+                     visitStatesDefinition(elementCtx.statesDefinition(), states /*, historyStates */); // historyStates removed as it's merged
                      // Extract initial state if defined within statesDefinition
                      if (elementCtx.statesDefinition().initialStateDefinition() != null) {
-                         initialState = Optional.of(elementCtx.statesDefinition().initialStateDefinition().ID().getText());
+                         initialStateNameOpt = Optional.of(elementCtx.statesDefinition().initialStateDefinition().ID().getText());
                      }
                  } else if (elementCtx.actionsDefinition() != null) {
                      actions.addAll(visitActionsDefinition(elementCtx.actionsDefinition())); // Helper needed
@@ -790,9 +791,9 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
              }
          }
 
-        // Constructor: MachineDefinitionNode(Optional<Long> id, String name, ContextNode context, List<ActionDefinitionNode> actions, List<GuardDefinitionNode> guards, List<InvokeDefinitionNode> invokes, List<StateNode> states, Optional<String> initialState, List<HistoryStateNode> historyStates)
-        // ID from parent block. Context/Invokes might be null/empty depending on AST structure.
-        return new MachineDefinitionNode(Optional.empty(), name, context, actions, guards, invokes, states, initialState, historyStates);
+        // Constructor: MachineDefinitionNode(Optional<Long> id, String machineName, Map<String, Object> annotations, ContextNode context, List<ActionDefinitionNode> actions, List<GuardDefinitionNode> guards, List<InvokeDefinitionNode> invokes, List<StateNode> states, String initialStateName)
+        // ID from parent block. Pass emptyMap for annotations for now.
+        return new MachineDefinitionNode(Optional.empty(), name, Collections.emptyMap(), context, actions, guards, invokes, states, initialStateNameOpt.orElse(null));
     }
 
      // Communication Block visitors
@@ -903,8 +904,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
              params.addAll(visitParamList(ctx.paramList())); // Need visitParamList helper
          }
          // ID/Annotations handled by parent block?
-         // Constructor: ActionDefinitionNode(Optional<Long> id, String name, List<ParameterNode> parameters, List<AnnotationNode> annotations)
-         return new ActionDefinitionNode(Optional.empty(), name, params, Collections.emptyList());
+         // Constructor: ActionDefinitionNode(Optional<Long> id, String actionName, List<ParameterNode> parameters, Optional<TypeExprNode> returnType, List<AnnotationNode> annotations)
+         return new ActionDefinitionNode(Optional.empty(), name, params, Optional.empty(), Collections.emptyList());
      }
 
      public AstNode visitGuardDefinition(GuardDefinitionContext ctx) {
@@ -914,14 +915,22 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          if (ctx.paramList() != null) {
              params.addAll(visitParamList(ctx.paramList())); // Need visitParamList helper
          }
-         Optional<TypeExprNode> returnType = Optional.empty();
+         Optional<TypeExprNode> returnTypeOpt = Optional.empty();
          if (ctx.typeReference() != null) {
-             returnType = Optional.of((TypeExprNode) visit(ctx.typeReference()));
-             // TODO: Validate return type is boolean?
+             returnTypeOpt = Optional.of((TypeExprNode) visit(ctx.typeReference()));
          }
           // ID/Annotations handled by parent block?
-          // Constructor: GuardDefinitionNode(Optional<Long> id, String name, List<ParameterNode> parameters, Optional<TypeExprNode> returnType, List<AnnotationNode> annotations)
-         return new GuardDefinitionNode(Optional.empty(), name, params, returnType, Collections.emptyList());
+          // Constructor: GuardDefinitionNode(Optional<Long> id, String guardName, List<AnnotationNode> annotations, TypeExprNode returnType, String expression, Map<String, TypeExprNode> parameters)
+         Map<String, TypeExprNode> paramMap = new HashMap<>();
+         for (ParameterNode p : params) {
+             paramMap.put(p.getName(), p.getType());
+         }
+         // Guards must return boolean. If not specified, assume boolean.
+         // If specified and not boolean, GuardDefinitionNode constructor logs a warning and sets it to boolean.
+         TypeExprNode effectiveReturnType = returnTypeOpt.orElse(new PrimitiveTypeNode(PrimitiveTypeNode.PrimitiveType.BOOLEAN));
+
+
+         return new GuardDefinitionNode(Optional.empty(), name, Collections.emptyList(), effectiveReturnType, null, paramMap);
      }
 
      public List<ParameterNode> visitParamList(ParamListContext ctx) {
@@ -943,23 +952,25 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
          // Grammar: ID COLON typeReference
          String name = ctx.ID().getText();
          TypeExprNode type = (TypeExprNode) visit(ctx.typeReference());
-         // Constructor: ParameterNode(String name, TypeExprNode type)
-         return new ParameterNode(name, type);
+         // Constructor: ParameterNode(Optional<Long> id, List<AnnotationNode> annotations, String name, TypeExprNode type)
+         return new ParameterNode(Optional.empty(), Collections.emptyList(), name, type);
       }
 
 
-    public void visitStatesDefinition(StatesDefinitionContext ctx, List<StateNode> states, List<HistoryStateNode> historyStates) {
+    public void visitStatesDefinition(StatesDefinitionContext ctx, List<StateNode> states /*, List<HistoryStateNode> historyStates Removed */) {
         // Handles initialStateDefinition? stateDefinitionOrHistoryState*
         // Initial state name is extracted in visitMachineDefinition
         if (ctx.stateDefinitionOrHistoryState() != null) {
             for (StateDefinitionOrHistoryStateContext stateOrHistCtx : ctx.stateDefinitionOrHistoryState()) {
                 AstNode visitedNode = visit(stateOrHistCtx);
-                if (visitedNode instanceof StateNode) {
+                if (visitedNode instanceof StateNode) { // This includes HistoryStateNode if it extends StateNode
                     states.add((StateNode) visitedNode);
-                } else if (visitedNode instanceof HistoryStateNode) {
-                    historyStates.add((HistoryStateNode) visitedNode);
+                // } else if (visitedNode instanceof HistoryStateNode) { // This case might be redundant if HistoryStateNode is a StateNode
+                // historyStates.add((HistoryStateNode) visitedNode);
                 } else if (visitedNode != null) {
-                     System.err.println("Warning: Visiting stateDefinitionOrHistoryState did not yield StateNode or HistoryStateNode: " + visitedNode.getClass().getName());
+                     System.err.println("Warning: Visiting stateDefinitionOrHistoryState did not yield StateNode: " + visitedNode.getClass().getName() + " for text: " + stateOrHistCtx.getText());
+                } else {
+                    System.err.println("Warning: Visiting stateDefinitionOrHistoryState returned null for text: " + stateOrHistCtx.getText());
                 }
             }
         }
