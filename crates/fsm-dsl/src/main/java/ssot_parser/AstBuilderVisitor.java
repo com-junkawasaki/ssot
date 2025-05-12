@@ -1103,40 +1103,137 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     // In visitStateDefinition, comment out invoke processing
     @Override
     public AstNode visitStateDefinition(StateDefinitionContext ctx) {
-        // ... (initial part is the same)
-        List<InvokeDefinitionNode> invokes = new ArrayList<>(); // Keep the list but don't populate
+        String stateName = ctx.ID().getText();
+        this.currentStateName = stateName; // Store current state name for context
+        List<AnnotationNode> annotationsList = new ArrayList<>();
+        List<StateNode> nestedStates = new ArrayList<>();
+        Optional<HistoryStateNode> historyNode = Optional.empty();
         String nestedInitialStateName = null;
+        List<TransitionNode> transitions = new ArrayList<>();
+        List<ActionReferenceNode> entryActionRefs = new ArrayList<>();
+        List<ActionReferenceNode> exitActionRefs = new ArrayList<>();
+        List<InvokeDefinitionNode> invokes = new ArrayList<>(); // Keep for potential future use
+        StateType stateType = ctx.stateType() != null ?
+                                (ctx.stateType().PARALLEL() != null ? StateType.PARALLEL : StateType.FINAL) :
+                                StateType.NORMAL; // Default if no type keyword
 
-        if (ctx.stateBody() != null && ctx.stateBody().LBRACE() != null) { 
-            // ... (annotations processing)
+        if (ctx.stateBody() != null && ctx.stateBody().LBRACE() != null) { // It's a compound state
+            // Process annotations inside the state body braces
+            if (ctx.stateBody().annotation() != null && !ctx.stateBody().annotation().isEmpty()) {
+                annotationsList.addAll(extractAnnotations(ctx.stateBody().annotation()));
+            }
+
             for (StateBodyElementContext elementCtx : ctx.stateBody().stateBodyElement()) {
-                // ... (initialStateDefinition handling) ...
-                // ... (stateDefinitionOrHistoryState handling) ...
-                // ... (transitionDefinition handling) ...
-                // ... (entryExitAction handling) ...
-                
-                // Handle Invokes // <<< COMMENTING OUT
-                /*
-                else if (elementCtx.invokeDefinition() != null) {
-                    AstNode visitedInvoke = visit(elementCtx.invokeDefinition());
-                    if (visitedInvoke instanceof InvokeDefinitionNode) {
-                        invokes.add((InvokeDefinitionNode) visitedInvoke);
+                if (elementCtx.initialStateDefinition() != null) {
+                    if (nestedInitialStateName != null) {
+                        System.err.println("Warning: Multiple initial state definitions found within state: " + stateName);
                     } else {
-                        System.err.println("Warning: Visiting invoke definition did not yield InvokeDefinitionNode: " + elementCtx.invokeDefinition().getText());
+                        nestedInitialStateName = elementCtx.initialStateDefinition().ID().getText();
                     }
                 }
-                */
-                // ... (annotation handling) ...
+                else if (elementCtx.stateDefinitionOrHistoryState() != null) {
+                    AstNode visitedNode = visit(elementCtx.stateDefinitionOrHistoryState());
+                    if (visitedNode instanceof StateNode) {
+                        StateNode nestedState = (StateNode) visitedNode;
+                        nestedStates.add(nestedState);
+                    } else if (visitedNode instanceof HistoryStateNode) {
+                         if(historyNode.isPresent()) {
+                            System.err.println("Warning: Multiple history states defined in state: " + stateName);
+                         } else {
+                            historyNode = Optional.of((HistoryStateNode) visitedNode);
+                         }
+                    } else {
+                        System.err.println("Warning: Visiting nested state/history definition did not yield StateNode or HistoryStateNode: " + elementCtx.stateDefinitionOrHistoryState().getText());
+                    }
+                }
+                else if (elementCtx.transitionDefinition() != null) {
+                    AstNode visitedTransition = visit(elementCtx.transitionDefinition());
+                    if (visitedTransition instanceof TransitionNode) {
+                        TransitionNode tn = (TransitionNode) visitedTransition;
+                        tn.setSourceStateName(stateName); // Set source state
+                        transitions.add(tn);
+                    } else {
+                         System.err.println("Warning: Visiting transition definition did not yield TransitionNode: " + elementCtx.transitionDefinition().getText());
+                    }
+                }
+                else if (elementCtx.entryExitAction() != null) {
+                    visitEntryExitAction(elementCtx.entryExitAction(), entryActionRefs, exitActionRefs);
+                }
+                 else if (elementCtx.annotation() != null) {
+                      AstNode visitedAnnotation = visit(elementCtx.annotation());
+                      if (visitedAnnotation instanceof AnnotationNode) {
+                          annotationsList.add((AnnotationNode) visitedAnnotation);
+                      } else {
+                          System.err.println("Warning: Visiting annotation within state body did not yield AnnotationNode: " + elementCtx.annotation().getText());
+                      }
+                 }
             }
-            // ... (set stateType = COMPOUND logic)
+            if ((!nestedStates.isEmpty() || nestedInitialStateName != null || historyNode.isPresent()) && stateType == StateType.NORMAL) {
+                 stateType = StateType.COMPOUND;
+             }
+
+        } else if (ctx.stateBody() != null && ctx.stateBody().SEMI() != null) {
+             if (stateType != StateType.FINAL && stateType != StateType.PARALLEL) {
+                 stateType = StateType.NORMAL;
+             }
+        } else {
+             System.err.println("Error: State definition without a body (neither block nor semicolon): " + stateName);
+             if (stateType != StateType.FINAL && stateType != StateType.PARALLEL) {
+                 stateType = StateType.NORMAL;
+             }
         }
-        // ... (create StateNode)
-         return new StateNode(
-             // ... constructor arguments ...
-             invokes, // Pass the empty list
-             nestedStates,
-             historyNode
-         );
+
+        Optional<Long> id = extractIdFromList(annotationsList);
+        Map<String, Object> annotationsMap = mapAnnotations(annotationsList);
+        String displayNameValue = (String) annotationsMap.getOrDefault("$name", stateName);
+        List<String> entryActionNames = entryActionRefs.stream().map(ActionReferenceNode::getActionName).toList();
+        List<String> exitActionNames = exitActionRefs.stream().map(ActionReferenceNode::getActionName).toList();
+        List<HistoryStateNode> historyList = historyNode.map(List::of).orElse(Collections.emptyList());
+        List<InvokeStateNode> invokeStateNodes = new ArrayList<>(); // Replace when invoke logic is back
+        List<TransitionNode> ifTransitionsList = new ArrayList<>(); // Assume no separate if-transitions for now
+
+        return new StateNode(
+            id,
+            stateName,
+            annotationsList,
+            displayNameValue,
+            stateType,
+            entryActionNames,
+            exitActionNames,
+            invokeStateNodes,
+            transitions,
+            ifTransitionsList,
+            nestedStates,
+            historyList,
+            Optional.ofNullable(nestedInitialStateName)
+        );
+    }
+
+    // ADDED visitMethodDefinition
+    @Override
+    public AstNode visitMethodDefinition(MethodDefinitionContext ctx) {
+        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
+        Optional<Long> id = extractIdFromList(annotations);
+        String name = ctx.ID().getText();
+        List<ParameterNode> params = new ArrayList<>();
+        if (ctx.paramList() != null) {
+            params.addAll(visitParamListHelper(ctx.paramList()));
+        }
+        Optional<TypeExprNode> returnType = Optional.empty();
+        if (ctx.typeReference() != null) {
+            AstNode visitedType = visit(ctx.typeReference());
+            if (visitedType instanceof TypeExprNode) {
+                returnType = Optional.of((TypeExprNode) visitedType);
+            } else {
+                System.err.println("Warning: Visiting method return type did not yield TypeExprNode: " + ctx.typeReference().getText());
+            }
+        }
+
+        // Removed annotationMap calculation as it's not used in constructor
+        // Map<String, Object> annotationMap = mapAnnotations(annotations);
+
+        // Corrected Constructor call for MethodNode
+        return new MethodNode(id, name, params, returnType, annotations);
     }
 
 } // End of class AstBuilderVisitor

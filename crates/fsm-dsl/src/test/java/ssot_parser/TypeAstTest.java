@@ -52,8 +52,7 @@ public class TypeAstTest {
         types {
             enum Status {
                 PENDING;
-                @id(301) $description("Task succeeded")
-                SUCCESS;
+                @id(301) $description("Task succeeded") SUCCESS;
                 FAILURE;
             }
         }
@@ -92,13 +91,12 @@ public class TypeAstTest {
         types {
             struct Point {
                 x: i32;
-                @id(304) $meta("coordinate")
-                y: i32;
+                @id(304) $meta("coordinate") y: i32;
             }
 
             struct User {
                 userId: string;
-                isActive: bool { $default(true) };
+                $default(true) isActive: bool;
                 profile: Point;
             }
         }

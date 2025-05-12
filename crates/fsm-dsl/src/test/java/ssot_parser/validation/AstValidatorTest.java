@@ -52,10 +52,10 @@ public class AstValidatorTest {
                     state StateA {
                         on Event1 target StateB;
                         invoke Worker { onDone target Success; onError target Failure; };
-                    };
-                    state StateB { on Event2 target StateA; };
-                    final state Success {};
-                    final state Failure {};
+                    }
+                    state StateB { on Event2 target StateA; }
+                    final state Success {}
+                    final state Failure {}
                  }
             }
         }
@@ -72,8 +72,8 @@ public class AstValidatorTest {
         machines {
             machine MyMachine {
                 states {
-                    state StateA {};
-                    state StateB {};
+                    state StateA {}
+                    state StateB {}
                 }
             }
         }
@@ -93,8 +93,8 @@ public class AstValidatorTest {
             machine MyMachine {
                 states {
                     initial state StateA;
-                    state StateA { on Event1 target NonExistentState; };
-                    state StateB {};
+                    state StateA { on Event1 target NonExistentState; }
+                    state StateB {}
                 }
             }
         }
@@ -120,8 +120,8 @@ public class AstValidatorTest {
                     initial state Processing;
                     state Processing {
                         invoke Worker { onDone target NonExistentSuccess; onError target AlsoNonExistent; };
-                    };
-                    state RealSuccess {};
+                    }
+                    state RealSuccess {}
                  }
             }
         }
@@ -149,9 +149,9 @@ public class AstValidatorTest {
                  states {
                     initial state StateA;
                     state StateA {
-                        onEntry DoSomething();
+                        onEntry DoSomething;
                         on Event1 [CheckSomething] target StateB;
-                        onExit Log();
+                        onExit Log;
                     }
                     state StateB {
                          invoke Log { onError target StateA; };
