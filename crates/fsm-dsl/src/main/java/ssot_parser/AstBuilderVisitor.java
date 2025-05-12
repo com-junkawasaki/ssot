@@ -328,13 +328,13 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     // FieldDefinitionContext missing error
     // @Override // Remove @Override
     @Override
-    public AstNode visitStructFieldDefinition(StructFieldDefinitionContext ctx) { // Corrected context type
+    public AstNode visitStructFieldDefinition(StructFieldDefinitionContext ctx) {
         List<AnnotationNode> annotations = Collections.emptyList();
         if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
             annotations = extractAnnotations(ctx.annotation());
         }
         Optional<Long> id = extractIdFromList(annotations);
-        String name = ctx.ID().getText(); // Reverted: Use ID()
+        String name = ctx.fieldId().getText(); // Use fieldId()
         TypeExprNode type = (TypeExprNode) visit(ctx.typeReference());
         // TODO: Extract annotations within braces after type if needed ctx.annotation(1)
         return new FieldNode(id, name, type, annotations);
@@ -456,17 +456,12 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     // Overriding visit children for specific labeled alternatives
     @Override public AstNode visitIdAnnotation(IdAnnotationContext ctx) {
         // Grammar: AT ID LPAREN INT RPAREN
-        String name = ctx.ID().getText(); // Should be 'id'
-        Long idValue = -1L; // Default error value
-        if (ctx.INT() != null) {
-            try {
-                idValue = Long.parseLong(ctx.INT().getText());
-            } catch (NumberFormatException e) {
-                 System.err.println("Error: Could not parse @id integer value: " + ctx.INT().getText());
-            }
-        } else {
-             System.err.println("Error: @id annotation missing integer value.");
-        }
+        // System.out.println("Visiting IdAnnotation: " + ctx.getText());
+        String name = ctx.ID().getText(); // Name is always "id" effectively
+        long idValue = Long.parseLong(ctx.INT().getText());
+
+        // Create an AnnotationNode. The 'value' for an @id annotation is the numeric ID itself.
+        // The 'name' of the annotation is "id".
         // Constructor: AnnotationNode(String name, Object value, boolean isId)
         return new AnnotationNode(name, idValue, true);
     }
@@ -474,8 +469,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     @Override public AstNode visitValueAnnotation(ValueAnnotationContext ctx) {
         // Grammar: DOLLAR annotationName annotationValue
         String name = "";
-        if (ctx.annotationName() != null && ctx.annotationName().ID() != null) {
-            name = ctx.annotationName().ID().getText();
+        if (ctx.annotationName() != null) { // Check if annotationName is present
+            name = ctx.annotationName().getText(); // Use getText() to get full name (ID or keyword)
         }
 
         ValueNode valueNode = new NullValueNode(); // Default
@@ -743,15 +738,19 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     // Actor Block visitor
     @Override
     public AstNode visitActorDefinition(ActorDefinitionContext ctx) {
-        // Outer annotations are handled by parent DefinitionBlock
         String name = ctx.ID().getText();
-        List<AnnotationNode> innerAnnotations = new ArrayList<>();
-         if (ctx.annotation() != null) {
-             innerAnnotations.addAll(extractAnnotations(ctx.annotation()));
+        List<AnnotationNode> allInnerAnnotations = new ArrayList<>();
+         if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
+             allInnerAnnotations.addAll(extractAnnotations(ctx.annotation()));
          }
-         // Constructor: ActorNode(Optional<Long> id, String name, List<AnnotationNode> innerAnnotations)
-         // ID comes from parent block, pass placeholder.
-        return new ActorNode(Optional.empty(), name, innerAnnotations);
+
+         Optional<Long> id = extractIdFromList(allInnerAnnotations);
+         List<AnnotationNode> otherInnerAnnotations = allInnerAnnotations.stream()
+                                                     .filter(a -> !a.isIdAnnotation())
+                                                     .collect(Collectors.toList());
+
+        // Constructor: ActorNode(Optional<Long> id, String name, List<AnnotationNode> innerAnnotations)
+        return new ActorNode(id, name, otherInnerAnnotations);
     }
 
     // Machine Block visitor
@@ -796,40 +795,53 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
      // Communication Block visitors
     @Override
     public AstNode visitProtocolDefinition(ProtocolDefinitionContext ctx) {
-         // ID/Annotations are handled by parent DefinitionBlock
          String name = ctx.ID().getText();
-         List<AnnotationNode> innerAnnotations = new ArrayList<>();
-         if (ctx.annotation() != null) {
-             innerAnnotations.addAll(extractAnnotations(ctx.annotation()));
+        List<AnnotationNode> allInnerAnnotations = new ArrayList<>();
+         if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
+             allInnerAnnotations.addAll(extractAnnotations(ctx.annotation()));
          }
-         // Constructor: ProtocolNode(Optional<Long> id, String name, List<AnnotationNode> innerAnnotations)
-         // ID comes from parent block, pass placeholder.
-        return new ProtocolNode(Optional.empty(), name, innerAnnotations);
+
+         Optional<Long> id = extractIdFromList(allInnerAnnotations);
+         List<AnnotationNode> otherInnerAnnotations = allInnerAnnotations.stream()
+                                                     .filter(a -> !a.isIdAnnotation())
+                                                     .collect(Collectors.toList());
+
+        // Constructor: ProtocolNode(Optional<Long> id, String name, List<AnnotationNode> innerAnnotations)
+        return new ProtocolNode(id, name, otherInnerAnnotations);
     }
 
     @Override
     public AstNode visitChannelDefinition(ChannelDefinitionContext ctx) {
-        // ID/Annotations are handled by parent DefinitionBlock
         String name = ctx.ID().getText();
-        List<AnnotationNode> innerAnnotations = new ArrayList<>();
-        if (ctx.annotation() != null) {
-            innerAnnotations.addAll(extractAnnotations(ctx.annotation()));
+        List<AnnotationNode> allInnerAnnotations = new ArrayList<>();
+        if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
+            allInnerAnnotations.addAll(extractAnnotations(ctx.annotation()));
         }
+
+        Optional<Long> id = extractIdFromList(allInnerAnnotations);
+        List<AnnotationNode> otherInnerAnnotations = allInnerAnnotations.stream()
+                                                    .filter(a -> !a.isIdAnnotation())
+                                                    .collect(Collectors.toList());
+
         // Constructor: ChannelNode(Optional<Long> id, String name, List<AnnotationNode> innerAnnotations)
-        // ID comes from parent block, pass placeholder.
-        return new ChannelNode(Optional.empty(), name, innerAnnotations);
+        return new ChannelNode(id, name, otherInnerAnnotations);
     }
 
     @Override
     public AstNode visitEventDefinition(EventDefinitionContext ctx) {
-        // ID/Annotations are handled by parent DefinitionBlock
         String name = ctx.ID().getText();
-        List<AnnotationNode> innerAnnotations = new ArrayList<>();
+        List<AnnotationNode> allInnerAnnotations = new ArrayList<>();
         List<FieldNode> fields = new ArrayList<>();
 
-        if (ctx.annotation() != null) {
-            innerAnnotations.addAll(extractAnnotations(ctx.annotation()));
+        if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
+            allInnerAnnotations.addAll(extractAnnotations(ctx.annotation()));
         }
+
+        Optional<Long> id = extractIdFromList(allInnerAnnotations);
+        List<AnnotationNode> otherInnerAnnotations = allInnerAnnotations.stream()
+                                                    .filter(a -> !a.isIdAnnotation())
+                                                    .collect(Collectors.toList());
+
         if (ctx.eventFieldDefinition() != null) {
             for (EventFieldDefinitionContext fieldCtx : ctx.eventFieldDefinition()) {
                  // Assuming eventFieldDefinition is similar to structFieldDefinition
@@ -844,7 +856,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         }
         // Constructor: EventNode(Optional<Long> id, String name, List<FieldNode> fields, List<AnnotationNode> innerAnnotations)
         // ID comes from parent block, pass placeholder.
-        return new EventNode(Optional.empty(), name, fields, innerAnnotations);
+        return new EventNode(id, name, fields, otherInnerAnnotations);
     }
 
     // Helper visitor for event fields (similar to struct fields)
@@ -855,7 +867,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             annotations = extractAnnotations(ctx.annotation());
         }
         Optional<Long> id = extractIdFromList(annotations);
-        String name = ctx.ID().getText(); // Reverted: Use ID()
+        String name = ctx.fieldId().getText(); // Use fieldId()
         TypeExprNode type = (TypeExprNode) visit(ctx.typeReference());
         return new FieldNode(id, name, type, annotations);
     }
@@ -946,10 +958,11 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
      }
 
       public AstNode visitParameter(ParameterContext ctx) {
-         // Grammar: ID COLON typeReference
-         String name = ctx.ID().getText(); // Reverted: Use ID()
+         // Grammar: fieldId COLON typeReference
+         String name = ctx.fieldId().getText(); // Use fieldId()
          TypeExprNode type = (TypeExprNode) visit(ctx.typeReference());
-         return new ParameterNode(name, type);
+         // Correct constructor: ParameterNode(Optional<Long> id, List<AnnotationNode> annotations, String name, TypeExprNode type)
+         return new ParameterNode(Optional.empty(), Collections.emptyList(), name, type);
       }
 
 

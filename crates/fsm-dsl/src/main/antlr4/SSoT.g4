@@ -48,7 +48,7 @@ structDefinition
     ;
 
 structFieldDefinition
-    : annotation* ID COLON typeReference (LBRACE annotation* RBRACE)? SEMI // Reverted: Use ID directly
+    : annotation* fieldId COLON typeReference (LBRACE annotation* RBRACE)? SEMI // Use fieldId
     ;
 
 enumDefinition
@@ -83,7 +83,7 @@ eventDefinition // Inner annotations and field definitions
     ;
 
 eventFieldDefinition // Field annotations allowed
-    : annotation* ID COLON typeReference SEMI // Reverted: Use ID directly
+    : annotation* fieldId COLON typeReference SEMI // Use fieldId
     ;
 
 // --- Services Block ---
@@ -230,7 +230,7 @@ paramList // Parameter list for methods, actions, guards
     ;
 
 parameter
-    : ID COLON typeReference // Reverted: Use ID directly
+    : fieldId COLON typeReference // Use fieldId
     ;
 
 typeReference // Defines various ways a type can be referenced
@@ -341,8 +341,8 @@ ID : [a-zA-Z_] [a-zA-Z0-9_]* ;
 WS : [ \t\r\n]+ -> skip ;
 COMMENT : '//' .*? '\n' -> skip ; 
 
-// Helper rule for field/parameter names (Removed)
-// fieldNameId : ID | TIMESTAMP_TYPE ; // Removed this rule
+// Helper rule for field/parameter names
+fieldId : ID | TIMESTAMP_TYPE ; // Allow 'timestamp' as a field/param name
 
 // General utilities
 qualifiedIdentifier
