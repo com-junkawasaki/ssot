@@ -9,40 +9,29 @@ DSL の仕様は [`DSL.md`](./DSL.md) に定義されています。
 ## Project Status & Recent Developments
 
 **Core Parsing Functionality:**
-The project features a robust Java/ANTLR-based parser for a custom Domain-Specific Language (`.ssot` files). This DSL is designed to define comprehensive system specifications, including types, services, actors, state machines, and communication protocols. The ANTLR grammar (`SSoT.g4`) is well-established, and the Maven build process (`pom.xml`) is generally stable, though currently facing a compilation issue (see below).
+The project features a robust Java/ANTLR-based parser for a custom Domain-Specific Language (`.ssot` files). This DSL is designed to define comprehensive system specifications, including types, services, actors, state machines, and communication protocols. The ANTLR grammar (`SSoT.g4`) is well-established, and the Maven build process (`pom.xml`) is stable.
 
 **Abstract Syntax Tree (AST) Construction:**
-*   A comprehensive set of Java classes in `src/main/java/ssot_parser/ast/nodes/` represents the DSL elements.
-*   A central root node, `SsotRoot.java`, has been introduced to encapsulate the entire parsed file, including imports, top-level annotations/ID, and lists of defined types, services, machines, etc.
-*   The `AstBuilderVisitor.java` class is responsible for constructing this AST from the ANTLR parse tree. Its main `visitFile` method now correctly collects all definitions and constructs/returns an `SsotRoot` instance.
+*   A comprehensive set of Java classes in `src/main/java/ssot_parser/ast/nodes/` represents the DSL elements. The core AST structure resides in the `ssot_parser.ast` package, promoting separation of concerns.
+*   A central root node, `ssot_parser.ast.SsotRoot.java`, encapsulates the entire parsed file, including imports, top-level annotations/ID, and lists of defined types, services, machines, etc.
+*   The `AstBuilderVisitor.java` class is responsible for constructing this AST from the ANTLR parse tree. Its main `visitFile` method correctly collects all definitions and constructs/returns an `SsotRoot` instance.
 *   It handles top-level file structure, imports, annotation processing, definition blocks (types, services, machines, actors, communication), detailed state machine constructs (nested/history states, transitions, invokes).
-*   **Current Issue:** A persistent compilation error exists within `AstBuilderVisitor.java` related to the `new SsotRoot(...)` constructor call. Despite code appearing correct, the compiler reports an argument type mismatch, preventing successful builds. This needs to be resolved before further testing/development.
+*   **Resolved Issue:** Previous compilation errors related to `SsotRoot` duplication and constructor calls in `AstBuilderVisitor.java` have been resolved by removing the redundant `SsotRoot` class and fixing associated import statements.
 
 **AST Validation:**
-The `AstValidator.java` component performs comprehensive semantic checks on the constructed AST. Its capabilities have been significantly expanded and now include:
-*   **ID Uniqueness:** Global and scoped checks.
-*   **Name Uniqueness:** Checks for all major DSL constructs.
-*   **Reference Resolution and Validation:** Type references, invoke targets, action/guard names, event names.
-*   **State Machine Logic Validation:**
-    *   Initial State (including for compound/parallel states).
-    *   Final State Semantics.
-    *   State Reachability analysis.
-    *   Transition Consistency (ambiguity detection).
-    *   Target State validation.
-    *   **Nested/History States:** Recently added tests cover validation for initial state requirements in compound states, correct usage of shallow (`$H`) and deep (`$H*`) history states, and checks for transitions targeting non-existent history markers.
-    *   **Duplicate State Names:** Checks for duplicate state names within the same scope (e.g., within a parent state or at the machine level).
-*   **Basic Type Checking:** Verifying referenced types.
-*   **Structural Integrity:** Duplicate fields/variants, service implementation checks against interfaces.
-*   **Note:** Some linter errors regarding the `AstValidator(SsotRoot)` constructor being undefined are present in test files, likely stemming from the main compilation issue.
+*   The `ssot_parser.validation.AstValidator` component performs comprehensive semantic checks on the constructed AST. It resides in the dedicated `ssot_parser.validation` package.
+*   Its capabilities include: ID/Name uniqueness checks, reference resolution (types, invokes, actions, guards, events), state machine logic validation (initial/final states, reachability, transitions, history), basic type checking, and structural integrity checks.
+*   **Code Cleanup:** A redundant `AstValidator` in the root `ssot_parser` package has been removed, consolidating validation logic into the `ssot_parser.validation` package. `Main.java` has been updated accordingly.
+
+**Testing:**
+*   JUnit 5 tests are present for major components like state machines, communication, actors, types, services, and validation logic, located in `src/test/java/ssot_parser/`.
 
 **Future Goals:**
-The primary long-term goal remains the development of code generators that leverage the AST to produce various artifacts (code, schemas, documentation). The "ドクトリン" (doctrine) concept noted in the IDEA section is also a potential future DSL enhancement.
+The primary long-term goal remains the development of code generators that leverage the AST to produce various artifacts (code, schemas, documentation). The "ドクトリン" (doctrine) concept noted in the IDEA section is also a potential future DSL enhancement. Further improvements could include more detailed validation rules and enhanced error reporting.
 
 ## ビルドと実行
 
 Maven が導入されたため、以下のコマンドでビルドと実行が可能です。
-
-**注意:** 現在、`AstBuilderVisitor.java` のコンパイルエラーにより、`mvn compile` および後続のコマンドは失敗します。この問題の解決が最優先事項です。
 
 1.  **ビルド (コンパイルとANTLRコード生成):**
     ```bash
@@ -50,7 +39,7 @@ Maven が導入されたため、以下のコマンドでビルドと実行が�
     mvn clean compile
     ```
     これにより、`src/main/antlr4` 内の `.g4` ファイルからパーサーコードが `target/generated-sources/antlr4` に生成され、
-    `src/main/java` 内の Java コードと共に `target/classes` にコンパイルされます。(現状失敗します)
+    `src/main/java` 内の Java コードと共に `target/classes` にコンパイルされます。
 
 2.  **実行 (Mainクラス):**
     ```bash
@@ -58,21 +47,21 @@ Maven が導入されたため、以下のコマンドでビルドと実行が�
     # Main.java で処理する入力ファイル (inputFile 変数) を変更可能
     mvn exec:java -Dexec.mainClass="ssot_parser.Main"
     ```
-    実行すると、指定された `.ssot` ファイルのパース、AST構築、基本的な検証が行われ、`AstBuilderVisitor` 内のログが出力されます。(現状ビルドが通らないため実行できません)
+    実行すると、指定された `.ssot` ファイルのパース、AST構築、検証が行われ、結果が出力されます。
 
 3.  **実行可能 JAR の作成:**
     ```bash
     # プロジェクトルートで実行
     mvn package
     ```
-    これにより、依存ライブラリを含む実行可能な JAR ファイルが `target/` ディレクトリに生成されます。(現状ビルドが通らないため作成できません)
+    これにより、依存ライブラリを含む実行可能な JAR ファイルが `target/` ディレクトリに生成されます。
 
 4.  **JAR ファイルの実行:**
     ```bash
     # target ディレクトリ内の JAR ファイルを指定
     java -jar target/fsm-dsl-parser-*.jar
     ```
-    (上記コマンドは `Main.java` 内でハードコードされた入力ファイルを使用します。現状ビルドが通らないため実行できません)
+    (上記コマンドは `Main.java` 内でハードコードされた入力ファイルを使用します)
 
 ## 貢献
 
