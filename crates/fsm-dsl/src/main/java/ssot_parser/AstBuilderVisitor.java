@@ -71,17 +71,13 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             return Optional.empty();
         }
         for (AnnotationNode annotation : annotations) {
-            if ("id".equals(annotation.name)) {
-                if (annotation.value instanceof Number) {
+            if (annotation.isIdAnnotation()) {
+                if (annotation.value instanceof Long) {
+                     return Optional.of((Long) annotation.value);
+                } else if (annotation.value instanceof Number) { // Handle potential other Number types
                     return Optional.of(((Number) annotation.value).longValue());
-                } else if (annotation.value instanceof String) {
-                    try {
-                        return Optional.of(Long.parseLong((String) annotation.value));
-                    } catch (NumberFormatException e) {
-                        System.err.println("Warning: @id annotation string value is not a valid Long: " + annotation.value);
-                    }
-                } else if (annotation.value != null){
-                     System.err.println("Warning: @id annotation has non-numeric, non-string value: " + annotation.value.getClass().getName() + " -> " + annotation.value);
+                } else {
+                     System.err.println("Warning: @id annotation has non-Long value: " + annotation.value.getClass().getName() + " -> " + annotation.value);
                 }
             }
         }
@@ -137,45 +133,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     @Override
     public AstNode visitFile(FileContext ctx) {
-        System.out.println("Visiting File (was SsotDefinition)");
+        System.out.println("Visiting File");
 
-        // TODO: fileId rule is missing from grammar snippet. Commenting out hex ID logic.
-        /*
-        Optional<Long> fileIdFromHex = Optional.empty();
-        if (ctx.fileId() != null && ctx.fileId().HEX_ID() != null) {
-            try {
-                String hexIdText = ctx.fileId().HEX_ID().getText().substring(2); // Remove "0x"
-                fileIdFromHex = Optional.of(Long.parseLong(hexIdText, 16));
-                System.out.println("Found File ID from hex: " + fileIdFromHex.get());
-            } catch (NumberFormatException e) {
-                System.err.println("Error parsing HEX_ID: " + ctx.fileId().HEX_ID().getText());
-            }
-        }
-        */
-
-        Map<String, Object> rootAnnotationsMap = new HashMap<>();
-        Optional<Long> fileIdFromAnnotation = Optional.empty();
-
-        // TODO: Revisit how top-level annotations vs block annotations are handled.
-        // Grammar puts annotations before blocks: annotation* actorsBlock etc.
-        // File rule itself doesn't have annotations or imports directly in current grammar.
-        List<AnnotationContext> topLevelAnnotationCtxs = new ArrayList<>();
-        /*
-        if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
-             // This logic seems flawed based on current grammar. Annotations belong to blocks.
-             // ... (Original logic to separate top-level annotations) ...
-        }
-        */
-
-        // List<AnnotationNode> parsedTopLevelAnnotations = extractAnnotations(topLevelAnnotationCtxs);
-        // ... (Original logic to process parsedTopLevelAnnotations for fileId/rootAnnotationsMap) ...
-
-
-        // Optional<Long> finalFileId = fileIdFromHex.isPresent() ? fileIdFromHex : fileIdFromAnnotation;
-        Optional<Long> finalFileId = fileIdFromAnnotation; // Use only annotation ID for now
-
-
-        // Initialize local lists to store definitions
         List<ImportNode> imports = new ArrayList<>();
         List<TypeDefNode> typeDefinitions = new ArrayList<>();
         List<AstNode> serviceDefinitions = new ArrayList<>();
@@ -183,86 +142,116 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         List<ActorNode> actorDefinitions = new ArrayList<>();
         List<AstNode> communicationDefinitions = new ArrayList<>();
 
-
-        // TODO: importStatement rule missing from grammar snippet. Commenting out import processing.
-        /*
-        if (ctx.importStatement() != null) {
-            for (ImportStatementContext importCtx : ctx.importStatement()) {
-                imports.add((ImportNode) visitImportStatement(importCtx));
-            }
-        }
-        */
-
-        // Process definition blocks directly
         if (ctx.definitionBlock() != null) {
             for (DefinitionBlockContext blockCtx : ctx.definitionBlock()) {
-                // Pass annotations from the block definition to the specific block visitor
                 List<AnnotationNode> blockAnnotations = Collections.emptyList();
-                 if (blockCtx.annotation() != null && !blockCtx.annotation().isEmpty()) {
-                    blockAnnotations = extractAnnotations(blockCtx.annotation());
-                 }
+                ParseTree contentNode = null;
+                AstNode visitedNode = null;
+                Optional<Long> blockId = Optional.empty();
+                Map<String, Object> blockAnnotationMap = Collections.emptyMap();
 
-                AstNode visitedNode = visit(blockCtx.getChild(blockCtx.getChildCount() - 1)); // Visit the actual block (actorsBlock, typesBlock etc.)
-
-                // The visitedNode should now be a BlockNode containing definitions
-                // We need to associate the blockAnnotations with the BlockNode or its contents.
-                // Let's assume BlockNode constructor takes annotations, or add a setter.
-
-                if (visitedNode instanceof BlockNode) {
-                    BlockNode container = (BlockNode) visitedNode;
-                    // TODO: Associate blockAnnotations with the container node if needed.
-                    // container.setAnnotations(blockAnnotations); // Example
-
-                    System.out.println("Processing BlockNode: " + container.blockType + " with " + container.getDefinitions().size() + " definitions.");
-
-                    switch (container.blockType) {
-                        case "types":
-                             container.getDefinitions().forEach(child -> {
-                                 if (child instanceof TypeDefNode) typeDefinitions.add((TypeDefNode) child);
-                                 else System.err.println("Warning: Child in types block not TypeDefNode: " + child.getClass().getName());
-                             }); break;
-                        case "services":
-                             container.getDefinitions().forEach(child -> {
-                                 if (child instanceof ServiceDefinitionNode || child instanceof InterfaceNode) serviceDefinitions.add(child);
-                                 else System.err.println("Warning: Child in services block not Service/Interface: " + child.getClass().getName());
-                            }); break;
-                        case "machines":
-                            container.getDefinitions().forEach(child -> {
-                                if (child instanceof MachineNode) machineDefinitions.add((MachineNode) child);
-                                else System.err.println("Warning: Child in machines block not MachineNode: " + child.getClass().getName());
-                            }); break;
-                        case "actors":
-                             container.getDefinitions().forEach(child -> {
-                                 if (child instanceof ActorNode) actorDefinitions.add((ActorNode) child);
-                                 else System.err.println("Warning: Child in actors block not ActorNode: " + child.getClass().getName());
-                             }); break;
-                        case "communication":
-                             container.getDefinitions().forEach(child -> {
-                                 if (child instanceof ProtocolNode || child instanceof ChannelNode || child instanceof EventNode) communicationDefinitions.add(child);
-                                 else System.err.println("Warning: Child in comms block not Protocol/Channel/Event: " + child.getClass().getName());
-                             }); break;
-                        default:
-                             System.err.println("Warning: Unknown block type encountered: " + container.blockType);
-                             break;
+                // Handle annotations based on the specific DefinitionBlockContext subtype
+                if (blockCtx instanceof ActorsBlockDefinitionContext) {
+                    ActorsBlockDefinitionContext specificCtx = (ActorsBlockDefinitionContext) blockCtx;
+                    if (specificCtx.annotation() != null && !specificCtx.annotation().isEmpty()) {
+                        blockAnnotations = extractAnnotations(specificCtx.annotation());
                     }
-                } else if (visitedNode != null) {
-                     System.err.println("Warning: Visiting a definitionBlock did not result in a BlockNode: " + visitedNode.getClass().getName());
-                } else {
-                    System.err.println("Warning: Visiting a definitionBlock resulted in null.");
+                    contentNode = specificCtx.actorsBlock();
+                } else if (blockCtx instanceof TypesBlockDefinitionContext) {
+                    TypesBlockDefinitionContext specificCtx = (TypesBlockDefinitionContext) blockCtx;
+                    if (specificCtx.annotation() != null && !specificCtx.annotation().isEmpty()) {
+                        blockAnnotations = extractAnnotations(specificCtx.annotation());
+                    }
+                    contentNode = specificCtx.typesBlock();
+                } else if (blockCtx instanceof ServicesBlockDefinitionContext) {
+                    ServicesBlockDefinitionContext specificCtx = (ServicesBlockDefinitionContext) blockCtx;
+                    if (specificCtx.annotation() != null && !specificCtx.annotation().isEmpty()) {
+                        blockAnnotations = extractAnnotations(specificCtx.annotation());
+                    }
+                    contentNode = specificCtx.servicesBlock();
+                } else if (blockCtx instanceof CommunicationBlockDefinitionContext) {
+                    CommunicationBlockDefinitionContext specificCtx = (CommunicationBlockDefinitionContext) blockCtx;
+                    if (specificCtx.annotation() != null && !specificCtx.annotation().isEmpty()) {
+                        blockAnnotations = extractAnnotations(specificCtx.annotation());
+                    }
+                    contentNode = specificCtx.communicationBlock();
+                } else if (blockCtx instanceof MachinesBlockDefinitionContext) {
+                    MachinesBlockDefinitionContext specificCtx = (MachinesBlockDefinitionContext) blockCtx;
+                    if (specificCtx.annotation() != null && !specificCtx.annotation().isEmpty()) {
+                        blockAnnotations = extractAnnotations(specificCtx.annotation());
+                    }
+                    contentNode = specificCtx.machinesBlock();
+                }
+
+                blockId = extractIdFromList(blockAnnotations);
+                blockAnnotationMap = mapAnnotations(blockAnnotations.stream()
+                                                                        .filter(a -> !a.isIdAnnotation())
+                                                                        .collect(Collectors.toList()));
+
+                // Visit the content node with the extracted ID and annotations
+                if (contentNode instanceof ActorsBlockContext) {
+                    visitedNode = visitActorsBlock((ActorsBlockContext)contentNode, blockId, blockAnnotationMap);
+                } else if (contentNode instanceof TypesBlockContext) {
+                    visitedNode = visitTypesBlock((TypesBlockContext)contentNode, blockId, blockAnnotationMap);
+                } else if (contentNode instanceof ServicesBlockContext) {
+                    visitedNode = visitServicesBlock((ServicesBlockContext)contentNode, blockId, blockAnnotationMap);
+                } else if (contentNode instanceof CommunicationBlockContext) {
+                    visitedNode = visitCommunicationBlock((CommunicationBlockContext)contentNode, blockId, blockAnnotationMap);
+                } else if (contentNode instanceof MachinesBlockContext) {
+                    visitedNode = visitMachinesBlock((MachinesBlockContext)contentNode, blockId, blockAnnotationMap);
+                }
+
+
+                if (visitedNode != null) {
+                    if (visitedNode instanceof BlockNode) {
+                        BlockNode container = (BlockNode) visitedNode;
+                        System.out.println("Processing BlockNode: " + container.blockType + " with ID: " + container.getId().orElse(null) + " and " + container.getDefinitions().size() + " definitions.");
+
+                        switch (container.blockType) {
+                            case "types":
+                                 container.getDefinitions().forEach(child -> {
+                                     if (child instanceof TypeDefNode) typeDefinitions.add((TypeDefNode) child);
+                                     else System.err.println("Warning: Child in types block not TypeDefNode: " + child.getClass().getName());
+                                 }); break;
+                            case "services":
+                                  container.getDefinitions().forEach(child -> serviceDefinitions.add(child));
+                                  break;
+                            case "machines":
+                                container.getDefinitions().forEach(child -> {
+                                    if (child instanceof MachineNode) machineDefinitions.add((MachineNode) child);
+                                    else System.err.println("Warning: Child in machines block not MachineNode: " + child.getClass().getName());
+                                }); break;
+                            case "actors":
+                                 container.getDefinitions().forEach(child -> {
+                                     if (child instanceof ActorNode) actorDefinitions.add((ActorNode) child);
+                                     else System.err.println("Warning: Child in actors block not ActorNode: " + child.getClass().getName());
+                                 }); break;
+                            case "communication":
+                                 container.getDefinitions().forEach(child -> communicationDefinitions.add(child));
+                                 break;
+                            default:
+                                 System.err.println("Warning: Unknown block type encountered: " + container.blockType);
+                                 break;
+                        }
+                    }
+                } else if (contentNode != null) {
+                    System.err.println("Warning: Visiting a block content node ("+ contentNode.getClass().getSimpleName() +") returned null: " + contentNode.getText());
+                } else if (blockCtx != null) { // blockCtx itself might be of an unexpected type if grammar changes
+                     System.err.println("Warning: Could not determine content node or specific block type for DefinitionBlockContext: " + blockCtx.getText());
                 }
             }
         }
 
-        // Create the root node with collected definitions
         return new SsotRoot(
-                finalFileId,
-                rootAnnotationsMap,
-                imports,
-                typeDefinitions,
-                serviceDefinitions,
-                machineDefinitions,
-                actorDefinitions,
-                communicationDefinitions);
+            Optional.empty(),
+            Collections.emptyMap(),
+            imports,
+            typeDefinitions,
+            serviceDefinitions,
+            machineDefinitions,
+            actorDefinitions,
+            communicationDefinitions
+        );
     }
 
     // TODO: importStatement rule missing from grammar snippet. Comment out method.
@@ -277,109 +266,97 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     }
     */
 
-    // visitTypesBlock, visitServicesBlock etc. remain similar, but need to handle annotations passed down.
-    @Override
-    public AstNode visitTypesBlock(TypesBlockContext ctx) {
-        System.out.println("Visiting TypesBlock");
+    // Modified to accept ID and annotations from parent DefinitionBlockContext
+    public AstNode visitTypesBlock(TypesBlockContext ctx, Optional<Long> id, Map<String, Object> annotations) {
         List<AstNode> definitions = new ArrayList<>();
         if (ctx.typeDefinition() != null) {
             for (TypeDefinitionContext typeCtx : ctx.typeDefinition()) {
-                 AstNode node = visit(typeCtx);
-                 if (node != null) definitions.add(node);
+                definitions.add(visit(typeCtx));
             }
         }
-         // Pass annotations from parent (definitionBlock) if needed, or handle here if grammar changes.
-         // BlockNode constructor: (String blockType, List<AstNode> definitions, List<AnnotationNode> annotations)
-         return new BlockNode("types", definitions, Collections.emptyList()); // Pass empty for now
+         // Use the passed ID and annotations in the constructor
+        return new BlockNode(id, "types", definitions, annotations);
     }
 
-    @Override
-    public AstNode visitServicesBlock(ServicesBlockContext ctx) {
-        System.out.println("Visiting ServicesBlock");
+    // Modified to accept ID and annotations
+    public AstNode visitServicesBlock(ServicesBlockContext ctx, Optional<Long> id, Map<String, Object> annotations) {
         List<AstNode> definitions = new ArrayList<>();
-        if (ctx.serviceElement() != null) {
-            for (ServiceElementContext elCtx : ctx.serviceElement()) {
-                 AstNode node = visit(elCtx);
-                 if (node != null) definitions.add(node);
-            }
-        }
-        return new BlockNode("services", definitions, Collections.emptyList()); // Pass empty for now
+         if (ctx.serviceElement() != null) {
+             for (ServiceElementContext elementCtx : ctx.serviceElement()) {
+                 definitions.add(visit(elementCtx));
+             }
+         }
+         return new BlockNode(id, "services", definitions, annotations);
     }
 
-    // Actors Block
-    @Override
-    public AstNode visitActorsBlock(ActorsBlockContext ctx) {
-        System.out.println("Visiting ActorsBlock");
+    // Modified to accept ID and annotations
+    public AstNode visitActorsBlock(ActorsBlockContext ctx, Optional<Long> id, Map<String, Object> annotations) {
         List<AstNode> definitions = new ArrayList<>();
         if (ctx.actorDefinition() != null) {
             for (ActorDefinitionContext actorCtx : ctx.actorDefinition()) {
-                AstNode node = visitActorDefinition(actorCtx); // Call specific visitor
-                if (node != null) {
-                    definitions.add(node);
-                }
+                definitions.add(visit(actorCtx));
             }
         }
-        return new BlockNode("actors", definitions, Collections.emptyList());
+        return new BlockNode(id, "actors", definitions, annotations);
     }
 
-
-    @Override
-    public AstNode visitMachinesBlock(MachinesBlockContext ctx) {
-        System.out.println("Visiting MachinesBlock");
+    // Modified to accept ID and annotations
+    public AstNode visitMachinesBlock(MachinesBlockContext ctx, Optional<Long> id, Map<String, Object> annotations) {
         List<AstNode> definitions = new ArrayList<>();
         if (ctx.machineDefinition() != null) {
-            for (MachineDefinitionContext machCtx : ctx.machineDefinition()) {
-                 AstNode node = visit(machCtx);
-                 if (node != null) definitions.add(node);
+            for (MachineDefinitionContext machineCtx : ctx.machineDefinition()) {
+                definitions.add(visit(machineCtx));
             }
         }
-         return new BlockNode("machines", definitions, Collections.emptyList()); // Pass empty for now
+        return new BlockNode(id, "machines", definitions, annotations);
     }
 
-
-    // Communication Block
-    @Override
-    public AstNode visitCommunicationBlock(CommunicationBlockContext ctx) {
-        System.out.println("Visiting CommunicationBlock");
+    // Modified to accept ID and annotations
+    public AstNode visitCommunicationBlock(CommunicationBlockContext ctx, Optional<Long> id, Map<String, Object> annotations) {
         List<AstNode> definitions = new ArrayList<>();
-        if (ctx.communicationDefinition() != null) {
-            for (CommunicationDefinitionContext commCtx : ctx.communicationDefinition()) {
-                AstNode node = visit(commCtx); // Visits protocol, channel, or event def
-                if (node != null) {
-                    definitions.add(node);
-                }
-            }
-        }
-        return new BlockNode("communication", definitions, Collections.emptyList());
+         if (ctx.communicationDefinition() != null) {
+             for (CommunicationDefinitionContext commCtx : ctx.communicationDefinition()) {
+                 definitions.add(visit(commCtx));
+             }
+         }
+        return new BlockNode(id, "communication", definitions, annotations);
     }
 
-
-    // Keep visitServiceElement, visitTypeDefinition
 
     // FieldDefinitionContext missing error
     // @Override // Remove @Override
-    public AstNode visitFieldDefinition(StructFieldDefinitionContext ctx) { // Change context type
-        System.out.println("Visiting StructFieldDefinition (was FieldDefinition)");
-        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
+    @Override
+    public AstNode visitStructFieldDefinition(StructFieldDefinitionContext ctx) { // Corrected context type
+        List<AnnotationNode> annotations = Collections.emptyList();
+        if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
+             annotations = extractAnnotations(ctx.annotation());
+        }
         Optional<Long> id = extractIdFromList(annotations);
-        String name = ctx.ID().getText();
-        TypeExprNode type = (TypeExprNode) visitTypeReference(ctx.typeReference()); // Use visitTypeReference
+        // Map<String, Object> annotationMap = mapAnnotations(annotations.stream().filter(a -> !a.isIdAnnotation()).collect(Collectors.toList())); // Not needed for constructor
 
-        Map<String, Object> fieldAnnotations = mapAnnotations(annotations);
-        // FieldNode constructor: (String name, TypeExprNode type, Optional<Long> id, Map<String, Object> annotations)
-        return new FieldNode(name, type, id, fieldAnnotations);
+        String name = ctx.ID().getText();
+        TypeExprNode type = (TypeExprNode) visit(ctx.typeReference());
+
+        // Constructor is: FieldNode(Optional<Long> id, String name, TypeExprNode type, List<AnnotationNode> annotations)
+        return new FieldNode(id, name, type, annotations);
     }
 
     // EnumVariantContext missing error
     // @Override // Remove @Override
-     public AstNode visitEnumVariant(EnumVariantDefinitionContext ctx) { // Change context type
-        System.out.println("Visiting EnumVariantDefinition (was EnumVariant)");
-        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
-        Optional<Long> id = extractIdFromList(annotations);
-        String name = ctx.ID().getText();
-        Map<String, Object> variantAnnotations = mapAnnotations(annotations);
-        // EnumVariantNode constructor: (String name, Optional<Long> id, Map<String, Object> annotations)
-        return new EnumVariantNode(name, id, variantAnnotations);
+     @Override
+     public AstNode visitEnumVariantDefinition(EnumVariantDefinitionContext ctx) { // Corrected context type
+         List<AnnotationNode> annotations = Collections.emptyList();
+          if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
+             annotations = extractAnnotations(ctx.annotation());
+          }
+         Optional<Long> id = extractIdFromList(annotations);
+         // Map<String, Object> annotationMap = mapAnnotations(annotations.stream().filter(a -> !a.isIdAnnotation()).collect(Collectors.toList())); // Not needed for constructor
+
+         String name = ctx.ID().getText();
+         // Optional<ValueNode> value = Optional.empty(); // Not needed for constructor
+
+         // Constructor is: EnumVariantNode(Optional<Long> id, List<AnnotationNode> annotations, String name)
+         return new EnumVariantNode(id, annotations, name);
      }
 
 
@@ -445,138 +422,206 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
 
     // HistoryDefinitionContext missing error, rule renamed to historyStateDefinition
     // @Override // Remove @Override
-    public AstNode visitHistoryStateDefinition(HistoryStateDefinitionContext ctx) { // Rename method and context type
-        System.out.println("Visiting HistoryStateDefinition (was HistoryDefinition)");
+    public AstNode visitHistoryStateDefinition(HistoryStateDefinitionContext ctx) {
+        // History states don't have their own annotations or IDs in this grammar
+        // They belong to the parent state.
+        Optional<Long> id = Optional.empty();
+        Map<String, Object> annotationMap = Collections.emptyMap();
 
         HistoryStateType type = HistoryStateType.SHALLOW; // Default
-        if (ctx.historyType != null) {
-            if (ctx.historyType.getType() == SSoTLexer.DEEP) {
-                type = HistoryStateType.DEEP;
-            }
+        if (ctx.historyType != null && ctx.historyType.getType() == SSoTLexer.DEEP) {
+            type = HistoryStateType.DEEP;
         }
 
-        Optional<String> targetState = Optional.empty();
-         if (ctx.targetState != null) {
-             targetState = Optional.of(ctx.targetState.getText());
-         }
+        // Name is implicitly '$historyShallow' or '$historyDeep'
+        String name = (type == HistoryStateType.DEEP) ? "$historyDeep" : "$historyShallow";
 
-        // List<AnnotationNode> annotations = extractAnnotations(ctx.annotation()); // No annotations in grammar rule
-        // Optional<Long> id = extractIdFromList(annotations);
+        Optional<TransitionSpecNode> defaultTransition = Optional.empty();
+        TransitionSpecNode createdTransitionSpec = null;
 
-        // HistoryStateNode constructor: (HistoryStateType type, Optional<String> defaultTransitionTarget, Optional<Long> id, Map<String, Object> annotations)
-        return new HistoryStateNode(type, targetState, Optional.empty(), Collections.emptyMap()); // Pass empty id/annotations
+        if (ctx.targetState != null) {
+            String targetStateName = ctx.targetState.getText();
+            TargetStateNode targetNode = new TargetStateNode(targetStateName);
+            // TransitionSpecNode constructor does not take TransitionType.
+            // Actions, guards, allowedActors, blockAnnotations are empty for this simple default history transition.
+            createdTransitionSpec = new TransitionSpecNode(Optional.empty(), targetNode, Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyMap());
+        }
+        defaultTransition = Optional.ofNullable(createdTransitionSpec);
+
+        // HistoryStateNode constructor expects List<AnnotationNode>, not Map<String, Object>
+        // Grammar for historyStateDefinition does not include annotations.
+        return new HistoryStateNode(id, name, type, defaultTransition, Collections.emptyList());
     }
 
 
     // Overriding visit children for specific labeled alternatives
     @Override public AstNode visitIdAnnotation(IdAnnotationContext ctx) {
-        String name = ctx.ID().getText(); // Should be "id"
-        Long value = Long.parseLong(ctx.INT().getText());
-        return new AnnotationNode(name, value);
+        // Grammar: AT ID LPAREN INT RPAREN
+        String name = ctx.ID().getText(); // Should be 'id'
+        Long idValue = -1L; // Default error value
+        if (ctx.INT() != null) {
+            try {
+                idValue = Long.parseLong(ctx.INT().getText());
+            } catch (NumberFormatException e) {
+                 System.err.println("Error: Could not parse @id integer value: " + ctx.INT().getText());
+            }
+        } else {
+             System.err.println("Error: @id annotation missing integer value.");
+        }
+        // Constructor: AnnotationNode(String name, Object value, boolean isId)
+        return new AnnotationNode(name, idValue, true);
     }
 
     @Override public AstNode visitValueAnnotation(ValueAnnotationContext ctx) {
-        String name = ctx.annotationName().getText();
-        Object value = visitAnnotationValue(ctx.annotationValue()); // Visit the value part
-        return new AnnotationNode(name, value);
-    }
-
-    // Helper to visit the different kinds of annotation values
-    public Object visitAnnotationValue(AnnotationValueContext ctx) {
-        if (ctx.literal() != null) {
-            return visitLiteral(ctx.literal()).value; // Extract value from LiteralValueNode
-        } else if (ctx.ID() != null) {
-             // It's a reference (e.g., $protocol(HTTP))
-             return new RefValueNode(ctx.ID().getText()).value; // Return the string ID for now
-        } else if (ctx.LBRACK() != null) {
-             // It's an array
-             List<Object> values = new ArrayList<>();
-             if (ctx.literal() != null) {
-                 for (LiteralContext litCtx : ctx.literal()) {
-                     values.add(visitLiteral(litCtx).value); // Extract value
-                 }
-             }
-             return values;
+        // Grammar: DOLLAR annotationName annotationValue
+        String name = "";
+        if (ctx.annotationName() != null && ctx.annotationName().ID() != null) {
+            name = ctx.annotationName().ID().getText();
         }
-        return null; // Should not happen
+
+        ValueNode valueNode = new NullValueNode(); // Default
+        if (ctx.annotationValue() != null) {
+             valueNode = visitAnnotationValue(ctx.annotationValue());
+        }
+
+        // Constructor: AnnotationNode(String name, Object value, boolean isId)
+        return new AnnotationNode(name, valueNode.getActualValue(), false);
     }
 
-    // Updated visitLiteral based on grammar
+
+    // Change return type from Object to ValueNode
+    @Override
+    public ValueNode visitAnnotationValue(AnnotationValueContext ctx) {
+        // LPAREN literal RPAREN
+        if (ctx.literal() != null && ctx.literal().size() == 1) {
+            return visitLiteral(ctx.literal(0)); // Visit the single literal
+        }
+        // LPAREN ID RPAREN
+        else if (ctx.ID() != null) {
+            return new RefValueNode(ctx.ID().getText()); // Create RefValueNode for the ID
+        }
+        // LPAREN LBRACK (literal (COMMA literal)*)? RBRACK RPAREN
+        else if (ctx.LBRACK() != null) {
+            List<ValueNode> elements = new ArrayList<>();
+            if (ctx.literal() != null) { // literal() returns List<LiteralContext> here
+                for (LiteralContext literalCtx : ctx.literal()) {
+                    elements.add(visitLiteral(literalCtx));
+                }
+            }
+            return new ArrayValueNode(elements);
+        }
+        // LPAREN annotationObject RPAREN -> Added this case if grammar supports object literals in annotations
+        // else if (ctx.annotationObject() != null) { ... handle object ... }
+
+        System.err.println("Warning: Unhandled annotation value structure: " + ctx.getText());
+        return new NullValueNode();
+    }
+
+
     @Override public ValueNode visitLiteral(LiteralContext ctx) {
         if (ctx.STRING() != null) {
             return new StringValueNode(stripQuotes(ctx.STRING().getText()));
         } else if (ctx.INT() != null) {
-            return new NumberValueNode(Long.parseLong(ctx.INT().getText()));
+             try {
+                 return new NumberValueNode(Long.parseLong(ctx.INT().getText()));
+             } catch (NumberFormatException e) {
+                 System.err.println("Warning: Could not parse INT literal: " + ctx.INT().getText());
+                 return new NullValueNode();
+             }
         } else if (ctx.FLOAT() != null) {
-            return new NumberValueNode(Double.parseDouble(ctx.FLOAT().getText()));
+             try {
+                 return new NumberValueNode(Double.parseDouble(ctx.FLOAT().getText()));
+             } catch (NumberFormatException e) {
+                 System.err.println("Warning: Could not parse FLOAT literal: " + ctx.FLOAT().getText());
+                 return new NullValueNode();
+             }
         } else if (ctx.BOOLEAN() != null) {
             return new BooleanValueNode(Boolean.parseBoolean(ctx.BOOLEAN().getText()));
         } else if (ctx.NULL() != null) {
             return new NullValueNode();
         }
-        // Should not happen with the current grammar
-        throw new IllegalArgumentException("Unknown literal type: " + ctx.getText());
+
+        System.err.println("Warning: Unknown literal type: " + ctx.getText());
+        return new NullValueNode();
     }
 
-     // Visit Type Reference
      @Override
      public TypeExprNode visitTypeReference(TypeReferenceContext ctx) {
-         if (ctx.simpleType() != null) {
-             return (TypeExprNode) visit(ctx.simpleType());
-         } else if (ctx.listType() != null) {
-             return (TypeExprNode) visit(ctx.listType());
-         } else if (ctx.mapType() != null) {
-             return (TypeExprNode) visit(ctx.mapType());
-         } else if (ctx.optionalType() != null) {
-             return (TypeExprNode) visit(ctx.optionalType());
-         } else if (ctx.ID() != null) {
-             // It's a reference to a custom type (struct/enum)
-             return new RefTypeNode(ctx.ID().getText()); // Assuming RefTypeNode exists
-         }
-         throw new RuntimeException("Unhandled type reference: " + ctx.getText());
+        if (ctx.simpleType() != null) {
+            return (TypeExprNode) visitSimpleType(ctx.simpleType());
+        } else if (ctx.listType() != null) {
+            return (TypeExprNode) visitListType(ctx.listType());
+        } else if (ctx.mapType() != null) {
+            return (TypeExprNode) visitMapType(ctx.mapType());
+        } else if (ctx.optionalType() != null) {
+            return (TypeExprNode) visitOptionalType(ctx.optionalType());
+        } else if (ctx.ID() != null) {
+            return new RefTypeNode(ctx.ID().getText());
+        }
+        // Should not happen based on grammar
+        throw new IllegalStateException("Invalid TypeReference context: " + ctx.getText());
      }
 
-     @Override public AstNode visitSimpleType(SimpleTypeContext ctx) {
-         if (ctx.PRIMITIVE_TYPE() != null) {
-             return new PrimitiveTypeNode(ctx.PRIMITIVE_TYPE().getText());
-         } else if (ctx.TIMESTAMP_TYPE() != null) {
-             // Decide if timestamp is primitive or its own type node
-             return new PrimitiveTypeNode(ctx.TIMESTAMP_TYPE().getText());
-         }
-         throw new RuntimeException("Unknown simple type: " + ctx.getText());
-     }
+      @Override public AstNode visitSimpleType(SimpleTypeContext ctx) {
+          // Grammar: simpleType: PRIMITIVE_TYPE | TIMESTAMP_TYPE ;
+          String typeName = ctx.getText(); // Get the full text (e.g., "string", "int", "timestamp")
+          try {
+              // Attempt to parse as a known primitive type
+              // Convert text to uppercase to match enum constants (STRING, INT, BOOLEAN, etc.)
+              PrimitiveTypeNode.PrimitiveType primitive = PrimitiveTypeNode.PrimitiveType.valueOf(typeName.toUpperCase());
+              return new PrimitiveTypeNode(primitive);
+          } catch (IllegalArgumentException e) {
+              // If not a primitive, handle other cases like TIMESTAMP_TYPE or error
+              if ("timestamp".equalsIgnoreCase(typeName)) {
+                    // Assuming TIMESTAMP is a distinct type or represented differently
+                    // For now, maybe treat as RefTypeNode or a specific TimestampTypeNode if it exists
+                    // return new TimestampTypeNode(); // If TimestampTypeNode exists
+                    System.err.println("Warning: Timestamp type handling needs specific AST node.");
+                    return new RefTypeNode(typeName); // Fallback
+              } else {
+                  System.err.println("Error: Unknown simple type: " + typeName);
+                  return new RefTypeNode("ERROR_UNKNOWN_SIMPLE_TYPE"); // Error node
+              }
+          }
+      }
 
-     @Override public AstNode visitListType(ListTypeContext ctx) {
-         TypeExprNode elementType = (TypeExprNode) visitTypeReference(ctx.typeReference());
-         return new ListTypeNode(elementType);
-     }
+      @Override public AstNode visitListType(ListTypeContext ctx) {
+          TypeExprNode elementType = (TypeExprNode) visitTypeReference(ctx.typeReference());
+          return new ListTypeNode(elementType);
+      }
 
-     @Override public AstNode visitMapType(MapTypeContext ctx) {
-         TypeExprNode keyType = (TypeExprNode) visitTypeReference(ctx.typeReference(0));
-         TypeExprNode valueType = (TypeExprNode) visitTypeReference(ctx.typeReference(1));
-         return new MapTypeNode(keyType, valueType);
-     }
+      @Override public AstNode visitMapType(MapTypeContext ctx) {
+          TypeExprNode keyType = (TypeExprNode) visitTypeReference(ctx.typeReference(0));
+          TypeExprNode valueType = (TypeExprNode) visitTypeReference(ctx.typeReference(1));
+          return new MapTypeNode(keyType, valueType);
+      }
 
-     @Override public AstNode visitOptionalType(OptionalTypeContext ctx) {
-         TypeExprNode innerType = (TypeExprNode) visitTypeReference(ctx.typeReference());
-         return new OptionalTypeNode(innerType);
-     }
+      @Override public AstNode visitOptionalType(OptionalTypeContext ctx) {
+          TypeExprNode innerType = (TypeExprNode) visitTypeReference(ctx.typeReference());
+          return new OptionalTypeNode(innerType);
+      }
 
 
+    // Helper to extract annotations from a list of AnnotationContexts
     private List<AnnotationNode> extractAnnotations(List<AnnotationContext> annotationCtxs) {
-         if (annotationCtxs == null || annotationCtxs.isEmpty()) {
-             return Collections.emptyList();
-         }
-         List<AnnotationNode> annotations = new ArrayList<>();
-         for (AnnotationContext ctx : annotationCtxs) {
-             AstNode node = visit(ctx); // Uses labeled alternatives (visitIdAnnotation, visitValueAnnotation)
-             if (node instanceof AnnotationNode) {
-                 annotations.add((AnnotationNode) node);
-             }
-         }
-         return annotations;
-     }
+        List<AnnotationNode> annotations = new ArrayList<>();
+        if (annotationCtxs != null) {
+            for (AnnotationContext annotationCtx : annotationCtxs) {
+                // Visit should return AnnotationNode based on visitIdAnnotation/visitValueAnnotation
+                AstNode visitedNode = visit(annotationCtx);
+                if (visitedNode instanceof AnnotationNode) {
+                    annotations.add((AnnotationNode) visitedNode);
+                } else if (visitedNode != null) {
+                     System.err.println("Warning: Visiting AnnotationContext did not yield AnnotationNode: " + visitedNode.getClass().getName());
+                } else {
+                     System.err.println("Warning: Visiting AnnotationContext returned null: " + annotationCtx.getText());
+                }
+            }
+        }
+        return annotations;
+    }
 
+     // Helper to convert a list of AnnotationNodes into a map for AST nodes
      private Map<String, Object> mapAnnotations(List<AnnotationNode> annotationNodes) {
         Map<String, Object> map = new HashMap<>();
         if (annotationNodes != null) {
@@ -589,5 +634,336 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         }
         return map;
     }
-}
+
+      // Helper to extract annotations from various contexts that might have them
+      // This helper is largely superseded by direct access in visitFile using specific context types.
+      // Keeping it for now in case it's used by other methods for non-DefinitionBlock contexts.
+      private List<AnnotationNode> extractAnnotationsFromContext(ParseTree ctx) {
+          if (ctx instanceof StructFieldDefinitionContext) { // Example: field annotations
+               StructFieldDefinitionContext sfCtx = (StructFieldDefinitionContext) ctx;
+               if (sfCtx.annotation() != null && !sfCtx.annotation().isEmpty()) {
+                   return extractAnnotations(sfCtx.annotation());
+               }
+          } else if (ctx instanceof EnumVariantDefinitionContext) { // Example: enum variant annotations
+              EnumVariantDefinitionContext evCtx = (EnumVariantDefinitionContext) ctx;
+              if (evCtx.annotation() != null && !evCtx.annotation().isEmpty()) {
+                  return extractAnnotations(evCtx.annotation());
+              }
+          } else if (ctx instanceof StateBodyContext) { // Annotations within a state body's {} block
+              StateBodyContext sbCtx = (StateBodyContext) ctx;
+              if (sbCtx.annotation() != null && !sbCtx.annotation().isEmpty()) {
+                  return extractAnnotations(sbCtx.annotation());
+              }
+          }
+          // DefinitionBlockContext annotations are handled directly in visitFile.
+          return Collections.emptyList();
+      }
+
+    // --- Implementation for Block Content Definitions ---
+
+    // Types Block visitors
+    @Override
+    public AstNode visitStructDefinition(StructDefinitionContext ctx) {
+        // Annotations are handled by the parent TypeDefinition or DefinitionBlock
+        String name = ctx.ID().getText();
+        List<FieldNode> fields = new ArrayList<>();
+        if (ctx.structFieldDefinition() != null) {
+            for (StructFieldDefinitionContext fieldCtx : ctx.structFieldDefinition()) {
+                 AstNode visitedField = visit(fieldCtx);
+                 if (visitedField instanceof FieldNode) {
+                    fields.add((FieldNode) visitedField);
+                 } else {
+                     System.err.println("Warning: Visiting struct field did not yield FieldNode: " + fieldCtx.getText());
+                 }
+            }
+        }
+        // Assuming TypeDefNode represents both structs and enums, using TypeKind.STRUCT
+        // Constructor: TypeDefNode(Optional<Long> id, List<AnnotationNode> annotations, String name, TypeKind kind, List<?> members)
+        // ID and annotations come from parent, pass empty placeholders for now. Members are FieldNodes.
+        return new TypeDefNode(Optional.empty(), Collections.emptyList(), name, TypeDefNode.TypeKind.STRUCT, fields);
+    }
+
+    @Override
+    public AstNode visitEnumDefinition(EnumDefinitionContext ctx) {
+        // Annotations are handled by the parent TypeDefinition or DefinitionBlock
+        String name = ctx.ID().getText();
+        List<EnumVariantNode> variants = new ArrayList<>();
+        if (ctx.enumVariantDefinition() != null) {
+            for (EnumVariantDefinitionContext variantCtx : ctx.enumVariantDefinition()) {
+                 AstNode visitedVariant = visit(variantCtx);
+                 if (visitedVariant instanceof EnumVariantNode) {
+                    variants.add((EnumVariantNode) visitedVariant);
+                 } else {
+                      System.err.println("Warning: Visiting enum variant did not yield EnumVariantNode: " + variantCtx.getText());
+                 }
+            }
+        }
+         // Constructor: TypeDefNode(Optional<Long> id, List<AnnotationNode> annotations, String name, TypeKind kind, List<?> members)
+         // ID and annotations come from parent, pass empty placeholders. Members are EnumVariantNodes.
+        return new TypeDefNode(Optional.empty(), Collections.emptyList(), name, TypeDefNode.TypeKind.ENUM, variants);
+    }
+
+     // Service Block visitors
+    @Override
+    public AstNode visitInterfaceDefinition(InterfaceDefinitionContext ctx) {
+        // ID/Annotations are handled by parent DefinitionBlock
+        String name = ctx.ID().getText();
+         List<MethodNode> methods = new ArrayList<>();
+         List<AnnotationNode> innerAnnotations = new ArrayList<>(); // Annotations inside interface {} block
+
+         if (ctx.annotation() != null) {
+              innerAnnotations.addAll(extractAnnotations(ctx.annotation()));
+         }
+         if (ctx.methodDefinition() != null) {
+             for (MethodDefinitionContext methodCtx : ctx.methodDefinition()) {
+                 AstNode visitedMethod = visit(methodCtx);
+                 if (visitedMethod instanceof MethodNode) {
+                     methods.add((MethodNode)visitedMethod);
+                 } else {
+                      System.err.println("Warning: Visiting method definition did not yield MethodNode: " + methodCtx.getText());
+                 }
+             }
+         }
+         // Constructor: InterfaceNode(Optional<Long> id, String name, List<MethodNode> methods, List<AnnotationNode> innerAnnotations)
+         // ID comes from parent block, pass placeholder. Pass extracted inner annotations.
+        return new InterfaceNode(Optional.empty(), name, methods, innerAnnotations);
+    }
+
+    @Override
+    public AstNode visitServiceDefinition(ServiceDefinitionContext ctx) {
+         // ID/Annotations are handled by parent DefinitionBlock
+         String name = ctx.ID().getText();
+         List<AnnotationNode> innerAnnotations = new ArrayList<>(); // Annotations inside service {} block (e.g., $implements)
+         if (ctx.annotation() != null) {
+             innerAnnotations.addAll(extractAnnotations(ctx.annotation()));
+         }
+         // Constructor: ServiceDefinitionNode(Optional<Long> id, String name, List<AnnotationNode> innerAnnotations)
+         // ID comes from parent block, pass placeholder.
+        return new ServiceDefinitionNode(Optional.empty(), name, innerAnnotations);
+    }
+
+    // Actor Block visitor
+    @Override
+    public AstNode visitActorDefinition(ActorDefinitionContext ctx) {
+        // Outer annotations are handled by parent DefinitionBlock
+        String name = ctx.ID().getText();
+        List<AnnotationNode> innerAnnotations = new ArrayList<>();
+         if (ctx.annotation() != null) {
+             innerAnnotations.addAll(extractAnnotations(ctx.annotation()));
+         }
+         // Constructor: ActorNode(Optional<Long> id, String name, List<AnnotationNode> innerAnnotations)
+         // ID comes from parent block, pass placeholder.
+        return new ActorNode(Optional.empty(), name, innerAnnotations);
+    }
+
+    // Machine Block visitor
+    @Override
+    public AstNode visitMachineDefinition(MachineDefinitionContext ctx) {
+         // ID/Annotations are handled by parent DefinitionBlock
+        String name = ctx.ID().getText();
+        // Process machine body elements (states, actions, guards)
+         ContextNode context = null;
+         List<ActionDefinitionNode> actions = new ArrayList<>();
+         List<GuardDefinitionNode> guards = new ArrayList<>();
+         List<InvokeDefinitionNode> invokes = new ArrayList<>(); // Assuming invokes are defined here? Grammar shows them in states.
+         List<StateNode> states = new ArrayList<>();
+         Optional<String> initialState = Optional.empty();
+         List<HistoryStateNode> historyStates = new ArrayList<>();
+
+         // Iterate through machineBodyElement
+         if (ctx.machineBodyElement() != null) {
+             for (MachineBodyElementContext elementCtx : ctx.machineBodyElement()) {
+                 if (elementCtx.statesDefinition() != null) {
+                     // Visit statesDefinition to populate states, initialState, historyStates
+                     visitStatesDefinition(elementCtx.statesDefinition(), states, historyStates); // Helper needed
+                     // Extract initial state if defined within statesDefinition
+                     if (elementCtx.statesDefinition().initialStateDefinition() != null) {
+                         initialState = Optional.of(elementCtx.statesDefinition().initialStateDefinition().ID().getText());
+                     }
+                 } else if (elementCtx.actionsDefinition() != null) {
+                     actions.addAll(visitActionsDefinition(elementCtx.actionsDefinition())); // Helper needed
+                 } else if (elementCtx.guardsDefinition() != null) {
+                      guards.addAll(visitGuardsDefinition(elementCtx.guardsDefinition())); // Helper needed
+                 } else {
+                      System.err.println("Warning: Unknown machine body element: " + elementCtx.getText());
+                 }
+             }
+         }
+
+        // Constructor: MachineDefinitionNode(Optional<Long> id, String name, ContextNode context, List<ActionDefinitionNode> actions, List<GuardDefinitionNode> guards, List<InvokeDefinitionNode> invokes, List<StateNode> states, Optional<String> initialState, List<HistoryStateNode> historyStates)
+        // ID from parent block. Context/Invokes might be null/empty depending on AST structure.
+        return new MachineDefinitionNode(Optional.empty(), name, context, actions, guards, invokes, states, initialState, historyStates);
+    }
+
+     // Communication Block visitors
+    @Override
+    public AstNode visitProtocolDefinition(ProtocolDefinitionContext ctx) {
+         // ID/Annotations are handled by parent DefinitionBlock
+         String name = ctx.ID().getText();
+         List<AnnotationNode> innerAnnotations = new ArrayList<>();
+         if (ctx.annotation() != null) {
+             innerAnnotations.addAll(extractAnnotations(ctx.annotation()));
+         }
+         // Constructor: ProtocolNode(Optional<Long> id, String name, List<AnnotationNode> innerAnnotations)
+         // ID comes from parent block, pass placeholder.
+        return new ProtocolNode(Optional.empty(), name, innerAnnotations);
+    }
+
+    @Override
+    public AstNode visitChannelDefinition(ChannelDefinitionContext ctx) {
+        // ID/Annotations are handled by parent DefinitionBlock
+        String name = ctx.ID().getText();
+        List<AnnotationNode> innerAnnotations = new ArrayList<>();
+        if (ctx.annotation() != null) {
+            innerAnnotations.addAll(extractAnnotations(ctx.annotation()));
+        }
+        // Constructor: ChannelNode(Optional<Long> id, String name, List<AnnotationNode> innerAnnotations)
+        // ID comes from parent block, pass placeholder.
+        return new ChannelNode(Optional.empty(), name, innerAnnotations);
+    }
+
+    @Override
+    public AstNode visitEventDefinition(EventDefinitionContext ctx) {
+        // ID/Annotations are handled by parent DefinitionBlock
+        String name = ctx.ID().getText();
+        List<AnnotationNode> innerAnnotations = new ArrayList<>();
+        List<FieldNode> fields = new ArrayList<>();
+
+        if (ctx.annotation() != null) {
+            innerAnnotations.addAll(extractAnnotations(ctx.annotation()));
+        }
+        if (ctx.eventFieldDefinition() != null) {
+            for (EventFieldDefinitionContext fieldCtx : ctx.eventFieldDefinition()) {
+                 // Assuming eventFieldDefinition is similar to structFieldDefinition
+                 // Need visitEventFieldDefinition method
+                 AstNode visitedField = visitEventFieldDefinition(fieldCtx); // Call specific visitor
+                 if (visitedField instanceof FieldNode) {
+                    fields.add((FieldNode) visitedField);
+                 } else {
+                      System.err.println("Warning: Visiting event field did not yield FieldNode: " + fieldCtx.getText());
+                 }
+            }
+        }
+        // Constructor: EventNode(Optional<Long> id, String name, List<FieldNode> fields, List<AnnotationNode> innerAnnotations)
+        // ID comes from parent block, pass placeholder.
+        return new EventNode(Optional.empty(), name, fields, innerAnnotations);
+    }
+
+    // Helper visitor for event fields (similar to struct fields)
+    public AstNode visitEventFieldDefinition(EventFieldDefinitionContext ctx) {
+        List<AnnotationNode> annotations = Collections.emptyList();
+        if (ctx.annotation() != null && !ctx.annotation().isEmpty()) {
+            annotations = extractAnnotations(ctx.annotation());
+        }
+        Optional<Long> id = extractIdFromList(annotations);
+        String name = ctx.ID().getText();
+        TypeExprNode type = (TypeExprNode) visit(ctx.typeReference());
+        // Constructor: FieldNode(Optional<Long> id, String name, TypeExprNode type, List<AnnotationNode> annotations)
+        return new FieldNode(id, name, type, annotations);
+    }
+
+     // --- Helper visitors for Machine Definition Body ---
+
+    public List<ActionDefinitionNode> visitActionsDefinition(ActionsDefinitionContext ctx) {
+        List<ActionDefinitionNode> actions = new ArrayList<>();
+        if (ctx.actionDefinition() != null) {
+            for(ActionDefinitionContext actionCtx : ctx.actionDefinition()) {
+                AstNode visitedAction = visitActionDefinition(actionCtx); // Need visitActionDefinition
+                if (visitedAction instanceof ActionDefinitionNode) {
+                    actions.add((ActionDefinitionNode)visitedAction);
+                } else {
+                     System.err.println("Warning: Visiting action definition did not yield ActionDefinitionNode: " + actionCtx.getText());
+                }
+            }
+        }
+        return actions;
+    }
+
+     public List<GuardDefinitionNode> visitGuardsDefinition(GuardsDefinitionContext ctx) {
+        List<GuardDefinitionNode> guards = new ArrayList<>();
+        if (ctx.guardDefinition() != null) {
+            for(GuardDefinitionContext guardCtx : ctx.guardDefinition()) {
+                 AstNode visitedGuard = visitGuardDefinition(guardCtx); // Need visitGuardDefinition
+                 if (visitedGuard instanceof GuardDefinitionNode) {
+                    guards.add((GuardDefinitionNode)visitedGuard);
+                 } else {
+                     System.err.println("Warning: Visiting guard definition did not yield GuardDefinitionNode: " + guardCtx.getText());
+                 }
+            }
+        }
+        return guards;
+     }
+
+     // Need to implement visitActionDefinition, visitGuardDefinition
+     public AstNode visitActionDefinition(ActionDefinitionContext ctx) {
+         // Grammar: ID LPAREN paramList? RPAREN SEMI
+         String name = ctx.ID().getText();
+         List<ParameterNode> params = new ArrayList<>();
+         if (ctx.paramList() != null) {
+             params.addAll(visitParamList(ctx.paramList())); // Need visitParamList helper
+         }
+         // ID/Annotations handled by parent block?
+         // Constructor: ActionDefinitionNode(Optional<Long> id, String name, List<ParameterNode> parameters, List<AnnotationNode> annotations)
+         return new ActionDefinitionNode(Optional.empty(), name, params, Collections.emptyList());
+     }
+
+     public AstNode visitGuardDefinition(GuardDefinitionContext ctx) {
+         // Grammar: ID LPAREN paramList? RPAREN (COLON typeReference)? SEMI
+         String name = ctx.ID().getText();
+         List<ParameterNode> params = new ArrayList<>();
+         if (ctx.paramList() != null) {
+             params.addAll(visitParamList(ctx.paramList())); // Need visitParamList helper
+         }
+         Optional<TypeExprNode> returnType = Optional.empty();
+         if (ctx.typeReference() != null) {
+             returnType = Optional.of((TypeExprNode) visit(ctx.typeReference()));
+             // TODO: Validate return type is boolean?
+         }
+          // ID/Annotations handled by parent block?
+          // Constructor: GuardDefinitionNode(Optional<Long> id, String name, List<ParameterNode> parameters, Optional<TypeExprNode> returnType, List<AnnotationNode> annotations)
+         return new GuardDefinitionNode(Optional.empty(), name, params, returnType, Collections.emptyList());
+     }
+
+     public List<ParameterNode> visitParamList(ParamListContext ctx) {
+         List<ParameterNode> params = new ArrayList<>();
+         if (ctx.parameter() != null) {
+             for (ParameterContext paramCtx : ctx.parameter()) {
+                 AstNode visitedParam = visitParameter(paramCtx); // Need visitParameter
+                 if (visitedParam instanceof ParameterNode) {
+                     params.add((ParameterNode)visitedParam);
+                 } else {
+                     System.err.println("Warning: Visiting parameter did not yield ParameterNode: " + paramCtx.getText());
+                 }
+             }
+         }
+         return params;
+     }
+
+      public AstNode visitParameter(ParameterContext ctx) {
+         // Grammar: ID COLON typeReference
+         String name = ctx.ID().getText();
+         TypeExprNode type = (TypeExprNode) visit(ctx.typeReference());
+         // Constructor: ParameterNode(String name, TypeExprNode type)
+         return new ParameterNode(name, type);
+      }
+
+
+    public void visitStatesDefinition(StatesDefinitionContext ctx, List<StateNode> states, List<HistoryStateNode> historyStates) {
+        // Handles initialStateDefinition? stateDefinitionOrHistoryState*
+        // Initial state name is extracted in visitMachineDefinition
+        if (ctx.stateDefinitionOrHistoryState() != null) {
+            for (StateDefinitionOrHistoryStateContext stateOrHistCtx : ctx.stateDefinitionOrHistoryState()) {
+                AstNode visitedNode = visit(stateOrHistCtx);
+                if (visitedNode instanceof StateNode) {
+                    states.add((StateNode) visitedNode);
+                } else if (visitedNode instanceof HistoryStateNode) {
+                    historyStates.add((HistoryStateNode) visitedNode);
+                } else if (visitedNode != null) {
+                     System.err.println("Warning: Visiting stateDefinitionOrHistoryState did not yield StateNode or HistoryStateNode: " + visitedNode.getClass().getName());
+                }
+            }
+        }
+    }
+
+} // End of class AstBuilderVisitor
 
