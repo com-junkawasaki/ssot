@@ -1,7 +1,9 @@
 package ssot_parser.ast;
 
 import ssot_parser.ast.nodes.*;
-import ssot_parser.SsotRoot;
+import ssot_parser.ast.type.*;
+import ssot_parser.ast.values.*;
+import ssot_parser.ast.SsotRoot;
 import ssot_parser.ast.nodes.ImportNode;
 import ssot_parser.ast.nodes.ContextVariableNode;
 // import ssot_parser.TypeDefNode; // Removed

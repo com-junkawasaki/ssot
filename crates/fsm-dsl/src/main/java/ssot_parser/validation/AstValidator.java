@@ -1,6 +1,6 @@
 package ssot_parser.validation;
 
-import ssot_parser.SsotRoot;
+import ssot_parser.ast.SsotRoot;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.nodes.*;
 import ssot_parser.ast.nodes.InterfaceNode;
@@ -108,10 +108,14 @@ public class AstValidator {
         return Collections.unmodifiableList(errors);
     }
 
+    public List<ValidationError> getErrors() {
+        return Collections.unmodifiableList(errors);
+    }
+
     // --- Pre-collection methods ---
     private void collectDefinedTypeNames() {
-        if (astRoot.getTypeDefs() != null) {
-            for (TypeDefNode typeDef : astRoot.getTypeDefs()) {
+        if (astRoot.getTypeDefinitions() != null) {
+            for (TypeDefNode typeDef : astRoot.getTypeDefinitions()) {
                 if (!definedTypeNames.add(typeDef.getName())) {
                     addError("Duplicate type definition name '" + typeDef.getName() + "'.", typeDef);
                 }
@@ -121,10 +125,16 @@ public class AstValidator {
     }
 
     private void collectInterfaceDefinitions() {
-        if (astRoot.getInterfaceNodes() != null) {
-            for (InterfaceNode iface : astRoot.getInterfaceNodes()) {
-                if (interfaceDefinitionsMap.put(iface.getName(), iface) != null) {
-                    addError("Duplicate interface definition name '" + iface.getName() + "'.", iface);
+        if (astRoot.getServiceDefinitions() != null) {
+            for (AstNode serviceOrInterface : astRoot.getServiceDefinitions()) {
+                if (serviceOrInterface instanceof InterfaceNode) {
+                    InterfaceNode interfaceNode = (InterfaceNode) serviceOrInterface;
+                    if (interfaceNode.getName() == null || interfaceNode.getName().isEmpty()) {
+                        addError("Interface definition has no name.", interfaceNode);
+                    }
+                    if (interfaceDefinitionsMap.put(interfaceNode.getName(), interfaceNode) != null) {
+                        addError("Duplicate interface definition name '" + interfaceNode.getName() + "'.", interfaceNode);
+                    }
                 }
             }
         }
@@ -149,8 +159,8 @@ public class AstValidator {
                  }
             }
         }
-        if (astRoot.getMachineNodes() != null) {
-             for (MachineNode machine : astRoot.getMachineNodes()) {
+        if (astRoot.getMachineDefinitions() != null) {
+             for (MachineNode machine : astRoot.getMachineDefinitions()) {
                  if (!definedMachineNames.add(machine.getMachineName())) {
                       addError("Duplicate machine definition name '" + machine.getMachineName() + "'.", machine);
                  }
@@ -223,27 +233,28 @@ public class AstValidator {
     // --- Placeholder validation methods for different blocks --- 
 
     private void validateMachines() {
-        if (astRoot.getMachineNodes() == null) return;
-        Map<Long, AstNode> seenIds = new HashMap<>();
+        if (astRoot.getMachineDefinitions() != null) {
+            Map<Long, AstNode> seenIds = new HashMap<>();
 
-        for (MachineNode machine : astRoot.getMachineNodes()) {
-             Map<Long, AstNode> seenIdsInMachine = new HashMap<>();
-             checkAndRegisterId(machine, seenIds);
-             checkAndRegisterId(machine, seenIdsInMachine);
+            for (MachineNode machine : astRoot.getMachineDefinitions()) {
+                 Map<Long, AstNode> seenIdsInMachine = new HashMap<>();
+                 checkAndRegisterId(machine, seenIds);
+                 checkAndRegisterId(machine, seenIdsInMachine);
 
-             Set<String> definedActionNames = machine.getActions().stream()
-                                                 .map(ActionDefinitionNode::getActionName)
-                                                 .collect(Collectors.toSet());
-             Set<String> definedGuardNames = machine.getGuards().stream()
-                                                .map(GuardDefinitionNode::getGuardName)
-                                                .collect(Collectors.toSet());
+                 Set<String> definedActionNames = machine.getActions().stream()
+                                                     .map(ActionDefinitionNode::getActionName)
+                                                     .collect(Collectors.toSet());
+                 Set<String> definedGuardNames = machine.getGuards().stream()
+                                                    .map(GuardDefinitionNode::getGuardName)
+                                                    .collect(Collectors.toSet());
 
-             // Context validation
-             machine.getContext().ifPresent(contextNode -> validateContext(contextNode, seenIdsInMachine));
+                 // Context validation
+                 machine.getContext().ifPresent(contextNode -> validateContext(contextNode, seenIdsInMachine));
 
-             validateMachineStateHierarchy(machine, null, definedActionNames, definedGuardNames, seenIdsInMachine);
-             Set<String> allDefinedStateNames = collectAllStateNames(machine);
-             validateUnreachableStates(machine, allDefinedStateNames);
+                 validateMachineStateHierarchy(machine, null, definedActionNames, definedGuardNames, seenIdsInMachine);
+                 Set<String> allDefinedStateNames = collectAllStateNames(machine);
+                 validateUnreachableStates(machine, allDefinedStateNames);
+            }
         }
     }
 
@@ -676,8 +687,8 @@ public class AstValidator {
     }
 
     private void validateTypes() {
-        if (astRoot.getTypeDefs() != null) {
-            for (TypeDefNode typeDef : astRoot.getTypeDefs()) {
+        if (astRoot.getTypeDefinitions() != null) {
+            for (TypeDefNode typeDef : astRoot.getTypeDefinitions()) {
                 checkAndRegisterId(typeDef, new HashMap<>());
                  if (typeDef.getKind() == TypeDefNode.TypeKind.ENUM) {
                      validateEnum(typeDef);
@@ -858,27 +869,24 @@ public class AstValidator {
     private void validateCrossCuttingConcerns() {
         // --- Global ID Uniqueness Check ---
         // Types
-        if (astRoot.getTypeDefs() != null) {
-            for (TypeDefNode typeDef : astRoot.getTypeDefs()) {
+        if (astRoot.getTypeDefinitions() != null) {
+            for (TypeDefNode typeDef : astRoot.getTypeDefinitions()) {
                 checkAndRegisterGlobalId(typeDef);
             }
         }
         // Services (Interfaces and ServiceDefinitions)
-        if (astRoot.getServiceDefinitions() != null) { // This getter returns List<ServiceDefinitionNode>
-            for (ServiceDefinitionNode serviceDefNode : astRoot.getServiceDefinitions()) { // Corrected from AstNode to ServiceDefinitionNode
-                checkAndRegisterGlobalId(serviceDefNode);
-            }
-            // TODO: Iterate over InterfaceNode as well for global ID check if they are not covered
-            // by the above, e.g. if they are separate from ServiceDefinitionNode in how they are stored/accessed.
-            // For now, assuming ServiceDefinitionNode covers the primary service elements with IDs.
-            // If InterfaceNodes are collected into interfaceDefinitionsMap, that could be a source:
-            for (InterfaceNode ifaceNode : this.interfaceDefinitionsMap.values()) {
-                 checkAndRegisterGlobalId(ifaceNode);
+        if (astRoot.getServiceDefinitions() != null) {
+            for (AstNode serviceOrInterface : astRoot.getServiceDefinitions()) {
+                 if (serviceOrInterface instanceof ServiceDefinitionNode) {
+                      checkAndRegisterGlobalId((ServiceDefinitionNode)serviceOrInterface);
+                 } else if (serviceOrInterface instanceof InterfaceNode) {
+                     checkAndRegisterGlobalId((InterfaceNode)serviceOrInterface);
+                 }
             }
         }
         // Machines
-        if (astRoot.getMachineNodes() != null) {
-            for (MachineNode machine : astRoot.getMachineNodes()) {
+        if (astRoot.getMachineDefinitions() != null) {
+            for (MachineNode machine : astRoot.getMachineDefinitions()) {
                 checkAndRegisterGlobalId(machine);
                 // IDs within machines (states, transitions, etc.) are handled by checkAndRegisterId
                 // with a scoped map. We are primarily concerned with top-level @id annotations here.

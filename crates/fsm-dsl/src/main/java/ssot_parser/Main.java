@@ -8,6 +8,7 @@ import java.util.List; // Needed for validation errors
 // Remove unused List import if token printing is kept commented
 // import java.util.List;
 import ssot_parser.ast.AstNode;
+import ssot_parser.ast.SsotRoot;
 
 public class Main {
     public static void main(String[] args) throws Exception {
@@ -59,10 +60,11 @@ public class Main {
             SsotRoot root = (SsotRoot) ast;
             System.out.println("\nValidating AST...");
             AstValidator validator = new AstValidator();
-            List<AstValidator.ValidationError> validationErrors = validator.validate(root);
+            validator.validate(root);
+            List<AstValidator.ValidationError> errors = validator.getErrors();
             System.out.println("Validation finished.");
 
-            if (validationErrors.isEmpty()) {
+            if (errors.isEmpty()) {
                 System.out.println("\nAST validation successful!");
                 // Print the generated AST (optional)
                 // System.out.println("\n--- Generated AST ---");
@@ -73,7 +75,7 @@ public class Main {
 
             } else {
                 System.err.println("\n--- AST Validation Failed ---");
-                for (AstValidator.ValidationError error : validationErrors) {
+                for (AstValidator.ValidationError error : errors) {
                     System.err.println("- " + error.message());
                 }
                 System.err.println("---------------------------");
@@ -105,6 +107,17 @@ public class Main {
         }
         System.out.println("--- End Tokens ---");
         */
+
+        // Example: Use the validation results from ssot_parser.validation.AstValidator
+        ssot_parser.validation.AstValidator validator2 = new ssot_parser.validation.AstValidator((ssot_parser.ast.SsotRoot) ast);
+        validator2.validate(); // validation パッケージの方を呼び出し
+        List<ssot_parser.validation.ValidationError> errors2 = validator2.getErrors();
+        if (!errors2.isEmpty()) {
+             System.err.println("AST validation (validation package) failed with " + errors2.size() + " errors:");
+             for (ssot_parser.validation.ValidationError error : errors2) {
+                 System.err.println("- " + error.getMessage());
+             }
+        }
     }
 
     // underlineError method is not needed for this test

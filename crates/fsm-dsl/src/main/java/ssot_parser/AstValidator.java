@@ -5,8 +5,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.Map;
+import java.util.HashMap;
 import ssot_parser.ast.AstNode;
 import ssot_parser.ast.nodes.TypeDefNode;
+import ssot_parser.ast.SsotRoot;
 
 /**
  * Validates the constructed Abstract Syntax Tree (AST) for semantic errors,
@@ -38,28 +40,30 @@ public class AstValidator {
     private final List<ValidationError> errors = new ArrayList<>();
 
     /**
-     * Validates the entire SSOT AST.
+     * Validates the entire AST starting from the root node.
      * @param root The root node of the AST.
-     * @return A list of validation errors found. Empty if validation passes.
      */
-    public List<ValidationError> validate(SsotRoot root) {
-        errors.clear();
-        System.out.println("Starting AST validation...");
-
+    public void validate(SsotRoot root) {
         if (root == null) {
-            errors.add(new ValidationError("AST root node is null.", null));
-            return errors;
+            errors.add(new ValidationError("Root node cannot be null.", null));
+            return;
         }
 
-        // Validate different parts of the AST
-        validateTypeDefinitions(root.getTypeDefs());
+        // Example validation: Check for duplicate type definitions
+        Map<String, TypeDefNode> typeNames = new HashMap<>();
+        for (TypeDefNode typeDef : root.getTypeDefinitions()) {
+            if (typeNames.containsKey(typeDef.getName())) {
+                errors.add(new ValidationError("Duplicate type definition: " + typeDef.getName(), typeDef));
+            } else {
+                typeNames.put(typeDef.getName(), typeDef);
+            }
+            // TODO: Add more specific validation for each type definition
+        }
 
-        // TODO: Add calls to validate other definition types (services, machines) using their getters
-        // validateServiceDefinitions(root.getServiceDefinitions());
-        // validateMachineDefinitions(root.getMachineDefinitions());
+        // TODO: Add validation for other definitions (services, machines, etc.)
 
-        System.out.println("AST validation finished.");
-        return errors;
+        // Example: Check for undefined type references within fields (if applicable)
+        // This would require iterating through all structure fields, service parameters, etc.
     }
 
     private void validateTypeDefinitions(List<TypeDefNode> typeDefs) {
@@ -86,4 +90,11 @@ public class AstValidator {
     // - validateFieldTypes(List<FieldNode> fields, SymbolTable availableTypes)
     // - validateReferences(...) - Check if imported/referenced types/services exist
 
+    /**
+     * Returns the list of validation errors found.
+     * @return A list of ValidationError objects.
+     */
+    public List<ValidationError> getErrors() {
+        return errors;
+    }
 } 
