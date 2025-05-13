@@ -297,17 +297,20 @@ public class AstValidator {
         // Second pass: Validate transitions, invokes, actions for each state at this level
         Set<String> allStateNamesInMachine = collectAllStateNames(machine); // Get all state names for target validation
         for (StateNode state : currentLevelStates) {
-            validateStateContent(state, allStateNamesInMachine, definedActionNames, definedGuardNames);
+            // Pass the machine and current parentState (which is parentOfState for 'state')
+            validateStateContent(state, machine, parentState, allStateNamesInMachine, definedActionNames, definedGuardNames);
 
             // Recursively validate nested states
             if (state.getNestedStates() != null && !state.getNestedStates().isEmpty()) {
-                 validateMachineStateHierarchy(machine, state, definedActionNames, definedGuardNames, seenIdsInScope); // Pass same maps down
+                 // When recursing, 'state' becomes the parentState for its children
+                 validateMachineStateHierarchy(machine, state, definedActionNames, definedGuardNames, seenIdsInScope);
             }
         }
     }
 
     // Helper to validate content of a single state (transitions, invokes, entry/exit)
-    private void validateStateContent(StateNode state, Set<String> allStateNames, Set<String> definedActionNames, Set<String> definedGuardNames) {
+    // Added MachineNode machine, StateNode parentOfState parameters
+    private void validateStateContent(StateNode state, MachineNode machine, StateNode parentOfState, Set<String> allStateNames, Set<String> definedActionNames, Set<String> definedGuardNames) {
          // Validate onEntry/onExit actions
          validateActionReferences(state.getEntryActions(), definedActionNames, "onEntry", state);
          validateActionReferences(state.getExitActions(), definedActionNames, "onExit", state);
@@ -353,7 +356,30 @@ public class AstValidator {
                  TargetStateNode targetNode = transition.getTargetState();
                  if (targetNode != null && targetNode.getType() == TargetStateNode.TargetType.STATE_REFERENCE) {
                      String targetName = targetNode.getStateName().orElse(null);
-                     if (targetName == null || targetName.isEmpty() || !allStateNames.contains(targetName)) {
+                     boolean isValidTarget = false;
+
+                     if (targetName != null && !targetName.isEmpty()) {
+                         if (allStateNames.contains(targetName)) { // Check if it's a regular defined state
+                             isValidTarget = true;
+                         } else if (targetName.equals("H")) { // Convention for history pseudo-state
+                             boolean historyFound = false;
+                             if (parentOfState != null) { // 'state' is a nested state, check its parent for history
+                                 if (parentOfState.getHistory().isPresent()) {
+                                     historyFound = true;
+                                 }
+                             } else { // 'state' is a top-level state in the machine, check machine for top-level history
+                                 // AstBuilderVisitor adds HistoryStateNode to the machine's list of states.
+                                 if (machine.getStates().stream().anyMatch(s -> s instanceof HistoryStateNode)) {
+                                     historyFound = true;
+                                 }
+                             }
+                             if (historyFound) {
+                                 isValidTarget = true;
+                             }
+                         }
+                     }
+
+                     if (!isValidTarget) {
                          addError("Transition target state '" + (targetName != null ? targetName : "<empty_or_null>") + "' for event '" + transition.getEvent() + "' from state '" + state.getStateName() + "' is not defined or empty.", transition);
                      }
                  } else if (targetNode == null) {

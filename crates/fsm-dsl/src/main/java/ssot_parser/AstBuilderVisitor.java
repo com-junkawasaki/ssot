@@ -329,22 +329,18 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     public AstNode visitMachineDefinition(MachineDefinitionContext ctx, Optional<Long> blockId, List<AnnotationNode> blockAnnotations) {
         String machineName = ctx.ID().getText();
 
-        // Assuming annotations from the block apply here. If machines need their own @id/@ann, this needs rework.
         Optional<Long> machineId = blockId;
         List<AnnotationNode> machineAnnotations = blockAnnotations;
 
-        // ... process body elements (states, actions, guards) ...
-        List<StateNode> states = new ArrayList<>();
+        List<AstNode> machineLevelAstNodes = new ArrayList<>();
         List<ActionDefinitionNode> actions = new ArrayList<>();
         List<GuardDefinitionNode> guards = new ArrayList<>();
         String initialStateName = null;
 
-        // Process machine body elements
         if (ctx.machineBodyElement() != null) {
             for (MachineBodyElementContext bodyCtx : ctx.machineBodyElement()) {
                 if (bodyCtx.statesDefinition() != null) {
-                    // Process states definition - Populates 'states' list and returns initial state name
-                     initialStateName = processStatesDefinition(bodyCtx.statesDefinition(), states);
+                    initialStateName = processStatesDefinition(bodyCtx.statesDefinition(), machineLevelAstNodes);
                 } else if (bodyCtx.actionsDefinition() != null) {
                      actions.addAll(visitActionsDefinitionHelper(bodyCtx.actionsDefinition()));
                 } else if (bodyCtx.guardsDefinition() != null) {
@@ -353,47 +349,39 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             }
         }
 
-        // Ensure we return a MachineNode using the correct constructor
-        // public MachineNode(Optional<Long> id, String machineName, String initialStateName,
-        //                    Optional<ContextNode> context, List<ActionDefinitionNode> actions,
-        //                    List<GuardDefinitionNode> guards, List<InvokeDefinitionNode> invokes,
-        //                    List<AstNode> states, List<AnnotationNode> annotations)
         return new MachineNode(
-            machineId,       // Use ID passed down from block
+            machineId,
             machineName,
-            initialStateName, // From processStatesDefinition
-            Optional.empty(), // ContextNode not handled yet
+            initialStateName,
+            Optional.empty(),
             actions,
             guards,
-            Collections.emptyList(), // InvokeDefinitionNode not handled yet
-            new ArrayList<>(states), // Convert List<StateNode> to List<AstNode>
-            machineAnnotations // Use Annotations passed down from block
+            Collections.emptyList(),
+            machineLevelAstNodes,
+            machineAnnotations
         );
     }
 
     // Helper to process states { ... }
-    // Returns the initial state name for this scope and populates the 'states' list
-    private String processStatesDefinition(StatesDefinitionContext ctx, List<StateNode> states) {
-        // Extract initial state name defined in this scope
+    // Returns the initial state name for this scope and populates the 'collectedNodes' list
+    private String processStatesDefinition(StatesDefinitionContext ctx, List<AstNode> collectedNodes) {
         String initialState = null;
         if (ctx.initialStateDefinition() != null) {
             initialState = ctx.initialStateDefinition().ID().getText();
         }
 
-        // Visit state definitions and history states
         if (ctx.stateDefinitionOrHistoryState() != null) {
             for (StateDefinitionOrHistoryStateContext stateOrHistCtx : ctx.stateDefinitionOrHistoryState()) {
                 AstNode visitedNode = visit(stateOrHistCtx);
-                if (visitedNode instanceof StateNode) {
-                    states.add((StateNode) visitedNode);
+                if (visitedNode instanceof StateNode || visitedNode instanceof HistoryStateNode) {
+                    collectedNodes.add(visitedNode);
                 } else if (visitedNode != null) {
-                     System.err.println("Warning: Visiting stateDefinitionOrHistoryState did not yield StateNode: " + visitedNode.getClass().getName() + " for text: " + stateOrHistCtx.getText());
+                     System.err.println("Warning: Visiting stateDefinitionOrHistoryState did not yield StateNode or HistoryStateNode: " + visitedNode.getClass().getName() + " for text: " + stateOrHistCtx.getText());
                 } else {
                     System.err.println("Warning: Visiting stateDefinitionOrHistoryState returned null for text: " + stateOrHistCtx.getText());
                 }
             }
         }
-        // Return the initial state name for this specific states { ... } block
         return initialState;
     }
 
@@ -408,6 +396,65 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
         return new BlockNode(id, "communication", definitions, annotations);
     }
 
+    // --- Visitors for Communication Definitions ---
+
+    @Override
+    public AstNode visitProtocolDefinition(ProtocolDefinitionContext ctx) {
+        String name = ctx.ID().getText();
+        List<AnnotationNode> allInnerAnnotations = extractAnnotations(ctx.annotation());
+        Optional<Long> id = extractIdFromList(allInnerAnnotations);
+        List<AnnotationNode> otherAnnotations = allInnerAnnotations.stream()
+                .filter(a -> !a.isIdAnnotation())
+                .collect(Collectors.toList());
+        // Constructor: ProtocolNode(Optional<Long> id, String name, List<AnnotationNode> annotations)
+        return new ProtocolNode(id, name, otherAnnotations);
+    }
+
+    @Override
+    public AstNode visitChannelDefinition(ChannelDefinitionContext ctx) {
+        String name = ctx.ID().getText();
+        List<AnnotationNode> allInnerAnnotations = extractAnnotations(ctx.annotation());
+        Optional<Long> id = extractIdFromList(allInnerAnnotations);
+        List<AnnotationNode> otherAnnotations = allInnerAnnotations.stream()
+                .filter(a -> !a.isIdAnnotation())
+                .collect(Collectors.toList());
+        // Constructor: ChannelNode(Optional<Long> id, String name, List<AnnotationNode> annotations)
+        return new ChannelNode(id, name, otherAnnotations);
+    }
+
+    @Override
+    public AstNode visitEventDefinition(EventDefinitionContext ctx) {
+        String name = ctx.ID().getText();
+        List<AnnotationNode> allInnerAnnotations = extractAnnotations(ctx.annotation());
+        Optional<Long> id = extractIdFromList(allInnerAnnotations);
+        List<AnnotationNode> otherAnnotations = allInnerAnnotations.stream()
+                .filter(a -> !a.isIdAnnotation())
+                .collect(Collectors.toList());
+        List<FieldNode> fields = new ArrayList<>();
+        if (ctx.eventFieldDefinition() != null) {
+            for (EventFieldDefinitionContext fieldCtx : ctx.eventFieldDefinition()) {
+                AstNode visitedField = visit(fieldCtx);
+                if (visitedField instanceof FieldNode) {
+                    fields.add((FieldNode) visitedField);
+                } else {
+                    System.err.println("Warning: Visiting event field did not yield FieldNode: " + fieldCtx.getText());
+                }
+            }
+        }
+        // Constructor: EventNode(Optional<Long> id, String name, List<FieldNode> fields, List<AnnotationNode> annotations)
+        return new EventNode(id, name, fields, otherAnnotations);
+    }
+
+    @Override
+    public AstNode visitEventFieldDefinition(EventFieldDefinitionContext ctx) {
+        // This structure is very similar to structFieldDefinition
+        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
+        Optional<Long> id = extractIdFromList(annotations); // ID on event field? Maybe not needed.
+        String name = ctx.fieldId().getText(); // Use fieldId()
+        TypeExprNode type = (TypeExprNode) visit(ctx.typeReference());
+        // Constructor: FieldNode(Optional<Long> id, String name, TypeExprNode type, List<AnnotationNode> annotations)
+        return new FieldNode(id, name, type, annotations);
+    }
 
     // FieldDefinitionContext missing error
     // @Override // Remove @Override
@@ -783,14 +830,19 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
      // Service Block visitors
     @Override
     public AstNode visitInterfaceDefinition(InterfaceDefinitionContext ctx) {
-        // ID/Annotations are handled by parent DefinitionBlock
+        // ID/Annotations are handled by parent DefinitionBlock? NO, annotations are inside {} block.
         String name = ctx.ID().getText();
          List<MethodNode> methods = new ArrayList<>();
-         List<AnnotationNode> innerAnnotations = new ArrayList<>(); // Annotations inside interface {} block
+         List<AnnotationNode> allInnerAnnotations = new ArrayList<>(); // Annotations inside interface {} block
 
          if (ctx.annotation() != null) {
-              innerAnnotations.addAll(extractAnnotations(ctx.annotation()));
+              allInnerAnnotations.addAll(extractAnnotations(ctx.annotation()));
          }
+         Optional<Long> id = extractIdFromList(allInnerAnnotations); // Extract ID
+         List<AnnotationNode> otherAnnotations = allInnerAnnotations.stream()
+                .filter(a -> !a.isIdAnnotation())
+                .collect(Collectors.toList()); // Filter list
+
          if (ctx.methodDefinition() != null) {
              for (MethodDefinitionContext methodCtx : ctx.methodDefinition()) {
                  AstNode visitedMethod = visit(methodCtx);
@@ -802,8 +854,7 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
              }
          }
          // Constructor: InterfaceNode(Optional<Long> id, String name, List<MethodNode> methods, List<AnnotationNode> innerAnnotations)
-         // ID comes from parent block, pass placeholder. Pass extracted inner annotations.
-        return new InterfaceNode(Optional.empty(), name, methods, innerAnnotations);
+        return new InterfaceNode(id, name, methods, otherAnnotations); // Pass extracted ID and filtered list
     }
 
     @Override
@@ -1212,8 +1263,8 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
     // ADDED visitMethodDefinition
     @Override
     public AstNode visitMethodDefinition(MethodDefinitionContext ctx) {
-        List<AnnotationNode> annotations = extractAnnotations(ctx.annotation());
-        Optional<Long> id = extractIdFromList(annotations);
+        List<AnnotationNode> allMethodAnnotations = extractAnnotations(ctx.annotation());
+        Optional<Long> id = extractIdFromList(allMethodAnnotations);
         String name = ctx.ID().getText();
         List<ParameterNode> params = new ArrayList<>();
         if (ctx.paramList() != null) {
@@ -1229,11 +1280,14 @@ public class AstBuilderVisitor extends SSoTBaseVisitor<AstNode> {
             }
         }
 
-        // Removed annotationMap calculation as it's not used in constructor
-        // Map<String, Object> annotationMap = mapAnnotations(annotations);
+        // Filter out @id annotation from the list passed to the constructor
+        List<AnnotationNode> otherMethodAnnotations = allMethodAnnotations.stream()
+                .filter(a -> !a.isIdAnnotation())
+                .collect(Collectors.toList());
+
 
         // Corrected Constructor call for MethodNode
-        return new MethodNode(id, name, params, returnType, annotations);
+        return new MethodNode(id, name, params, returnType, otherMethodAnnotations); // Pass ID and FILTERED annotations
     }
 
 } // End of class AstBuilderVisitor
